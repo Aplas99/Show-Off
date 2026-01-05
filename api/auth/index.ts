@@ -2,7 +2,7 @@ import { supabase } from "@/lib/supabase";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 
 // 1. Raw Supabase Auth Functions
-export const signUpWithEmail = async ({ email, password, username }: any) => {
+export const signUpWithEmail = async ({ email, password, username }: { email: string; password: string; username: string }) => {
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
@@ -16,7 +16,7 @@ export const signUpWithEmail = async ({ email, password, username }: any) => {
   return data;
 };
 
-export const signInWithEmail = async ({ email, password }: any, password: string) => {
+export const signInWithEmail = async ({ email, password }: { email: string; password: string }) => {
   const { data, error } = await supabase.auth.signInWithPassword({
     email,
     password,
@@ -35,7 +35,7 @@ export const signOut = async () => {
 
 export const useSignUp = () => {
   const queryClient = useQueryClient();
-  
+
   return useMutation({
     mutationFn: signUpWithEmail,
     onSuccess: () => {

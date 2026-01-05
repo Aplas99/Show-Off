@@ -9,7 +9,7 @@ export default function AuthLayout() {
   const { session } = useAuthStore();
 
   if (session) {
-    return <Redirect href={"/"} />;
+    return <Redirect href={"/(tabs)/discover"} />;
   }
 
   return (

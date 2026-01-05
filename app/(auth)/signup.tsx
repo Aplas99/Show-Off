@@ -1,17 +1,17 @@
-import { signUpWithEmail } from "@/lib/auth";
+import { useSignUp } from "@/api/auth";
 import { LinearGradient } from "expo-linear-gradient";
 import { Link, useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
-    Alert,
-    Image,
-    SafeAreaView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  Image,
+  SafeAreaView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 export default function SignUp() {
@@ -19,17 +19,16 @@ export default function SignUp() {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [loading, setLoading] = useState(false);
+  const { mutateAsync: signUp, isPending } = useSignUp();
 
   const handleSignUp = async () => {
-    // TODO: Implement sign-up logic
-    setLoading(true);
-    const { error } = await signUpWithEmail(email, password, username);
-    if (error) Alert.alert(error.message);
-    console.log(error);
-
-    setLoading(false);
-    router.push("/");
+    try {
+      await signUp({ email, password, username });
+      // Navigation is handled by the hook or we can do it here if useSignUp doesn't invalidate/redirect
+      router.push("/");
+    } catch (error: any) {
+      Alert.alert("Sign up failed", error.message);
+    }
   };
 
   const handleGoogleSignIn = async () => {

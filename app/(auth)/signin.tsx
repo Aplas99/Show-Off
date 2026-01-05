@@ -3,15 +3,15 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Link, useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
-    Alert,
-    Image,
-    SafeAreaView,
-    StatusBar,
-    StyleSheet,
-    Text,
-    TextInput,
-    TouchableOpacity,
-    View,
+  Alert,
+  Image,
+  SafeAreaView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TextInput,
+  TouchableOpacity,
+  View,
 } from "react-native";
 
 export default function SignIn() {
@@ -23,12 +23,8 @@ export default function SignIn() {
   const handleSignIn = async () => {
     setLoading(true);
     try {
-      const { error } = await signInWithEmail(email, password);
+      await signInWithEmail({ email, password });
       // router.push("/(user)");
-      if (error) {
-        Alert.alert(error.message);
-        console.log(error);
-      }
     } catch (err: any) {
       // Handles unexpected errors (network, thrown exceptions, etc.)
       Alert.alert(
@@ -138,7 +134,7 @@ export default function SignIn() {
 
           <TouchableOpacity
             style={styles.forgotPasswordButton}
-            onPress={() => {}}
+            onPress={() => { }}
           >
             <Text style={styles.forgotPasswordButtonText}>
               Forgot Password?

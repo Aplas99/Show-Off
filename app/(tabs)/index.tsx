@@ -1,9 +1,5 @@
 import { Redirect } from "expo-router";
-import React from "react";
-import { StyleSheet } from "react-native";
 
-export default function index() {
-  return <Redirect href="/(tabs)/discover/discover" />;
+export default function Index() {
+  return <Redirect href="/(tabs)/discover" />;
 }
-
-const styles = StyleSheet.create({});
