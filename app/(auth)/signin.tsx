@@ -124,7 +124,7 @@ export default function SignIn() {
             <TouchableOpacity style={styles.dontHaveAccountButton}>
               <Text style={styles.dontHaveAccountText}>
                 Don't have an account?
-                <Text style={styles.signupLink}> Sign Up</Text>
+                <Text style={styles.signupLink}> Sign Up </Text>
               </Text>
             </TouchableOpacity>
           </Link>
