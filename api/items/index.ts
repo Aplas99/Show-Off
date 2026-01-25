@@ -60,6 +60,7 @@ export interface ItemWithProduct {
   user_description: string | null;
   for_sale: boolean;
   price: number | null;
+  currency_code?: string;
   products: ShowcaseItemProduct | null;
 }
 
@@ -84,11 +85,11 @@ function normalizeCodes(searchQuery: string) {
 async function fetchFromBarcodeLookup(
   query: string,
   page = 1,
-  filters?: Partial<SearchParams>
+  filters?: Partial<SearchParams>,
 ): Promise<Product[]> {
   if (!BarcodeLookupAPIKey) {
     console.warn(
-      "[API] ⚠️ Barcode Lookup API key is missing. Skipping request."
+      "[API] ⚠️ Barcode Lookup API key is missing. Skipping request.",
     );
     return [];
   }
@@ -111,7 +112,7 @@ async function fetchFromBarcodeLookup(
   console.log(`[API] 🌐 Fetching Barcode Lookup: ${sanitized} (Page ${page})`);
 
   const response = await fetch(
-    `https://api.barcodelookup.com/v3/products?${urlParams.toString()}`
+    `https://api.barcodelookup.com/v3/products?${urlParams.toString()}`,
   );
 
   if (!response.ok) {
@@ -154,7 +155,7 @@ async function fetchFromUPCItemDB(query: string): Promise<Product[]> {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
-    }
+    },
   );
 
   if (!response.ok) throw new Error(`UPC API error: ${response.status}`);
@@ -185,7 +186,7 @@ export function useProductSearch(params: SearchParams) {
       const items = await fetchFromBarcodeLookup(
         params.query,
         pageParam as number,
-        params
+        params,
       );
       return { items };
     },
@@ -290,7 +291,7 @@ export function useGetItemsWithProductData(showcaseId: string) {
                             ean, searchableTitle, searchableDescription, searchableBrand, data
                         )
                     )
-                `
+                `,
         )
         .eq("showcase_id", showcaseId);
 
@@ -302,16 +303,27 @@ export function useGetItemsWithProductData(showcaseId: string) {
           const item = row.items;
           const product = item.products;
 
+          // Parse data field if it's a string (legacy/db support)
+          let parsedProductData: any = {};
+          if (product?.data) {
+            if (typeof product.data === "string") {
+              try {
+                parsedProductData = JSON.parse(product.data);
+              } catch (e) {
+                console.error("Failed to parse product data", e);
+              }
+            } else {
+              parsedProductData = product.data;
+            }
+          }
+
           return {
             ...item,
             showcase_id: row.showcase_id,
             products: product
               ? {
                   ...product,
-                  data:
-                    product.data && typeof product.data === "object"
-                      ? { ...product.data }
-                      : product.data,
+                  data: parsedProductData,
                 }
               : null,
           } as ItemWithProduct;

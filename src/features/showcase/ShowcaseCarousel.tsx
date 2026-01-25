@@ -1,5 +1,4 @@
 import { ItemWithProduct } from "@/api/items";
-import MaskedView from "@react-native-masked-view/masked-view";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useRef } from "react";
@@ -12,7 +11,6 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
-import Svg, { Rect } from "react-native-svg";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 const ITEM_SIZE = screenWidth * 0.65; // 65% of screen width for larger posters
@@ -21,7 +19,7 @@ const BACKDROP_HEIGHT = screenHeight * 0.75; // Cover top 75% of screen (extende
 const POSTER_HEIGHT = screenHeight * 0.45; // Poster card height
 
 const AnimatedFlatList = Animated.createAnimatedComponent(FlatList);
-const AnimatedSvg = Animated.createAnimatedComponent(Svg);
+const AnimatedImage = Animated.createAnimatedComponent(Image);
 
 type Props = {
   data: ItemWithProduct[];
@@ -35,16 +33,8 @@ const Backdrop = React.memo(
       <View style={styles.backdropContainer} pointerEvents="none">
         {data.map((item, index) => {
           // Parse product data to get backdrop image
-          let productData: any;
-          if (typeof item.products.data === "string") {
-            try {
-              productData = JSON.parse(item.products.data);
-            } catch {
-              productData = {};
-            }
-          } else {
-            productData = item.products.data;
-          }
+          // Data is already parsed by the API layer
+          const productData = item.products?.data || {};
 
           // Determine backdrop image
           const backdropImageUrl =
@@ -63,45 +53,47 @@ const Backdrop = React.memo(
             (adjustedIndex - 1) * ITEM_SIZE,
           ];
 
+          // The Window: Moves from -width to 0 (Left -> Right)
           const translateX = scrollX.interpolate({
             inputRange,
             outputRange: [-screenWidth, 0],
             extrapolate: "clamp",
           });
 
+          // The World Inside: Moves from +width to 0 (Right -> Left)
+          // This counter-movement makes the image appear stationary/parallaxed relative to the screen
+          const inverseTranslateX = scrollX.interpolate({
+            inputRange,
+            outputRange: [screenWidth, 0],
+            extrapolate: "clamp",
+          });
+
           return (
-            <MaskedView
+            <Animated.View
               key={item.id}
-              style={styles.backdropImageContainer}
-              maskElement={
-                <AnimatedSvg
-                  width={screenWidth}
-                  height={BACKDROP_HEIGHT}
-                  viewBox={`0 0 ${screenWidth} ${BACKDROP_HEIGHT}`}
-                  style={{
-                    transform: [{ translateX }],
-                  }}
-                >
-                  <Rect
-                    x="0"
-                    y="0"
-                    width={screenWidth}
-                    height={BACKDROP_HEIGHT}
-                    fill="red"
-                  />
-                </AnimatedSvg>
-              }
+              style={[
+                styles.backdropImageContainer,
+                {
+                  overflow: "hidden", // The Curtain Clipping Magic
+                  transform: [{ translateX }],
+                },
+              ]}
             >
-              <Image
+              <AnimatedImage
                 source={{ uri: backdropImageUrl }}
-                style={styles.backdropImage}
+                style={[
+                  styles.backdropImage,
+                  {
+                    transform: [{ translateX: inverseTranslateX }],
+                  },
+                ]}
                 contentFit="cover"
                 transition={0}
                 cachePolicy="memory-disk"
                 priority="high"
                 recyclingKey={item.id.toString()}
               />
-            </MaskedView>
+            </Animated.View>
           );
         })}
         <LinearGradient
@@ -116,7 +108,7 @@ const Backdrop = React.memo(
         />
       </View>
     );
-  }
+  },
 );
 
 function ShowcaseCarousel({ data, onItemPress, onIndexChange }: Props) {
@@ -134,7 +126,7 @@ function ShowcaseCarousel({ data, onItemPress, onIndexChange }: Props) {
       ...data,
       { key: "right-spacer", isSpacer: true },
     ],
-    [data]
+    [data],
   );
 
   return (
@@ -158,21 +150,13 @@ function ShowcaseCarousel({ data, onItemPress, onIndexChange }: Props) {
 
           const scale = scrollX.interpolate({
             inputRange,
-            outputRange: [0.85, 1, 0.85],
+            outputRange: [0.75, 1, 0.75],
             extrapolate: "clamp",
           });
 
           // Parse product data
-          let productData: any;
-          if (typeof actualItem.products.data === "string") {
-            try {
-              productData = JSON.parse(actualItem.products.data);
-            } catch {
-              productData = {};
-            }
-          } else {
-            productData = actualItem.products.data;
-          }
+          // Data is already parsed by the API layer
+          const productData = actualItem.products?.data || {};
 
           const imageUrl =
             actualItem.image_url ||
@@ -239,11 +223,11 @@ function ShowcaseCarousel({ data, onItemPress, onIndexChange }: Props) {
         })}
         onScroll={Animated.event(
           [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-          { useNativeDriver: true }
+          { useNativeDriver: true },
         )}
         onMomentumScrollEnd={(event) => {
           const index = Math.round(
-            event.nativeEvent.contentOffset.x / ITEM_SIZE
+            event.nativeEvent.contentOffset.x / ITEM_SIZE,
           );
           const actualIndex = index - 1;
           if (actualIndex >= 0 && actualIndex < data.length) {

@@ -19,19 +19,8 @@ export default function ShowcaseListItem({ item, onPress, style }: Props) {
   const title = product?.searchableTitle || "Unknown Item";
   const brand = product?.searchableBrand;
 
-  // Parse data field if it's a string (legacy support)
-  let productData: any = {};
-  if (product?.data) {
-    if (typeof product.data === "string") {
-      try {
-        productData = JSON.parse(product.data);
-      } catch (e) {
-        console.error("Failed to parse product data", e);
-      }
-    } else {
-      productData = product.data;
-    }
-  }
+  // Data is already parsed by the API layer
+  const productData = product?.data || {};
 
   const imageUrl =
     item.image_url ||
