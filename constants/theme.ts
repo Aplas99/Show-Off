@@ -6,5 +6,6 @@ export const COLORS = {
   secondary: "#F15BB5", // Optional pink for fun pop accents (or skip)
   white: "#FFFFFF", // Main text and icons
   grey: "#7C7C7C", // Inactive tab icons, muted text
+  textDim: "#888888", // Secondary text color
   slate: "#2A2A2A", // Optional deep overlay/background
 } as const;

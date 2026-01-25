@@ -5,7 +5,6 @@ import React, { useState } from "react";
 import {
   Alert,
   Image,
-  SafeAreaView,
   StatusBar,
   StyleSheet,
   Text,
@@ -13,6 +12,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function SignIn() {
   const router = useRouter();
@@ -124,7 +124,7 @@ export default function SignIn() {
             <TouchableOpacity style={styles.dontHaveAccountButton}>
               <Text style={styles.dontHaveAccountText}>
                 Don't have an account?
-                <Text style={styles.signupLink}> Sign Up</Text>
+                <Text style={styles.signupLink}> Sign Up </Text>
               </Text>
             </TouchableOpacity>
           </Link>
@@ -134,7 +134,7 @@ export default function SignIn() {
 
           <TouchableOpacity
             style={styles.forgotPasswordButton}
-            onPress={() => { }}
+            onPress={() => {}}
           >
             <Text style={styles.forgotPasswordButtonText}>
               Forgot Password?
