@@ -8,7 +8,7 @@ export default function RootLayout() {
     <SafeAreaProvider>
       <QueryProvider>
         <AuthInitializer>
-          <Stack />
+          <Stack screenOptions={{ headerShown: false }} />
         </AuthInitializer>
       </QueryProvider>
     </SafeAreaProvider>

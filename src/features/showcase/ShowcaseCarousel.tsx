@@ -11,6 +11,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
 const ITEM_SIZE = screenWidth * 0.65; // 65% of screen width for larger posters
@@ -113,6 +114,7 @@ const Backdrop = React.memo(
 
 function ShowcaseCarousel({ data, onItemPress, onIndexChange }: Props) {
   const scrollX = useRef(new Animated.Value(0)).current;
+  const insets = useSafeAreaInsets();
 
   // Handle empty items
   if (!data || data.length === 0) {
@@ -131,6 +133,18 @@ function ShowcaseCarousel({ data, onItemPress, onIndexChange }: Props) {
 
   return (
     <View style={styles.carouselWrapper}>
+      {/* Black Status Bar Strip */}
+      {/* <View
+        style={{
+          height: insets.top,
+          backgroundColor: "black",
+          width: "100%",
+          zIndex: 100,
+          position: "absolute",
+          top: 0,
+        }}
+      /> */}
+
       <Backdrop data={data} scrollX={scrollX} />
 
       <AnimatedFlatList
@@ -171,6 +185,7 @@ function ShowcaseCarousel({ data, onItemPress, onIndexChange }: Props) {
                 {
                   width: ITEM_SIZE,
                   transform: [{ scale }],
+                  paddingTop: screenHeight * 0.25 + insets.top, // Adjust for status bar
                 },
               ]}
             >
@@ -285,7 +300,7 @@ const styles = StyleSheet.create({
   itemContainer: {
     justifyContent: "flex-start",
     alignItems: "center",
-    paddingTop: screenHeight * 0.25, // Position cards lower on screen
+    // paddingTop is handled inline to account for safe area insets
   },
   itemContent: {
     width: "100%",
