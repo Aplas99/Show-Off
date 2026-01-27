@@ -26,12 +26,17 @@ export interface Product {
   price?: number;
 }
 
-export interface SearchParams {
-  query: string;
-  brand?: string;
-  manufacturer?: string;
-  category?: string;
-}
+import { z } from "zod";
+// ... existing imports
+
+export const searchParamsSchema = z.object({
+  query: z.string(),
+  brand: z.string().optional(),
+  manufacturer: z.string().optional(),
+  category: z.string().optional(),
+});
+
+export type SearchParams = z.infer<typeof searchParamsSchema>;
 
 /**
  * Represents the restricted product data structure when joined with an item.
@@ -53,7 +58,7 @@ export interface ItemWithProduct {
   id: number;
   user_id: string;
   showcase_id: string | null;
-  product_ean: string; // Changed to string to match Product.ean usually
+  product_ean: string;
   created_at: string;
   image_url: string;
   condition: string;
@@ -93,6 +98,14 @@ async function fetchFromBarcodeLookup(
     );
     return [];
   }
+
+  // if (filters) {
+  // We only validate the partial structure here
+  // Use .partial() if you want to validate strict partials, or just trust TS for internal calls
+  // But since this is 'filters', let's just proceed. 
+  // Actually, let's validate the whole object if we constructed it from user input elsewhere.
+  // For now, no runtime check needed inside this helper unless we want to catch bugs.
+  // }
 
   const sanitized = query.replace(/\s+/g, " ").trim();
 
@@ -322,9 +335,9 @@ export function useGetItemsWithProductData(showcaseId: string) {
             showcase_id: row.showcase_id,
             products: product
               ? {
-                  ...product,
-                  data: parsedProductData,
-                }
+                ...product,
+                data: parsedProductData,
+              }
               : null,
           } as ItemWithProduct;
         })

@@ -1,4 +1,5 @@
 import { signInWithEmail } from "@/api/auth/index";
+import { signInSchema } from "@/lib/authValidation";
 import { LinearGradient } from "expo-linear-gradient";
 import { Link, useRouter } from "expo-router";
 import React, { useState } from "react";
@@ -13,6 +14,7 @@ import {
   View,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
+import { z } from "zod";
 
 export default function SignIn() {
   const router = useRouter();
@@ -23,14 +25,21 @@ export default function SignIn() {
   const handleSignIn = async () => {
     setLoading(true);
     try {
+      // Validate inputs using Zod
+      signInSchema.parse({ email, password });
+
       await signInWithEmail({ email, password });
       // router.push("/(user)");
     } catch (err: any) {
-      // Handles unexpected errors (network, thrown exceptions, etc.)
-      Alert.alert(
-        "Sign in failed",
-        err?.message || "An unexpected error occurred."
-      );
+      if (err instanceof z.ZodError) {
+        Alert.alert("Invalid Input", err.issues[0]?.message || "Validation failed");
+      } else {
+        // Handles unexpected errors (network, thrown exceptions, etc.)
+        Alert.alert(
+          "Sign in failed",
+          err?.message || "An unexpected error occurred."
+        );
+      }
     } finally {
       setLoading(false);
     }
@@ -134,7 +143,7 @@ export default function SignIn() {
 
           <TouchableOpacity
             style={styles.forgotPasswordButton}
-            onPress={() => {}}
+            onPress={() => { }}
           >
             <Text style={styles.forgotPasswordButtonText}>
               Forgot Password?
