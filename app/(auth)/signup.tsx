@@ -1,4 +1,5 @@
 import { useSignUp } from "@/api/auth";
+import { signUpSchema } from "@/lib/authValidation";
 import { LinearGradient } from "expo-linear-gradient";
 import { Link, useRouter } from "expo-router";
 import React, { useState } from "react";
@@ -13,6 +14,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { z } from "zod";
 
 export default function SignUp() {
   const router = useRouter();
@@ -23,11 +25,18 @@ export default function SignUp() {
 
   const handleSignUp = async () => {
     try {
+      // Validate inputs using Zod
+      signUpSchema.parse({ email, password, username });
+
       await signUp({ email, password, username });
       // Navigation is handled by the hook or we can do it here if useSignUp doesn't invalidate/redirect
       router.push("/");
     } catch (error: any) {
-      Alert.alert("Sign up failed", error.message);
+      if (error instanceof z.ZodError) {
+        Alert.alert("Invalid Input", error.issues[0]?.message || "Validation failed");
+      } else {
+        Alert.alert("Sign up failed", error.message);
+      }
     }
   };
 
