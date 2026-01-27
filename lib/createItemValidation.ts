@@ -1,30 +1,26 @@
-import { ITEM_CONDITIONS, ItemCondition } from "@/constants/itemCondition";
+import { ITEM_CONDITIONS } from "@/constants/itemCondition";
+import { z } from "zod";
 
-export interface CreateItemPayload {
-    searchQuery: string;
-    condition: ItemCondition;
-    userDescription?: string | null;
-    forSale: boolean;
-    price?: number | null;
-    imageUrl?: string | null;
-}
+export const createItemSchema = z.object({
+    searchQuery: z
+        .string()
+        .trim()
+        .min(1, "Invalid item: Barcode/search query is required."),
+    condition: z.enum([...ITEM_CONDITIONS] as [string, ...string[]], {
+        message: "Invalid item: Condition is required.",
+    }),
+    userDescription: z.string().nullable().optional(),
+    forSale: z.boolean(),
+    price: z
+        .number()
+        .nonnegative("Invalid item: Price must be a positive number.")
+        .nullable()
+        .optional(),
+    imageUrl: z.string().nullable().optional(),
+});
 
-export function validateCreateItem(payload: CreateItemPayload) {
-    if (!payload.searchQuery || payload.searchQuery.trim().length === 0) {
-        throw new Error("Invalid item: Barcode/search query is required.");
-    }
+export type CreateItemPayload = z.infer<typeof createItemSchema>;
 
-    if (!ITEM_CONDITIONS.includes(payload.condition)) {
-        throw new Error("Invalid item: Condition is required.");
-    }
-
-    if (payload.price !== null && payload.price !== undefined) {
-        if (isNaN(payload.price) || payload.price < 0) {
-            throw new Error("Invalid item: Price must be a positive number.");
-        }
-    }
-
-    // Description is optional, no check needed.
-    // forSale is boolean, no check needed.
-    return true;
+export function validateCreateItem(payload: unknown) {
+    return createItemSchema.parse(payload);
 }
