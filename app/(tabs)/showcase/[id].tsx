@@ -1,5 +1,6 @@
 import { ItemWithProduct, useGetItemsWithProductData } from "@/api/items";
 import { TAB_BAR_HEIGHT } from "@/constants/layoutConfig";
+import BookcaseView from "@/src/features/showcase/BookcaseView";
 import ItemDetailModal from "@/src/features/showcase/ItemDetailModal";
 import ShowcaseCarousel from "@/src/features/showcase/ShowcaseCarousel";
 import ShowcaseListItem from "@/src/features/showcase/ShowcaseListItem";
@@ -79,7 +80,7 @@ export default function ShowcaseDetail() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   // View mode state
-  const [viewMode, setViewMode] = useState<"grid" | "carousel">("carousel");
+  const [viewMode, setViewMode] = useState<"grid" | "carousel" | "bookcase">("bookcase");
 
   // Modal state
   const [selectedItem, setSelectedItem] = useState<ItemWithProduct | null>(
@@ -87,53 +88,60 @@ export default function ShowcaseDetail() {
   );
   const [modalVisible, setModalVisible] = useState(false);
 
+  // Controls visibility (for Bookcase view)
+  const [controlsVisible, setControlsVisible] = useState(true);
+  const controlsTranslateY = useRef(new Animated.Value(0)).current;
+
   // Animation values
   const [shouldAnimateGrid, setShouldAnimateGrid] = useState(false);
   const gridOpacity = useRef(new Animated.Value(0)).current;
-  const carouselOpacity = useRef(new Animated.Value(1)).current;
+  const carouselOpacity = useRef(new Animated.Value(0)).current;
+  const bookcaseOpacity = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
+    const duration = 300;
+    const easing = Easing.out(Easing.ease);
+    const useNativeDriver = true;
+
     if (viewMode === "grid") {
+      setControlsVisible(true); // Always show in grid
       Animated.parallel([
-        Animated.timing(gridOpacity, {
-          toValue: 1,
-          duration: 250,
-          easing: Easing.out(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(carouselOpacity, {
-          toValue: 0,
-          duration: 250,
-          easing: Easing.out(Easing.ease),
-          useNativeDriver: true,
-        }),
+        Animated.timing(gridOpacity, { toValue: 1, duration, easing, useNativeDriver }),
+        Animated.timing(carouselOpacity, { toValue: 0, duration, easing, useNativeDriver }),
+        Animated.timing(bookcaseOpacity, { toValue: 0, duration, easing, useNativeDriver }),
+      ]).start();
+    } else if (viewMode === "carousel") {
+      setControlsVisible(true); // Always show in carousel
+      Animated.parallel([
+        Animated.timing(gridOpacity, { toValue: 0, duration, easing, useNativeDriver }),
+        Animated.timing(carouselOpacity, { toValue: 1, duration, easing, useNativeDriver }),
+        Animated.timing(bookcaseOpacity, { toValue: 0, duration, easing, useNativeDriver }),
       ]).start();
     } else {
+      setControlsVisible(false); // Default hide in bookcase
       Animated.parallel([
-        Animated.timing(gridOpacity, {
-          toValue: 0,
-          duration: 250,
-          easing: Easing.out(Easing.ease),
-          useNativeDriver: true,
-        }),
-        Animated.timing(carouselOpacity, {
-          toValue: 1,
-          duration: 250,
-          easing: Easing.out(Easing.ease),
-          useNativeDriver: true,
-        }),
+        Animated.timing(gridOpacity, { toValue: 0, duration, easing, useNativeDriver }),
+        Animated.timing(carouselOpacity, { toValue: 0, duration, easing, useNativeDriver }),
+        Animated.timing(bookcaseOpacity, { toValue: 1, duration, easing, useNativeDriver }),
       ]).start();
     }
   }, [viewMode]);
 
+  // Animate controls based on visibility
+  useEffect(() => {
+    Animated.timing(controlsTranslateY, {
+      toValue: controlsVisible ? 0 : 100, // Slide down 100px to hide
+      duration: 300,
+      useNativeDriver: true,
+      easing: Easing.out(Easing.ease),
+    }).start();
+  }, [controlsVisible]);
+
   const handleToggleView = useCallback(() => {
     setViewMode((prev) => {
-      const newMode = prev === "grid" ? "carousel" : "grid";
-      if (newMode === "grid") {
-        setShouldAnimateGrid(true);
-        setTimeout(() => setShouldAnimateGrid(false), 1000);
-      }
-      return newMode;
+      if (prev === "grid") return "carousel";
+      if (prev === "carousel") return "bookcase";
+      return "grid";
     });
   }, []);
 
@@ -307,10 +315,27 @@ export default function ShowcaseDetail() {
             )}
           </View>
         </Animated.View>
+
+        {/* Bookcase View */}
+        <Animated.View
+          style={[
+            styles.viewContainer,
+            styles.absoluteView,
+            { opacity: bookcaseOpacity },
+          ]}
+          pointerEvents={viewMode === "bookcase" ? "auto" : "none"}
+        >
+          <BookcaseView
+            items={filteredItems}
+            onItemPress={handleItemPress}
+            showcaseName="Showcase" // Could be dynamic if we fetch showcase details
+            onBookmarkPress={() => setControlsVisible(prev => !prev)}
+          />
+        </Animated.View>
       </View>
 
       {/* Search and Filter Controls - Positioned above Tab Bar */}
-      <View style={[styles.searchContainer, { bottom: bottomOffset }]}>
+      <Animated.View style={[styles.searchContainer, { bottom: bottomOffset, transform: [{ translateY: controlsTranslateY }] }]}>
         <View style={styles.searchInputContainer}>
           <Ionicons
             name="search"
@@ -337,7 +362,13 @@ export default function ShowcaseDetail() {
           onPress={handleToggleView}
         >
           <Ionicons
-            name={viewMode === "grid" ? "albums" : "grid"}
+            name={
+              viewMode === "grid"
+                ? "albums"
+                : viewMode === "carousel"
+                  ? "library"
+                  : "grid"
+            }
             size={20}
             color="#9B5DE5"
           />
@@ -349,7 +380,7 @@ export default function ShowcaseDetail() {
         >
           <Ionicons name="options" size={20} color="#9B5DE5" />
         </TouchableOpacity>
-      </View>
+      </Animated.View>
 
       <ItemDetailModal
         visible={modalVisible}
