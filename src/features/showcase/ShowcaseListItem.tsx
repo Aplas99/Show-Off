@@ -1,6 +1,5 @@
 import { ItemWithProduct } from "@/api/items";
 import { COLORS } from "@/constants/theme";
-import { Ionicons } from "@expo/vector-icons";
 import { Link } from "expo-router";
 import React from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
@@ -16,8 +15,8 @@ type Props = {
 export default function ShowcaseListItem({ item, onPress, style }: Props) {
   // Prefer the joined product data if available
   const product = item.products;
-  const title = product?.searchableTitle || "Unknown Item";
-  const brand = product?.searchableBrand;
+  const title = item.custom_title || product?.searchableTitle || "Unknown Item";
+  const brand = item.custom_brand || product?.searchableBrand;
 
   // Data is already parsed by the API layer
   const productData = product?.data || {};
@@ -31,19 +30,15 @@ export default function ShowcaseListItem({ item, onPress, style }: Props) {
   const price = item.price;
   const currency = item.currency_code || "USD";
 
+  const PLACEHOLDER_IMAGE = require("../../../assets/images/placeholder.png");
+
   const content = (
     <View style={styles.card}>
-      {imageUrl ? (
-        <Image
-          source={{ uri: imageUrl }}
-          style={styles.image}
-          resizeMode="cover"
-        />
-      ) : (
-        <View style={styles.imagePlaceholder}>
-          <Ionicons name="image-outline" size={32} color={COLORS.textDim} />
-        </View>
-      )}
+      <Image
+        source={imageUrl ? { uri: imageUrl } : PLACEHOLDER_IMAGE}
+        style={styles.image}
+        resizeMode="cover"
+      />
 
       <View style={styles.info}>
         <Text style={styles.title} numberOfLines={1}>

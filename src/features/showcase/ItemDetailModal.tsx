@@ -124,13 +124,15 @@ export default function ItemDetailModal({ visible, item, onClose }: Props) {
       : null);
 
   const title =
+    displayItem?.custom_title ||
     displayItem?.products?.searchableTitle ||
     displayItem?.user_description ||
     "Unknown Item";
-  const brand = displayItem?.products?.searchableBrand;
+  const brand =
+    displayItem?.custom_brand || displayItem?.products?.searchableBrand;
   const description =
-    displayItem?.products?.searchableDescription ||
-    displayItem?.user_description;
+    displayItem?.user_description ||
+    displayItem?.products?.searchableDescription;
 
   const price =
     displayItem?.price != null

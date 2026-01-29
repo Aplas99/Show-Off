@@ -3,7 +3,7 @@
 ## Project Overview
 `show-off` is a mobile application built with **React Native** and **Expo**, utilizing the **Expo Router** for file-based navigation. It is configured with **TypeScript** and has the **New Architecture** and **React Compiler** enabled.
 
-**Purpose:** A social application for collectors to showcase their items. Users can create "showcases" which are collections of items verified by databases. Items can be created and imported manually without verification bit will be unverified. They can follow other users, like, comment on, and bookmark items. Users can also share their showcases to other users.
+**Purpose:** A social application for collectors to showcase their items. Users can create "showcases" which are collections of items verified by databases. Items can be created and imported manually without verification but will be unverified. Users can follow other users, like, comment on, and bookmark items. Users can also share their showcases to other users.
 
 - **Current Version:** Expo SDK 54 (~54.0.30)
 - **Source of Truth:** [Expo Documentation](https://docs.expo.dev/versions/latest/)

@@ -4,7 +4,7 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { validateCreateItem } from "@/lib/createItemValidation";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import React, { useCallback, useEffect, useMemo, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 import {
     FlatList,
     KeyboardAvoidingView,
@@ -16,7 +16,7 @@ import {
     Text,
     TextInput,
     TouchableOpacity,
-    View
+    View,
 } from "react-native";
 import Animated, {
     useAnimatedStyle,
@@ -25,12 +25,8 @@ import Animated, {
     withTiming,
 } from "react-native-reanimated";
 
-import {
-    useCreateItemWithProductLookup,
-    type Product
-} from "@/api/items";
+import { useCreateItemWithProductLookup } from "@/api/items";
 import { ShowcaseRow, useGetVisibleShowcases, useLinkItemToShowcases } from "@/api/showcase";
-import BarcodeScannerModal from "./BarcodeScannerModal";
 import ItemGenerationModal from "./ItemGenerationModal";
 import ItemSuccessModal from "./ItemSuccessModal";
 
@@ -38,15 +34,13 @@ type Props = {
     visible: boolean;
     onClose: () => void;
     onSuccess?: (itemTitle: string, showcaseCount: number) => void;
-    initialBarcode?: string;
-    initialProductData?: Product;
 };
 
-type Step = 1 | 2 | 3;
+type Step = 1 | 2;
 
-interface ItemData {
-    barcode: string;
-    productData?: Product | null;
+interface ManualItemData {
+    customTitle: string;
+    customBrand: string;
     condition: ItemCondition | "";
     description: string;
     price: string;
@@ -54,23 +48,21 @@ interface ItemData {
     selectedShowcaseIds: string[];
 }
 
-export default function CreateItemWizard({
+export default function ManualCreateItemWizard({
     visible,
     onClose,
     onSuccess,
-    initialBarcode = "",
-    initialProductData,
 }: Props) {
     const router = useRouter();
     const haptics = useHaptics();
-
+    
     const [currentStep, setCurrentStep] = useState<Step>(1);
     const [successModalOpen, setSuccessModalOpen] = useState(false);
     const [generationModalOpen, setGenerationModalOpen] = useState(false);
 
-    const [itemData, setItemData] = useState<ItemData>({
-        barcode: initialBarcode,
-        productData: initialProductData || null,
+    const [itemData, setItemData] = useState<ManualItemData>({
+        customTitle: "",
+        customBrand: "",
         condition: "",
         description: "",
         price: "",
@@ -78,77 +70,28 @@ export default function CreateItemWizard({
         selectedShowcaseIds: [],
     });
 
-    // Entry animation values
-    const slideAnim = useSharedValue(0);
+    // Animation values
     const contentOpacity = useSharedValue(1);
-
-    // Handle initial barcode
-    useEffect(() => {
-        if (initialBarcode && initialBarcode !== itemData.barcode) {
-            setItemData((prev) => ({ ...prev, barcode: initialBarcode }));
-        }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [initialBarcode]);
-
-    // Handle initial product
-    useEffect(() => {
-        if (initialProductData && visible) {
-            setItemData((prev) => ({
-                ...prev,
-                productData: initialProductData,
-                barcode: initialProductData.ean || initialProductData.upc || prev.barcode,
-            }));
-            setCurrentStep(2);
-        }
-    }, [initialProductData, visible]);
-
-    // Animate on step change
-    useEffect(() => {
-        slideAnim.value = 0;
-        contentOpacity.value = 1;
-    }, [currentStep, slideAnim, contentOpacity]);
+    const slideAnim = useSharedValue(0);
 
     // API hooks
     const createItemWithProduct = useCreateItemWithProductLookup();
     const linkToShowcases = useLinkItemToShowcases();
     const { data: showcases, isLoading: loadingShowcases } = useGetVisibleShowcases();
 
-    // Step validation
-    const { isValidBarcode, barcodeType } = useMemo(() => {
-        const sanitized = itemData.barcode.replace(/[\s-]/g, "").trim();
-        if (!sanitized) return { isValidBarcode: false, barcodeType: "" };
-
-        if (/^\d+$/.test(sanitized)) {
-            if (sanitized.length === 13) {
-                return {
-                    isValidBarcode: true,
-                    barcodeType: sanitized.startsWith("0") ? "UPC-A (GTIN-12)" : "EAN-13",
-                };
-            } else if (sanitized.length === 12) {
-                return { isValidBarcode: true, barcodeType: "UPC-A (GTIN-12)" };
-            }
-        }
-        return { isValidBarcode: false, barcodeType: "" };
-    }, [itemData.barcode]);
-
-    const canProceedToStep2 = itemData.barcode.trim() !== "";
-    const canProceedToStep3 = itemData.condition !== "";
-    const canCreateItem = canProceedToStep3;
+    const canProceedToStep2 = itemData.customTitle.trim() !== "" && itemData.condition !== "";
+    const canCreateItem = canProceedToStep2;
 
     const animateStepTransition = useCallback((direction: "next" | "back") => {
-        // Fade out
         contentOpacity.value = withTiming(0, { duration: 150 }, () => {
-            // Update step here after fade out
             slideAnim.value = direction === "next" ? 30 : -30;
-            
-            // Fade in
             contentOpacity.value = withTiming(1, { duration: 200 });
             slideAnim.value = withSpring(0, { damping: 20, stiffness: 200 });
         });
     }, [slideAnim, contentOpacity]);
 
     const nextStep = async () => {
-        if (currentStep < 3) {
+        if (currentStep < 2) {
             await haptics.medium();
             animateStepTransition("next");
             setTimeout(() => {
@@ -167,19 +110,13 @@ export default function CreateItemWizard({
         }
     };
 
-    const handleBarcodeScanned = async (barcode: string) => {
-        await haptics.success();
-        const sanitizedBarcode = barcode.replace(/[\s-]/g, "").trim();
-        setItemData((prev) => ({ ...prev, barcode: sanitizedBarcode }));
-    };
-
     const handleCreateItem = async () => {
         try {
             await haptics.heavy();
             const payload = {
-                searchQuery: itemData.barcode,
-                customTitle: undefined,
-                customBrand: undefined,
+                searchQuery: undefined,
+                customTitle: itemData.customTitle,
+                customBrand: itemData.customBrand || undefined,
                 condition: itemData.condition as ItemCondition,
                 userDescription: itemData.description || null,
                 forSale: itemData.forSale,
@@ -223,17 +160,14 @@ export default function CreateItemWizard({
             router.push("/(tabs)/showcase" as any);
         }
 
-        onSuccess?.(
-            itemData.productData?.title || "Item",
-            itemData.selectedShowcaseIds.length
-        );
+        onSuccess?.(itemData.customTitle, itemData.selectedShowcaseIds.length);
     };
 
     const resetWizard = () => {
         setCurrentStep(1);
         setItemData({
-            barcode: "",
-            productData: null,
+            customTitle: "",
+            customBrand: "",
             condition: "",
             description: "",
             price: "",
@@ -269,8 +203,6 @@ export default function CreateItemWizard({
         transform: [{ translateX: slideAnim.value }],
     }));
 
-    const activeTitle = itemData.productData?.title || "";
-
     return (
         <Modal
             visible={visible}
@@ -291,22 +223,7 @@ export default function CreateItemWizard({
                         >
                             <Ionicons name="close" size={24} color={COLORS.white} />
                         </TouchableOpacity>
-                        <View style={{ alignItems: "center" }}>
-                            <Text style={styles.title}>Create Item</Text>
-                            {activeTitle ? (
-                                <Text
-                                    style={{
-                                        color: COLORS.grey,
-                                        fontSize: 12,
-                                        marginTop: 4,
-                                        maxWidth: 200,
-                                    }}
-                                    numberOfLines={1}
-                                >
-                                    {activeTitle}
-                                </Text>
-                            ) : null}
-                        </View>
+                        <Text style={styles.title}>Manual Creation</Text>
                         <View style={{ width: 24 }} />
                     </View>
 
@@ -314,39 +231,28 @@ export default function CreateItemWizard({
                     <ProgressIndicator currentStep={currentStep} />
 
                     {/* Content */}
-                    <Animated.View style={[styles.contentContainer, contentStyle]}>
+                    <Animated.View style={[styles.contentWrapper, contentStyle]}>
                         <ScrollView
                             style={styles.content}
                             keyboardShouldPersistTaps="handled"
                             showsVerticalScrollIndicator={false}
                         >
                             {currentStep === 1 && (
-                                <Step1ScanCode
-                                    barcode={itemData.barcode}
-                                    onBarcodeChange={(barcode) => {
-                                        const sanitized = barcode.replace(/[\s-]/g, "").trim();
-                                        setItemData((prev) => ({ ...prev, barcode: sanitized }));
-                                    }}
-                                    onBarcodeScanned={handleBarcodeScanned}
-                                    isValidBarcode={isValidBarcode}
-                                    barcodeType={barcodeType}
-                                />
-                            )}
-
-                            {currentStep === 2 && (
-                                <Step2Details
-                                    productData={itemData.productData}
-                                    barcode={itemData.barcode}
+                                <Step1Details
+                                    customTitle={itemData.customTitle}
+                                    customBrand={itemData.customBrand}
                                     condition={itemData.condition}
                                     description={itemData.description}
+                                    onCustomTitleChange={(t) => setItemData(prev => ({ ...prev, customTitle: t }))}
+                                    onCustomBrandChange={(b) => setItemData(prev => ({ ...prev, customBrand: b }))}
                                     onConditionChange={(c) => setItemData(prev => ({ ...prev, condition: c }))}
                                     onDescriptionChange={(d) => setItemData(prev => ({ ...prev, description: d }))}
                                     haptics={haptics}
                                 />
                             )}
 
-                            {currentStep === 3 && (
-                                <Step3PricingVisibility
+                            {currentStep === 2 && (
+                                <Step2Pricing
                                     price={itemData.price}
                                     forSale={itemData.forSale}
                                     selectedShowcaseIds={itemData.selectedShowcaseIds}
@@ -364,31 +270,21 @@ export default function CreateItemWizard({
                     {/* Navigation */}
                     <View style={styles.navigation}>
                         {currentStep > 1 && (
-                            <TouchableOpacity 
-                                style={styles.backButton} 
-                                onPress={prevStep}
-                                activeOpacity={0.7}
-                            >
+                            <TouchableOpacity style={styles.backButton} onPress={prevStep} activeOpacity={0.7}>
                                 <Text style={styles.backButtonText}>Back</Text>
                             </TouchableOpacity>
                         )}
 
                         <View style={styles.spacer} />
 
-                        {currentStep < 3 ? (
+                        {currentStep < 2 ? (
                             <TouchableOpacity
                                 style={[
                                     styles.nextButton,
-                                    (currentStep === 1 && !canProceedToStep2) ||
-                                        (currentStep === 2 && !canProceedToStep3)
-                                        ? styles.disabledButton
-                                        : null,
+                                    !canProceedToStep2 ? styles.disabledButton : null,
                                 ]}
                                 onPress={nextStep}
-                                disabled={
-                                    (currentStep === 1 && !canProceedToStep2) ||
-                                    (currentStep === 2 && !canProceedToStep3)
-                                }
+                                disabled={!canProceedToStep2}
                                 activeOpacity={0.8}
                             >
                                 <Text style={styles.nextButtonText}>Next</Text>
@@ -424,21 +320,21 @@ export default function CreateItemWizard({
                 onClose={() => setSuccessModalOpen(false)}
                 onCreateAnother={handleCreateAnother}
                 onViewShowcase={handleViewShowcase}
-                itemTitle={activeTitle}
+                itemTitle={itemData.customTitle}
                 showcaseCount={itemData.selectedShowcaseIds.length}
             />
         </Modal>
     );
 }
 
-// Progress Indicator Component
+// Progress Indicator
 function ProgressIndicator({ currentStep }: { currentStep: Step }) {
     return (
         <View style={styles.progressContainer}>
-            {[1, 2, 3].map((step) => (
-                <StepDot 
-                    key={step} 
-                    step={step} 
+            {[1, 2].map((step) => (
+                <StepDot
+                    key={step}
+                    step={step}
                     isActive={currentStep === step}
                     isCompleted={currentStep > step}
                 />
@@ -447,12 +343,12 @@ function ProgressIndicator({ currentStep }: { currentStep: Step }) {
     );
 }
 
-function StepDot({ 
-    step, 
-    isActive, 
-    isCompleted 
-}: { 
-    step: number; 
+function StepDot({
+    step,
+    isActive,
+    isCompleted,
+}: {
+    step: number;
     isActive: boolean;
     isCompleted: boolean;
 }) {
@@ -473,8 +369,7 @@ function StepDot({
             opacity.value = withTiming(0.4, { duration: 200 });
             checkScale.value = withTiming(0, { duration: 150 });
         }
-        // eslint-disable-next-line react-hooks/exhaustive-deps
-    }, [isActive, isCompleted]);
+    }, [isActive, isCompleted, scale, opacity, checkScale]);
 
     const animatedStyle = useAnimatedStyle(() => ({
         transform: [{ scale: scale.value }],
@@ -501,117 +396,36 @@ function StepDot({
                     </Animated.View>
                 )}
                 {!isCompleted && (
-                    <Text style={[
-                        styles.progressNumber,
-                        isActive && styles.progressNumberActive
-                    ]}>
+                    <Text style={[styles.progressNumber, isActive && styles.progressNumberActive]}>
                         {step}
                     </Text>
                 )}
             </Animated.View>
-            <Text
-                style={[
-                    styles.progressLabel,
-                    (isActive || isCompleted) && styles.progressLabelActive,
-                ]}
-            >
-                {step === 1 ? "Scan" : step === 2 ? "Details" : "Pricing"}
+            <Text style={[styles.progressLabel, (isActive || isCompleted) && styles.progressLabelActive]}>
+                {step === 1 ? "Details" : "Pricing"}
             </Text>
         </View>
     );
 }
 
 // Step Components
-function Step1ScanCode({
-    barcode,
-    onBarcodeChange,
-    onBarcodeScanned,
-    isValidBarcode,
-    barcodeType,
-}: {
-    barcode: string;
-    onBarcodeChange: (val: string) => void;
-    onBarcodeScanned: (val: string) => void;
-    isValidBarcode: boolean;
-    barcodeType: string;
-}) {
-    const [scannerOpen, setScannerOpen] = useState(false);
-
-    return (
-        <View style={styles.stepContent}>
-            <Text style={styles.stepTitle}>Item Identification</Text>
-            <Text style={styles.stepDescription}>
-                Scan a barcode or enter the product code
-            </Text>
-
-            <View style={styles.inputContainer}>
-                <TextInput
-                    style={[
-                        styles.barcodeInput,
-                        isValidBarcode && styles.barcodeInputValid
-                    ]}
-                    placeholder="Enter barcode or scan"
-                    placeholderTextColor={COLORS.grey}
-                    value={barcode}
-                    onChangeText={onBarcodeChange}
-                    autoCapitalize="none"
-                    autoCorrect={false}
-                    keyboardType="numeric"
-                />
-                <TouchableOpacity
-                    style={styles.scanButton}
-                    onPress={() => setScannerOpen(true)}
-                    activeOpacity={0.7}
-                >
-                    <Ionicons name="camera" size={20} color={COLORS.white} />
-                </TouchableOpacity>
-            </View>
-
-            {barcode.length > 0 && (
-                <View style={styles.barcodeInfo}>
-                    <View style={styles.barcodeStatusRow}>
-                        <Ionicons 
-                            name={isValidBarcode ? "checkmark-circle" : "information-circle"} 
-                            size={18} 
-                            color={isValidBarcode ? "#4CAF50" : COLORS.grey} 
-                        />
-                        <Text
-                            style={[
-                                styles.barcodeStatus,
-                                isValidBarcode && styles.validBarcode,
-                            ]}
-                        >
-                            {isValidBarcode ? barcodeType : "Enter a valid barcode"}
-                        </Text>
-                    </View>
-                </View>
-            )}
-
-            <BarcodeScannerModal
-                visible={scannerOpen}
-                onClose={() => setScannerOpen(false)}
-                onBarcodeScanned={(code) => {
-                    onBarcodeScanned(code);
-                    setScannerOpen(false);
-                }}
-            />
-        </View>
-    );
-}
-
-function Step2Details({
-    productData,
-    barcode,
+function Step1Details({
+    customTitle,
+    customBrand,
     condition,
     description,
+    onCustomTitleChange,
+    onCustomBrandChange,
     onConditionChange,
     onDescriptionChange,
     haptics,
 }: {
-    productData?: Product | null;
-    barcode: string;
+    customTitle: string;
+    customBrand: string;
     condition: ItemCondition | "";
     description: string;
+    onCustomTitleChange: (val: string) => void;
+    onCustomBrandChange: (val: string) => void;
     onConditionChange: (val: ItemCondition | "") => void;
     onDescriptionChange: (val: string) => void;
     haptics: ReturnType<typeof useHaptics>;
@@ -632,13 +446,29 @@ function Step2Details({
     return (
         <View style={styles.stepContent}>
             <Text style={styles.stepTitle}>Item Details</Text>
+            
+            <View style={styles.fieldContainer}>
+                <Text style={styles.fieldLabel}>Item Title *</Text>
+                <TextInput
+                    style={styles.textInput}
+                    placeholder="e.g. Vintage Camera"
+                    placeholderTextColor={COLORS.grey}
+                    value={customTitle}
+                    onChangeText={onCustomTitleChange}
+                    autoFocus
+                />
+            </View>
 
-            {productData && (
-                <View style={styles.productSummary}>
-                    <Text style={styles.productTitle}>{productData.title}</Text>
-                    <Text style={styles.productBrand}>{productData.brand}</Text>
-                </View>
-            )}
+            <View style={styles.fieldContainer}>
+                <Text style={styles.fieldLabel}>Brand / Manufacturer</Text>
+                <TextInput
+                    style={styles.textInput}
+                    placeholder="e.g. Canon"
+                    placeholderTextColor={COLORS.grey}
+                    value={customBrand}
+                    onChangeText={onCustomBrandChange}
+                />
+            </View>
 
             <View style={styles.fieldContainer}>
                 <Text style={styles.fieldLabel}>Condition *</Text>
@@ -664,7 +494,7 @@ function Step2Details({
                 <Text style={styles.fieldLabel}>Description (Optional)</Text>
                 <TextInput
                     style={styles.descriptionInput}
-                    placeholder="Notes about this specific copy..."
+                    placeholder="Notes about this item..."
                     placeholderTextColor={COLORS.grey}
                     value={description}
                     onChangeText={onDescriptionChange}
@@ -724,7 +554,7 @@ function Step2Details({
     );
 }
 
-function Step3PricingVisibility({
+function Step2Pricing({
     price,
     forSale,
     selectedShowcaseIds,
@@ -757,8 +587,6 @@ function Step3PricingVisibility({
         onToggleShowcase(id);
     };
 
-    const switchTrackColor = { false: COLORS.slate, true: COLORS.primary };
-
     return (
         <View style={styles.stepContent}>
             <Text style={styles.stepTitle}>Pricing & Visibility</Text>
@@ -787,7 +615,7 @@ function Step3PricingVisibility({
                     <Switch
                         value={forSale}
                         onValueChange={onForSaleChange}
-                        trackColor={switchTrackColor}
+                        trackColor={{ false: COLORS.slate, true: COLORS.primary }}
                         thumbColor={COLORS.white}
                     />
                 </View>
@@ -904,7 +732,7 @@ const styles = StyleSheet.create({
         fontSize: 18,
         fontWeight: "700",
     },
-    contentContainer: {
+    contentWrapper: {
         flex: 1,
     },
     content: {
@@ -917,7 +745,7 @@ const styles = StyleSheet.create({
         paddingVertical: 20,
         borderBottomWidth: 1,
         borderBottomColor: COLORS.surfaceLight,
-        gap: 40,
+        gap: 60,
     },
     progressStep: {
         alignItems: "center",
@@ -965,21 +793,18 @@ const styles = StyleSheet.create({
         color: COLORS.white,
         fontSize: 24,
         fontWeight: "700",
-        marginBottom: 8,
+        marginBottom: 20,
     },
-    stepDescription: {
-        color: COLORS.grey,
+    fieldContainer: {
+        marginBottom: 20,
+    },
+    fieldLabel: {
+        color: COLORS.white,
         fontSize: 15,
-        marginBottom: 24,
-        lineHeight: 22,
+        fontWeight: "600",
+        marginBottom: 10,
     },
-    inputContainer: {
-        flexDirection: "row",
-        gap: 12,
-        marginBottom: 12,
-    },
-    barcodeInput: {
-        flex: 1,
+    textInput: {
         height: 56,
         backgroundColor: COLORS.surface,
         borderRadius: 12,
@@ -989,37 +814,76 @@ const styles = StyleSheet.create({
         borderColor: COLORS.surfaceLight,
         fontSize: 16,
     },
-    barcodeInputValid: {
-        borderColor: "#4CAF50",
-    },
-    scanButton: {
-        width: 56,
-        height: 56,
-        backgroundColor: COLORS.primary,
+    descriptionInput: {
+        backgroundColor: COLORS.surface,
         borderRadius: 12,
-        justifyContent: "center",
-        alignItems: "center",
-        shadowColor: COLORS.primary,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 4,
+        padding: 16,
+        color: COLORS.white,
+        borderWidth: 1,
+        borderColor: COLORS.surfaceLight,
+        minHeight: 120,
+        textAlignVertical: "top",
+        fontSize: 15,
     },
-    barcodeInfo: {
-        marginBottom: 24,
-    },
-    barcodeStatusRow: {
+    selectorButton: {
         flexDirection: "row",
+        justifyContent: "space-between",
         alignItems: "center",
-        gap: 8,
+        height: 56,
+        backgroundColor: COLORS.surface,
+        borderRadius: 12,
+        paddingHorizontal: 16,
+        borderWidth: 1,
+        borderColor: COLORS.surfaceLight,
     },
-    barcodeStatus: {
-        fontSize: 14,
-        color: COLORS.grey,
+    selectorButtonActive: {
+        borderColor: COLORS.primary,
+    },
+    selectorText: {
+        color: COLORS.white,
+        fontSize: 16,
         fontWeight: "500",
     },
-    validBarcode: {
-        color: "#4CAF50",
+    selectorTextPlaceholder: {
+        color: COLORS.grey,
+        fontWeight: "400",
+    },
+    priceInputContainer: {
+        flexDirection: "row",
+        alignItems: "center",
+        backgroundColor: COLORS.surface,
+        borderRadius: 12,
+        borderWidth: 1,
+        borderColor: COLORS.surfaceLight,
+        paddingHorizontal: 16,
+        height: 56,
+    },
+    currencySymbol: {
+        color: COLORS.grey,
+        fontSize: 20,
+        marginRight: 8,
+        fontWeight: "600",
+    },
+    priceInput: {
+        flex: 1,
+        color: COLORS.white,
+        fontSize: 18,
+        fontWeight: "600",
+    },
+    switchRow: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        backgroundColor: COLORS.surface,
+        borderRadius: 12,
+        padding: 16,
+        borderWidth: 1,
+        borderColor: COLORS.surfaceLight,
+    },
+    switchHint: {
+        color: COLORS.grey,
+        fontSize: 13,
+        marginTop: 2,
     },
     navigation: {
         flexDirection: "row",
@@ -1080,105 +944,6 @@ const styles = StyleSheet.create({
     disabledButton: {
         opacity: 0.4,
         shadowOpacity: 0,
-    },
-    fieldContainer: {
-        marginBottom: 24,
-    },
-    fieldLabel: {
-        color: COLORS.white,
-        fontSize: 15,
-        fontWeight: "600",
-        marginBottom: 10,
-    },
-    selectorButton: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        height: 56,
-        backgroundColor: COLORS.surface,
-        borderRadius: 12,
-        paddingHorizontal: 16,
-        borderWidth: 1,
-        borderColor: COLORS.surfaceLight,
-    },
-    selectorButtonActive: {
-        borderColor: COLORS.primary,
-    },
-    selectorText: {
-        color: COLORS.white,
-        fontSize: 16,
-        fontWeight: "500",
-    },
-    selectorTextPlaceholder: {
-        color: COLORS.grey,
-        fontWeight: "400",
-    },
-    descriptionInput: {
-        backgroundColor: COLORS.surface,
-        borderRadius: 12,
-        padding: 16,
-        color: COLORS.white,
-        borderWidth: 1,
-        borderColor: COLORS.surfaceLight,
-        minHeight: 120,
-        textAlignVertical: "top",
-        fontSize: 15,
-    },
-    productSummary: {
-        backgroundColor: COLORS.surface,
-        padding: 16,
-        borderRadius: 12,
-        marginBottom: 24,
-        borderWidth: 1,
-        borderColor: COLORS.surfaceLight,
-    },
-    productTitle: {
-        color: COLORS.white,
-        fontSize: 17,
-        fontWeight: "600",
-        marginBottom: 4,
-    },
-    productBrand: {
-        color: COLORS.primary,
-        fontSize: 14,
-        fontWeight: "500",
-    },
-    priceInputContainer: {
-        flexDirection: "row",
-        alignItems: "center",
-        backgroundColor: COLORS.surface,
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: COLORS.surfaceLight,
-        paddingHorizontal: 16,
-        height: 56,
-    },
-    currencySymbol: {
-        color: COLORS.grey,
-        fontSize: 20,
-        marginRight: 8,
-        fontWeight: "600",
-    },
-    priceInput: {
-        flex: 1,
-        color: COLORS.white,
-        fontSize: 18,
-        fontWeight: "600",
-    },
-    switchRow: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        backgroundColor: COLORS.surface,
-        borderRadius: 12,
-        padding: 16,
-        borderWidth: 1,
-        borderColor: COLORS.surfaceLight,
-    },
-    switchHint: {
-        color: COLORS.grey,
-        fontSize: 13,
-        marginTop: 2,
     },
     modalBackdrop: {
         flex: 1,
