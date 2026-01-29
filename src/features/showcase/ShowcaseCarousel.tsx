@@ -18,9 +18,12 @@ const ITEM_SIZE = screenWidth * 0.65; // 65% of screen width for larger posters
 const SPACER_SIZE = (screenWidth - ITEM_SIZE) / 2;
 const BACKDROP_HEIGHT = screenHeight * 0.75; // Cover top 75% of screen (extended)
 const POSTER_HEIGHT = screenHeight * 0.45; // Poster card height
+const OVERLAP = 10; // Extra width to prevent sub-pixel gaps on Android
 
 const AnimatedFlatList = Animated.createAnimatedComponent(FlatList);
 const AnimatedImage = Animated.createAnimatedComponent(Image);
+
+const PLACEHOLDER_IMAGE = require("../../../assets/images/placeholder.png");
 
 type Props = {
   data: ItemWithProduct[];
@@ -44,28 +47,28 @@ const Backdrop = React.memo(
               ? productData.images[0]
               : undefined);
 
-          if (!backdropImageUrl) {
-            return null;
-          }
-
           const adjustedIndex = index + 1;
           const inputRange = [
             (adjustedIndex - 2) * ITEM_SIZE,
             (adjustedIndex - 1) * ITEM_SIZE,
+            adjustedIndex * ITEM_SIZE,
           ];
 
-          // The Window: Moves from -width to 0 (Left -> Right)
+          // Fade removed as per user request
+          const opacity = 1;
+
+          // The Curtain: Moves from -width to 0
+          // We add OVERLAP to ensure it fully covers the previous image on the right
           const translateX = scrollX.interpolate({
-            inputRange,
-            outputRange: [-screenWidth, 0],
+            inputRange: [inputRange[0], inputRange[1]],
+            outputRange: [-screenWidth - OVERLAP, 0],
             extrapolate: "clamp",
           });
 
-          // The World Inside: Moves from +width to 0 (Right -> Left)
-          // This counter-movement makes the image appear stationary/parallaxed relative to the screen
+          // The Stationary World: Moves from +width to 0 (counteracts parent movement)
           const inverseTranslateX = scrollX.interpolate({
-            inputRange,
-            outputRange: [screenWidth, 0],
+            inputRange: [inputRange[0], inputRange[1]],
+            outputRange: [screenWidth + OVERLAP, 0],
             extrapolate: "clamp",
           });
 
@@ -75,25 +78,31 @@ const Backdrop = React.memo(
               style={[
                 styles.backdropImageContainer,
                 {
-                  overflow: "hidden", // The Curtain Clipping Magic
+                  width: screenWidth + OVERLAP, // Slightly wider
+                  overflow: "hidden",
+                  opacity,
                   transform: [{ translateX }],
+                  zIndex: index,
                 },
               ]}
             >
-              <AnimatedImage
-                source={{ uri: backdropImageUrl }}
-                style={[
-                  styles.backdropImage,
-                  {
-                    transform: [{ translateX: inverseTranslateX }],
-                  },
-                ]}
-                contentFit="cover"
-                transition={0}
-                cachePolicy="memory-disk"
-                priority="high"
-                recyclingKey={item.id.toString()}
-              />
+              <Animated.View
+                style={{
+                  width: screenWidth + OVERLAP,
+                  height: BACKDROP_HEIGHT,
+                  transform: [{ translateX: inverseTranslateX }],
+                }}
+              >
+                <Image
+                  source={backdropImageUrl ? { uri: backdropImageUrl } : PLACEHOLDER_IMAGE}
+                  style={styles.backdropImage}
+                  contentFit="cover"
+                  transition={0}
+                  cachePolicy="memory-disk"
+                  priority="high"
+                  recyclingKey={item.id.toString()}
+                />
+              </Animated.View>
             </Animated.View>
           );
         })}
@@ -195,21 +204,15 @@ function ShowcaseCarousel({ data, onItemPress, onIndexChange }: Props) {
                 activeOpacity={0.9}
               >
                 <View style={styles.posterCard}>
-                  {imageUrl ? (
-                    <Image
-                      source={{ uri: imageUrl }}
-                      style={styles.posterImage}
-                      contentFit="cover"
-                      transition={0}
-                      cachePolicy="memory-disk"
-                      priority="high"
-                      recyclingKey={actualItem.id.toString()}
-                    />
-                  ) : (
-                    <View style={styles.imagePlaceholder}>
-                      <Text style={styles.placeholderText}>No Image</Text>
-                    </View>
-                  )}
+                  <Image
+                    source={imageUrl ? { uri: imageUrl } : PLACEHOLDER_IMAGE}
+                    style={styles.posterImage}
+                    contentFit="cover"
+                    transition={0}
+                    cachePolicy="memory-disk"
+                    priority="high"
+                    recyclingKey={actualItem.id.toString()}
+                  />
                 </View>
               </TouchableOpacity>
             </Animated.View>
@@ -224,7 +227,7 @@ function ShowcaseCarousel({ data, onItemPress, onIndexChange }: Props) {
         horizontal
         showsHorizontalScrollIndicator={false}
         snapToInterval={ITEM_SIZE}
-        decelerationRate={0}
+        decelerationRate={0.2}
         bounces={false}
         scrollEventThrottle={16}
         removeClippedSubviews={true}

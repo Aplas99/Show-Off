@@ -67,6 +67,8 @@ export interface ItemWithProduct {
   price: number | null;
   currency_code?: string;
   products: ShowcaseItemProduct | null;
+  custom_title?: string | null;
+  custom_brand?: string | null;
 }
 
 const BarcodeLookupAPIKey =
@@ -239,9 +241,11 @@ export function useCreateItemWithProductLookup() {
       if (!user) throw new Error("User not authenticated");
 
       let productData: Product | undefined;
-      const { ean, upc, isbn } = normalizeCodes(payload.searchQuery);
+      const { ean, upc, isbn } = payload.searchQuery
+        ? normalizeCodes(payload.searchQuery)
+        : { ean: undefined, upc: undefined, isbn: undefined };
 
-      if (ean || upc || isbn) {
+      if ((ean || upc || isbn) && payload.searchQuery) {
         try {
           // Try UPCItemDB first (free/trial)
           const upcItems = await fetchFromUPCItemDB(payload.searchQuery);
@@ -262,6 +266,9 @@ export function useCreateItemWithProductLookup() {
         .insert({
           user_id: user.id,
           product_ean: productData?.ean || ean || upc || null,
+          is_verified: !!(productData?.ean || ean || upc),
+          custom_title: payload.customTitle || null,
+          custom_brand: payload.customBrand || null,
           condition: payload.condition,
           user_description: payload.userDescription,
           for_sale: payload.forSale,
@@ -299,7 +306,7 @@ export function useGetItemsWithProductData(showcaseId: string) {
                     item_id,
                     showcase_id,
                     items (
-                        id, user_id, product_ean, created_at, image_url, condition, user_description, for_sale, price, currency_code,
+                        id, user_id, product_ean, created_at, image_url, condition, user_description, for_sale, price, currency_code, custom_title, custom_brand,
                         products (
                             ean, searchableTitle, searchableDescription, searchableBrand, data
                         )
@@ -332,6 +339,8 @@ export function useGetItemsWithProductData(showcaseId: string) {
 
           return {
             ...item,
+            custom_title: item.custom_title, // Ensure these are passed through if selected
+            custom_brand: item.custom_brand,
             showcase_id: row.showcase_id,
             products: product
               ? {
