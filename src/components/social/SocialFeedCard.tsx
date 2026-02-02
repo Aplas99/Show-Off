@@ -126,9 +126,11 @@ const SocialFeedCard = ({ item, cardHeight, tabBarHeight = 0, onCommentPress, is
                         transition={300}
                     />
                 ) : (
-                    <View style={[styles.mainImage, styles.placeholderImage]}>
-                        <Ionicons name="image-outline" size={64} color="#333" />
-                    </View>
+                    <Image
+                        source={require("@/assets/images/placeholder.png")}
+                        style={styles.mainImage}
+                        contentFit="cover"
+                    />
                 )}
 
                 {/* Dark Gradient Overlay for text readability */}
@@ -143,32 +145,34 @@ const SocialFeedCard = ({ item, cardHeight, tabBarHeight = 0, onCommentPress, is
                 <TouchableOpacity style={styles.actionItem} onPress={handleLike}>
                     <Animated.View style={{ transform: [{ scale: likeScale }] }}>
                         <Ionicons
-                            name={isLiked ? "heart" : "heart-outline"}
+                            name="heart"
                             size={36}
                             color={isLiked ? "#EF4444" : "#FFF"}
+                            style={styles.iconShadow}
                         />
                     </Animated.View>
                     <Text style={styles.actionText}>{likeCount}</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity style={styles.actionItem} onPress={handleComment}>
-                    <Ionicons name="chatbubble-outline" size={32} color="#FFF" />
+                    <Ionicons name="chatbubble" size={32} color="#FFF" style={styles.iconShadow} />
                     <Text style={styles.actionText}>{commentCount}</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity style={styles.actionItem} onPress={handleBookmark}>
                     <Animated.View style={{ transform: [{ scale: bookmarkScale }] }}>
                         <Ionicons
-                            name={isBookmarked ? "bookmark" : "bookmark-outline"}
+                            name="bookmark"
                             size={32}
                             color={isBookmarked ? COLORS.primary : "#FFF"}
+                            style={styles.iconShadow}
                         />
                     </Animated.View>
                     <Text style={styles.actionText}>Save</Text>
                 </TouchableOpacity>
 
                 <TouchableOpacity style={styles.actionItem} onPress={handleShare}>
-                    <Ionicons name="share-social-outline" size={32} color="#FFF" />
+                    <Ionicons name="share-social" size={32} color="#FFF" style={styles.iconShadow} />
                     <Text style={styles.actionText}>Share</Text>
                 </TouchableOpacity>
             </View>
@@ -198,7 +202,7 @@ const SocialFeedCard = ({ item, cardHeight, tabBarHeight = 0, onCommentPress, is
                     </Text>
                     {item.products?.searchableTitle && (
                         <View style={styles.productTag}>
-                            <Ionicons name="pricetag-outline" size={14} color={COLORS.primary} />
+                            <Ionicons name="pricetag" size={14} color={COLORS.primary} />
                             <Text style={styles.productText}>{item.products.searchableTitle}</Text>
                         </View>
                     )}
@@ -245,6 +249,16 @@ const styles = StyleSheet.create({
         fontSize: 12,
         fontWeight: "600",
         marginTop: 4,
+        textShadowColor: 'rgba(0, 0, 0, 0.5)',
+        textShadowOffset: { width: 1, height: 1 },
+        textShadowRadius: 3,
+    },
+    iconShadow: {
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.5,
+        shadowRadius: 4,
+        elevation: 5,
     },
     bottomOverlay: {
         position: "absolute",
@@ -280,6 +294,9 @@ const styles = StyleSheet.create({
         color: "#FFF",
         fontSize: 16,
         fontWeight: "bold",
+        textShadowColor: 'rgba(0, 0, 0, 0.5)',
+        textShadowOffset: { width: 1, height: 1 },
+        textShadowRadius: 2,
     },
     captionContainer: {
         gap: 8,
@@ -288,6 +305,9 @@ const styles = StyleSheet.create({
         color: "#FFF",
         fontSize: 14,
         lineHeight: 20,
+        textShadowColor: 'rgba(0, 0, 0, 0.5)',
+        textShadowOffset: { width: 1, height: 1 },
+        textShadowRadius: 2,
     },
     productTag: {
         flexDirection: "row",

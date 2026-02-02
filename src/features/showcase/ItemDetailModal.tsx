@@ -140,6 +140,16 @@ export default function ItemDetailModal({ visible, item, onClose }: Props) {
       : productData.offers?.[0]?.price;
   const currency = displayItem?.currency_code || productData.offers?.[0]?.currency || "USD";
 
+  const category =
+    displayItem?.custom_category ||
+    productData.category ||
+    "Uncategorized";
+
+  const publisher =
+    displayItem?.custom_publisher ||
+    productData.publisher ||
+    "Unknown";
+
   // --- Animation Interpolations ---
 
   // Parallax Header
@@ -295,13 +305,13 @@ export default function ItemDetailModal({ visible, item, onClose }: Props) {
                 <InfoItem
                   icon="pricetag-outline"
                   label="Category"
-                  value={productData.category || "Uncategorized"}
+                  value={category}
                   color="#3B82F6"
                 />
                 <InfoItem
                   icon="business-outline"
                   label="Publisher"
-                  value={productData.publisher || "Unknown"}
+                  value={publisher}
                   color="#F59E0B"
                 />
                 <InfoItem

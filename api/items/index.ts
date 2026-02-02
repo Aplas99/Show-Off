@@ -1,3 +1,4 @@
+import { uploadImageToSupabase } from "@/api/storage";
 import {
   CreateItemPayload,
   validateCreateItem,
@@ -69,6 +70,8 @@ export interface ItemWithProduct {
   products: ShowcaseItemProduct | null;
   custom_title?: string | null;
   custom_brand?: string | null;
+  custom_publisher?: string | null;
+  custom_category?: string | null;
 }
 
 const BarcodeLookupAPIKey =
@@ -261,6 +264,21 @@ export function useCreateItemWithProductLookup() {
         }
       }
 
+      // Handle Image Upload
+      let finalImageUrl = payload.imageUrl;
+      if (payload.imageFile) {
+        try {
+          // Upload local file to Supabase Storage
+          finalImageUrl = await uploadImageToSupabase({
+            uri: payload.imageFile,
+            fileSize: undefined, // We can pass size if we have it, or let function check
+          });
+        } catch (e) {
+          console.error("Failed to upload image:", e);
+          throw e; // Fail creation if upload fails
+        }
+      }
+
       const { data: item, error } = await supabase
         .from("items")
         .insert({
@@ -269,10 +287,13 @@ export function useCreateItemWithProductLookup() {
           is_verified: !!(productData?.ean || ean || upc),
           custom_title: payload.customTitle || null,
           custom_brand: payload.customBrand || null,
+          custom_publisher: payload.customPublisher || null,
+          custom_category: payload.customCategory || null,
           condition: payload.condition,
           user_description: payload.userDescription,
           for_sale: payload.forSale,
           price: payload.price,
+          image_url: finalImageUrl || null,
         })
         .select()
         .single();
@@ -306,7 +327,7 @@ export function useGetItemsWithProductData(showcaseId: string) {
                     item_id,
                     showcase_id,
                     items (
-                        id, user_id, product_ean, created_at, image_url, condition, user_description, for_sale, price, currency_code, custom_title, custom_brand,
+                        id, user_id, product_ean, created_at, image_url, condition, user_description, for_sale, price, currency_code, custom_title, custom_brand, custom_publisher, custom_category,
                         products (
                             ean, searchableTitle, searchableDescription, searchableBrand, data
                         )
@@ -341,6 +362,8 @@ export function useGetItemsWithProductData(showcaseId: string) {
             ...item,
             custom_title: item.custom_title, // Ensure these are passed through if selected
             custom_brand: item.custom_brand,
+            custom_publisher: item.custom_publisher,
+            custom_category: item.custom_category,
             showcase_id: row.showcase_id,
             products: product
               ? {

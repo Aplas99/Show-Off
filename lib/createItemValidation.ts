@@ -6,6 +6,8 @@ export const createItemSchema = z
         searchQuery: z.string().trim().optional(),
         customTitle: z.string().trim().optional(),
         customBrand: z.string().trim().optional(),
+        customPublisher: z.string().trim().optional(),
+        customCategory: z.string().trim().optional(),
         condition: z.enum([...ITEM_CONDITIONS] as [string, ...string[]], {
             message: "Invalid item: Condition is required.",
         }),
@@ -16,6 +18,7 @@ export const createItemSchema = z
             .nonnegative("Invalid item: Price must be a positive number.")
             .nullable()
             .optional(),
+        imageFile: z.string().optional(),
         imageUrl: z.string().nullable().optional(),
     })
     .refine((data) => data.searchQuery || data.customTitle, {

@@ -3,6 +3,8 @@ import { COLORS } from "@/constants/theme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { validateCreateItem } from "@/lib/createItemValidation";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
+import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
@@ -36,16 +38,19 @@ type Props = {
     onSuccess?: (itemTitle: string, showcaseCount: number) => void;
 };
 
-type Step = 1 | 2;
+type Step = 1 | 2 | 3;
 
 interface ManualItemData {
     customTitle: string;
     customBrand: string;
+    customPublisher: string;
+    customCategory: string;
     condition: ItemCondition | "";
     description: string;
     price: string;
     forSale: boolean;
     selectedShowcaseIds: string[];
+    imageUri: string | null;
 }
 
 export default function ManualCreateItemWizard({
@@ -55,19 +60,23 @@ export default function ManualCreateItemWizard({
 }: Props) {
     const router = useRouter();
     const haptics = useHaptics();
-    
+
     const [currentStep, setCurrentStep] = useState<Step>(1);
     const [successModalOpen, setSuccessModalOpen] = useState(false);
     const [generationModalOpen, setGenerationModalOpen] = useState(false);
+    const [apiFinished, setApiFinished] = useState(false);
 
     const [itemData, setItemData] = useState<ManualItemData>({
         customTitle: "",
         customBrand: "",
+        customPublisher: "",
+        customCategory: "",
         condition: "",
         description: "",
         price: "",
         forSale: false,
         selectedShowcaseIds: [],
+        imageUri: null,
     });
 
     // Animation values
@@ -79,8 +88,9 @@ export default function ManualCreateItemWizard({
     const linkToShowcases = useLinkItemToShowcases();
     const { data: showcases, isLoading: loadingShowcases } = useGetVisibleShowcases();
 
-    const canProceedToStep2 = itemData.customTitle.trim() !== "" && itemData.condition !== "";
-    const canCreateItem = canProceedToStep2;
+    const canProceedToStep2 = itemData.customTitle.trim() !== "";
+    const canProceedToStep3 = itemData.condition !== "";
+    const canCreateItem = canProceedToStep3;
 
     const animateStepTransition = useCallback((direction: "next" | "back") => {
         contentOpacity.value = withTiming(0, { duration: 150 }, () => {
@@ -91,7 +101,7 @@ export default function ManualCreateItemWizard({
     }, [slideAnim, contentOpacity]);
 
     const nextStep = async () => {
-        if (currentStep < 2) {
+        if (currentStep < 3) {
             await haptics.medium();
             animateStepTransition("next");
             setTimeout(() => {
@@ -117,17 +127,22 @@ export default function ManualCreateItemWizard({
                 searchQuery: undefined,
                 customTitle: itemData.customTitle,
                 customBrand: itemData.customBrand || undefined,
+                customPublisher: itemData.customPublisher || undefined,
+                customCategory: itemData.customCategory || undefined,
                 condition: itemData.condition as ItemCondition,
                 userDescription: itemData.description || null,
                 forSale: itemData.forSale,
                 price: itemData.price.trim() !== "" ? Number(itemData.price) : null,
+                imageFile: itemData.imageUri || undefined,
                 imageUrl: null,
             };
 
             validateCreateItem(payload);
             setGenerationModalOpen(true);
+            setApiFinished(false);
 
             const res = await createItemWithProduct.mutateAsync(payload);
+            setApiFinished(true);
 
             if (itemData.selectedShowcaseIds.length > 0 && res?.itemId) {
                 await linkToShowcases.mutateAsync({
@@ -168,11 +183,14 @@ export default function ManualCreateItemWizard({
         setItemData({
             customTitle: "",
             customBrand: "",
-            condition: "",
+            customPublisher: "",
+            customCategory: "",
+            condition: "", // Clear condition to prevent carrying over
             description: "",
             price: "",
             forSale: false,
             selectedShowcaseIds: [],
+            imageUri: null,
         });
     };
 
@@ -237,30 +255,77 @@ export default function ManualCreateItemWizard({
                             keyboardShouldPersistTaps="handled"
                             showsVerticalScrollIndicator={false}
                         >
+                            {/* Step Content */}
                             {currentStep === 1 && (
                                 <Step1Details
                                     customTitle={itemData.customTitle}
                                     customBrand={itemData.customBrand}
-                                    condition={itemData.condition}
-                                    description={itemData.description}
-                                    onCustomTitleChange={(t) => setItemData(prev => ({ ...prev, customTitle: t }))}
-                                    onCustomBrandChange={(b) => setItemData(prev => ({ ...prev, customBrand: b }))}
-                                    onConditionChange={(c) => setItemData(prev => ({ ...prev, condition: c }))}
-                                    onDescriptionChange={(d) => setItemData(prev => ({ ...prev, description: d }))}
+                                    customPublisher={itemData.customPublisher}
+                                    onCustomTitleChange={(val) =>
+                                        setItemData((prev) => ({ ...prev, customTitle: val }))
+                                    }
+                                    onCustomBrandChange={(val) =>
+                                        setItemData((prev) => ({ ...prev, customBrand: val }))
+                                    }
+                                    onCustomPublisherChange={(val) =>
+                                        setItemData((prev) => ({ ...prev, customPublisher: val }))
+                                    }
                                     haptics={haptics}
+                                    imageUri={itemData.imageUri}
+                                    onImageChange={(uri) =>
+                                        setItemData((prev) => ({ ...prev, imageUri: uri }))
+                                    }
                                 />
                             )}
 
                             {currentStep === 2 && (
-                                <Step2Pricing
+                                <Step2Info
+                                    customCategory={itemData.customCategory}
+                                    condition={itemData.condition}
+                                    description={itemData.description}
+                                    onCustomCategoryChange={(val) =>
+                                        setItemData((prev) => ({ ...prev, customCategory: val }))
+                                    }
+                                    onConditionChange={(val) =>
+                                        setItemData((prev) => ({ ...prev, condition: val }))
+                                    }
+                                    onDescriptionChange={(val) =>
+                                        setItemData((prev) => ({ ...prev, description: val }))
+                                    }
+                                    haptics={haptics}
+                                />
+                            )}
+
+                            {currentStep === 3 && (
+                                <Step3Pricing
                                     price={itemData.price}
                                     forSale={itemData.forSale}
                                     selectedShowcaseIds={itemData.selectedShowcaseIds}
-                                    onPriceChange={(p) => setItemData(prev => ({ ...prev, price: p }))}
-                                    onForSaleChange={(f) => setItemData(prev => ({ ...prev, forSale: f }))}
-                                    onToggleShowcase={toggleShowcase}
                                     showcases={showcases || []}
                                     loadingShowcases={loadingShowcases}
+                                    onPriceChange={(val) =>
+                                        setItemData((prev) => ({ ...prev, price: val }))
+                                    }
+                                    onForSaleChange={(val) =>
+                                        setItemData((prev) => ({ ...prev, forSale: val }))
+                                    }
+                                    onToggleShowcase={(id) => {
+                                        haptics.selection();
+                                        setItemData((prev) => {
+                                            const selected = prev.selectedShowcaseIds;
+                                            if (selected.includes(id)) {
+                                                return {
+                                                    ...prev,
+                                                    selectedShowcaseIds: selected.filter((sId) => sId !== id),
+                                                };
+                                            } else {
+                                                return {
+                                                    ...prev,
+                                                    selectedShowcaseIds: [...selected, id],
+                                                };
+                                            }
+                                        });
+                                    }}
                                     haptics={haptics}
                                 />
                             )}
@@ -277,14 +342,16 @@ export default function ManualCreateItemWizard({
 
                         <View style={styles.spacer} />
 
-                        {currentStep < 2 ? (
+                        {currentStep < 3 ? (
                             <TouchableOpacity
                                 style={[
                                     styles.nextButton,
-                                    !canProceedToStep2 ? styles.disabledButton : null,
+                                    currentStep === 1 && !canProceedToStep2 || currentStep === 2 && !canProceedToStep3
+                                        ? styles.disabledButton
+                                        : null,
                                 ]}
                                 onPress={nextStep}
-                                disabled={!canProceedToStep2}
+                                disabled={currentStep === 1 ? !canProceedToStep2 : !canProceedToStep3}
                                 activeOpacity={0.8}
                             >
                                 <Text style={styles.nextButtonText}>Next</Text>
@@ -313,6 +380,7 @@ export default function ManualCreateItemWizard({
             <ItemGenerationModal
                 visible={generationModalOpen}
                 onComplete={handleGenerationComplete}
+                isFinished={apiFinished}
             />
 
             <ItemSuccessModal
@@ -331,50 +399,43 @@ export default function ManualCreateItemWizard({
 function ProgressIndicator({ currentStep }: { currentStep: Step }) {
     return (
         <View style={styles.progressContainer}>
-            {[1, 2].map((step) => (
-                <StepDot
-                    key={step}
-                    step={step}
-                    isActive={currentStep === step}
-                    isCompleted={currentStep > step}
-                />
-            ))}
+            <StepIndicator step={1} currentStep={currentStep} label="Details" />
+            <StepIndicator step={2} currentStep={currentStep} label="Info" />
+            <StepIndicator step={3} currentStep={currentStep} label="Pricing" />
         </View>
     );
 }
 
-function StepDot({
+function StepIndicator({
     step,
-    isActive,
-    isCompleted,
+    currentStep,
+    label,
 }: {
     step: number;
-    isActive: boolean;
-    isCompleted: boolean;
+    currentStep: number;
+    label: string;
 }) {
+
+    const isActive = step === currentStep;
+    const isCompleted = step < currentStep;
+
     const scale = useSharedValue(isActive ? 1.2 : 1);
-    const opacity = useSharedValue(isActive || isCompleted ? 1 : 0.4);
-    const checkScale = useSharedValue(isCompleted ? 1 : 0);
+    const opacity = useSharedValue(isActive || isCompleted ? 1 : 0.5);
 
     useEffect(() => {
-        if (isActive) {
-            scale.value = withSpring(1.3, { damping: 12, stiffness: 200 });
-            opacity.value = withTiming(1, { duration: 200 });
-        } else if (isCompleted) {
-            scale.value = withTiming(1, { duration: 200 });
-            opacity.value = withTiming(1, { duration: 200 });
-            checkScale.value = withSpring(1, { damping: 12, stiffness: 200 });
-        } else {
-            scale.value = withTiming(1, { duration: 200 });
-            opacity.value = withTiming(0.4, { duration: 200 });
-            checkScale.value = withTiming(0, { duration: 150 });
-        }
-    }, [isActive, isCompleted, scale, opacity, checkScale]);
+        scale.value = withSpring(isActive ? 1.1 : 1, { damping: 15 });
+        opacity.value = withTiming(isActive || isCompleted ? 1 : 0.5);
+    }, [isActive, isCompleted, scale, opacity]);
 
     const animatedStyle = useAnimatedStyle(() => ({
         transform: [{ scale: scale.value }],
         opacity: opacity.value,
     }));
+
+    const checkScale = useSharedValue(0);
+    useEffect(() => {
+        checkScale.value = withSpring(isCompleted ? 1 : 0);
+    }, [isCompleted, checkScale]);
 
     const checkStyle = useAnimatedStyle(() => ({
         transform: [{ scale: checkScale.value }],
@@ -402,51 +463,89 @@ function StepDot({
                 )}
             </Animated.View>
             <Text style={[styles.progressLabel, (isActive || isCompleted) && styles.progressLabelActive]}>
-                {step === 1 ? "Details" : "Pricing"}
+                {label}
             </Text>
         </View>
     );
 }
 
-// Step Components
+// Step 1: Basic Details (Image, Title, Brand, Publisher)
 function Step1Details({
     customTitle,
     customBrand,
-    condition,
-    description,
+    customPublisher,
     onCustomTitleChange,
     onCustomBrandChange,
-    onConditionChange,
-    onDescriptionChange,
+    onCustomPublisherChange,
     haptics,
+    imageUri,
+    onImageChange,
 }: {
     customTitle: string;
     customBrand: string;
-    condition: ItemCondition | "";
-    description: string;
+    customPublisher: string;
     onCustomTitleChange: (val: string) => void;
     onCustomBrandChange: (val: string) => void;
-    onConditionChange: (val: ItemCondition | "") => void;
-    onDescriptionChange: (val: string) => void;
+    onCustomPublisherChange: (val: string) => void;
     haptics: ReturnType<typeof useHaptics>;
+    imageUri: string | null;
+    onImageChange: (uri: string | null) => void;
 }) {
-    const [conditionModalOpen, setConditionModalOpen] = useState(false);
+    const handlePickImage = async () => {
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'],
+            allowsEditing: true,
+            aspect: [1, 1], // Square aspect ratio typically good for items
+            quality: 0.8,
+            base64: false,
+        });
 
-    const handleOpenCondition = async () => {
-        await haptics.light();
-        setConditionModalOpen(true);
-    };
+        if (!result.canceled && result.assets[0]) {
+            const asset = result.assets[0];
+            const MAX_SIZE = 5 * 1024 * 1024; // 5MB
 
-    const handleSelectCondition = async (item: ItemCondition) => {
-        await haptics.selection();
-        onConditionChange(item);
-        setConditionModalOpen(false);
+            if (asset.fileSize && asset.fileSize > MAX_SIZE) {
+                alert("Image too large. Please select an image smaller than 5MB.");
+                return;
+            }
+
+            await haptics.selection();
+            onImageChange(asset.uri);
+        }
     };
 
     return (
         <View style={styles.stepContent}>
             <Text style={styles.stepTitle}>Item Details</Text>
-            
+
+            <View style={styles.imageSection}>
+                <TouchableOpacity
+                    style={styles.imagePreview}
+                    onPress={handlePickImage}
+                    activeOpacity={0.8}
+                >
+                    {imageUri ? (
+                        <Image
+                            source={{ uri: imageUri }}
+                            style={styles.image}
+                            contentFit="cover"
+                            transition={200}
+                        />
+                    ) : (
+                        <View style={styles.imagePlaceholder}>
+                            <Ionicons name="camera-outline" size={32} color={COLORS.grey} />
+                            <Text style={styles.placeholderText}>Add Photo</Text>
+                        </View>
+                    )}
+                    <View style={styles.editIconContainer}>
+                        <Ionicons name="pencil" size={12} color={COLORS.white} />
+                    </View>
+                </TouchableOpacity>
+                <Text style={styles.imageHint}>
+                    {imageUri ? "Tap to change image" : "Tap to add a photo"}
+                </Text>
+            </View>
+
             <View style={styles.fieldContainer}>
                 <Text style={styles.fieldLabel}>Item Title *</Text>
                 <TextInput
@@ -467,6 +566,67 @@ function Step1Details({
                     placeholderTextColor={COLORS.grey}
                     value={customBrand}
                     onChangeText={onCustomBrandChange}
+                />
+            </View>
+
+            <View style={styles.fieldContainer}>
+                <Text style={styles.fieldLabel}>Publisher (Optional)</Text>
+                <TextInput
+                    style={styles.textInput}
+                    placeholder="e.g. Penguin Books"
+                    placeholderTextColor={COLORS.grey}
+                    value={customPublisher}
+                    onChangeText={onCustomPublisherChange}
+                />
+            </View>
+        </View>
+    );
+}
+
+// Step 2: Info (Category, Condition, Description)
+function Step2Info({
+    customCategory,
+    condition,
+    description,
+    onCustomCategoryChange,
+    onConditionChange,
+    onDescriptionChange,
+    haptics,
+}: {
+    customCategory: string;
+    condition: ItemCondition | "";
+    description: string;
+    onCustomCategoryChange: (val: string) => void;
+    onConditionChange: (val: ItemCondition | "") => void;
+    onDescriptionChange: (val: string) => void;
+    haptics: ReturnType<typeof useHaptics>;
+}) {
+    const [conditionModalOpen, setConditionModalOpen] = useState(false);
+
+    const handleOpenCondition = async () => {
+        await haptics.light();
+        setConditionModalOpen(true);
+    };
+
+    const handleSelectCondition = async (item: ItemCondition) => {
+        await haptics.selection();
+        onConditionChange(item);
+        setConditionModalOpen(false);
+    };
+
+    return (
+        <View style={styles.stepContent}>
+            <Text style={styles.stepTitle}>Additional Info</Text>
+
+            <View style={styles.fieldContainer}>
+                <Text style={styles.fieldLabel}>Category</Text>
+                <TextInput
+                    style={styles.textInput}
+                    placeholder="e.g. Electronics, Books"
+                    placeholderTextColor={COLORS.grey}
+                    value={customCategory}
+                    onChangeText={onCustomCategoryChange}
+                    autoFocus
                 />
             </View>
 
@@ -521,21 +681,10 @@ function Step1Details({
                                     onPress={() => handleSelectCondition(item)}
                                     activeOpacity={0.7}
                                 >
-                                    <Ionicons
-                                        name={
-                                            condition === item
-                                                ? "radio-button-on"
-                                                : "radio-button-off"
-                                        }
-                                        size={20}
-                                        color={condition === item ? COLORS.primary : COLORS.grey}
-                                    />
-                                    <Text style={[
-                                        styles.optionText,
-                                        condition === item && styles.optionTextActive
-                                    ]}>
-                                        {ITEM_CONDITION_LABELS[item]}
-                                    </Text>
+                                    <Text style={styles.optionText}>{ITEM_CONDITION_LABELS[item]}</Text>
+                                    {condition === item && (
+                                        <Ionicons name="checkmark" size={20} color={COLORS.primary} />
+                                    )}
                                 </TouchableOpacity>
                             )}
                             showsVerticalScrollIndicator={false}
@@ -554,25 +703,26 @@ function Step1Details({
     );
 }
 
-function Step2Pricing({
+// Step 3: Pricing & Visibility
+function Step3Pricing({
     price,
     forSale,
     selectedShowcaseIds,
+    showcases,
+    loadingShowcases,
     onPriceChange,
     onForSaleChange,
     onToggleShowcase,
-    showcases,
-    loadingShowcases,
     haptics,
 }: {
     price: string;
     forSale: boolean;
     selectedShowcaseIds: string[];
+    showcases: ShowcaseRow[];
+    loadingShowcases: boolean;
     onPriceChange: (val: string) => void;
     onForSaleChange: (val: boolean) => void;
     onToggleShowcase: (id: string) => void;
-    showcases: ShowcaseRow[];
-    loadingShowcases: boolean;
     haptics: ReturnType<typeof useHaptics>;
 }) {
     const [showcaseModalOpen, setShowcaseModalOpen] = useState(false);
@@ -632,10 +782,10 @@ function Step2Pricing({
                     disabled={loadingShowcases}
                     activeOpacity={0.7}
                 >
-                    <Ionicons 
-                        name="albums-outline" 
-                        size={18} 
-                        color={selectedShowcaseIds.length > 0 ? COLORS.primary : COLORS.grey} 
+                    <Ionicons
+                        name="albums-outline"
+                        size={18}
+                        color={selectedShowcaseIds.length > 0 ? COLORS.primary : COLORS.grey}
                     />
                     <Text style={[
                         styles.selectorText,
@@ -645,10 +795,10 @@ function Step2Pricing({
                             ? "Select showcase(s)"
                             : `${selectedShowcaseIds.length} selected`}
                     </Text>
-                    <Ionicons 
-                        name="chevron-forward" 
-                        size={18} 
-                        color={selectedShowcaseIds.length > 0 ? COLORS.primary : COLORS.grey} 
+                    <Ionicons
+                        name="chevron-forward"
+                        size={18}
+                        color={selectedShowcaseIds.length > 0 ? COLORS.primary : COLORS.grey}
                     />
                 </TouchableOpacity>
             </View>
@@ -695,8 +845,8 @@ function Step2Pricing({
                             }
                             showsVerticalScrollIndicator={false}
                         />
-                        <TouchableOpacity 
-                            style={styles.modalCancel} 
+                        <TouchableOpacity
+                            style={styles.modalCancel}
                             onPress={() => setShowcaseModalOpen(false)}
                             activeOpacity={0.7}
                         >
@@ -1009,5 +1159,59 @@ const styles = StyleSheet.create({
         textAlign: "center",
         marginTop: 4,
         fontSize: 14,
+    },
+    imageSection: {
+        marginBottom: 24,
+        alignItems: "center",
+    },
+    imagePreview: {
+        width: 120,
+        height: 120,
+        borderRadius: 16,
+        backgroundColor: COLORS.surface,
+        borderWidth: 1,
+        borderColor: COLORS.surfaceLight,
+        overflow: "hidden",
+        justifyContent: "center",
+        alignItems: "center",
+        marginBottom: 12,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 8,
+        elevation: 4,
+    },
+    image: {
+        width: "100%",
+        height: "100%",
+    },
+    imagePlaceholder: {
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 8,
+    },
+    placeholderText: {
+        color: COLORS.grey,
+        fontSize: 12,
+        fontWeight: "500",
+    },
+    editIconContainer: {
+        position: "absolute",
+        bottom: 8,
+        right: 8,
+        backgroundColor: COLORS.primary,
+        width: 24,
+        height: 24,
+        borderRadius: 12,
+        justifyContent: "center",
+        alignItems: "center",
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
+    },
+    imageHint: {
+        color: COLORS.grey,
+        fontSize: 13,
     },
 });
