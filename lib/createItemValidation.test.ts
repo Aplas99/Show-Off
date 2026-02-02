@@ -22,7 +22,7 @@ describe("Item Creation Validation", () => {
             condition: "New",
             forSale: false,
         };
-        expect(() => validateCreateItem(invalid)).toThrow("Barcode/search query is required");
+        expect(() => validateCreateItem(invalid)).toThrow(/barcode\/search or a custom title/i);
     });
 
     it("fails when condition is invalid", () => {
