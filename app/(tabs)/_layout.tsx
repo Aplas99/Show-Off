@@ -39,7 +39,7 @@ export default function TabLayout() {
             TAB_BAR_HEIGHT +
             insets.bottom +
             (Platform.OS === "android" ? 10 : 0),
-          backgroundColor: "#1B1E26", // Or use COLORS.surface if preferred, keeping hardcoded from snippet for fidelity
+          backgroundColor: COLORS.surface,
           borderTopWidth: 0,
           paddingTop: 10,
           paddingBottom: insets.bottom + (Platform.OS === "android" ? 10 : 0),

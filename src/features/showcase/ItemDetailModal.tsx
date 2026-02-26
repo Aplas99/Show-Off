@@ -2,8 +2,6 @@ import { ItemWithProduct } from "@/api/items";
 import { COLORS } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
 import { BlurView } from "expo-blur";
-import { Image } from "expo-image";
-import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useRef } from "react";
 import {
   Animated,
@@ -16,6 +14,7 @@ import {
   TouchableOpacity,
   View,
 } from "react-native";
+import { GestureHandlerRootView, PanGestureHandler, State } from "react-native-gesture-handler";
 
 type Props = {
   visible: boolean;
@@ -32,9 +31,6 @@ export default function ItemDetailModal({ visible, item, onClose }: Props) {
   const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  // Scroll & Parallax Animations
-  const scrollY = useRef(new Animated.Value(0)).current;
-
   // Staggered Entrance Animations (Opacity)
   const headerOpacity = useRef(new Animated.Value(0)).current;
   const gridOpacity = useRef(new Animated.Value(0)).current;
@@ -43,7 +39,6 @@ export default function ItemDetailModal({ visible, item, onClose }: Props) {
   useEffect(() => {
     if (visible) {
       // 1. Reset values
-      scrollY.setValue(0);
       headerOpacity.setValue(0);
       gridOpacity.setValue(0);
       descOpacity.setValue(0);
@@ -61,26 +56,29 @@ export default function ItemDetailModal({ visible, item, onClose }: Props) {
           duration: 300,
           useNativeDriver: true,
         }),
-      ]).start(() => {
-        // 3. Trigger Staggered Content Animation after modal opens
-        Animated.stagger(100, [
+      ]).start();
+
+      // 3. Trigger Staggered Content Animation sooner (overlapped with modal)
+      Animated.sequence([
+        Animated.delay(100),
+        Animated.stagger(80, [
           Animated.timing(headerOpacity, {
             toValue: 1,
-            duration: 500,
+            duration: 400,
             useNativeDriver: true,
           }),
           Animated.timing(gridOpacity, {
             toValue: 1,
-            duration: 500,
+            duration: 400,
             useNativeDriver: true,
           }),
           Animated.timing(descOpacity, {
             toValue: 1,
-            duration: 500,
+            duration: 400,
             useNativeDriver: true,
           }),
-        ]).start();
-      });
+        ]),
+      ]).start();
     } else {
       // Exit Animation
       Animated.parallel([
@@ -152,25 +150,32 @@ export default function ItemDetailModal({ visible, item, onClose }: Props) {
 
   // --- Animation Interpolations ---
 
-  // Parallax Header
-  const imageTranslateY = scrollY.interpolate({
-    inputRange: [-HEADER_HEIGHT, 0, HEADER_HEIGHT],
-    outputRange: [HEADER_HEIGHT / 2, 0, -HEADER_HEIGHT / 3],
-    extrapolate: "clamp",
-  });
-
-  const imageScale = scrollY.interpolate({
-    inputRange: [-HEADER_HEIGHT, 0, HEADER_HEIGHT],
-    outputRange: [2, 1, 1],
-    extrapolate: "clamp",
-  });
-
   // Slide-up effect for content sections matching opacity
   const contentTranslateY = (anim: Animated.Value) =>
     anim.interpolate({
       inputRange: [0, 1],
       outputRange: [20, 0],
     });
+
+  const onGestureEvent = Animated.event(
+    [{ nativeEvent: { translationY: slideAnim } }],
+    { useNativeDriver: true }
+  );
+
+  const onHandlerStateChange = ({ nativeEvent }: any) => {
+    if (nativeEvent.oldState === State.ACTIVE) {
+      if (nativeEvent.translationY > 100) {
+        onClose();
+      } else {
+        Animated.spring(slideAnim, {
+          toValue: 0,
+          useNativeDriver: true,
+          damping: 20,
+          stiffness: 90,
+        }).start();
+      }
+    }
+  };
 
   return (
     <Modal
@@ -179,189 +184,162 @@ export default function ItemDetailModal({ visible, item, onClose }: Props) {
       onRequestClose={onClose}
       animationType="none"
     >
-      <View style={styles.overlay}>
-        {/* Backdrop */}
-        <Animated.View style={[styles.backdrop, { opacity: fadeAnim }]}>
-          <Pressable style={styles.backdropPressable} onPress={onClose} />
-        </Animated.View>
+      <GestureHandlerRootView style={{ flex: 1 }}>
+        <View style={styles.overlay}>
+          {/* Backdrop */}
+          <Animated.View style={[styles.backdrop, { opacity: fadeAnim }]}>
+            <Pressable style={styles.backdropPressable} onPress={onClose} />
+          </Animated.View>
 
-        {/* Modal Sheet */}
-        <Animated.View
-          style={[
-            styles.modalContainer,
-            { transform: [{ translateY: slideAnim }] },
-          ]}
-        >
-          {/* Background for modal content (so you don't see through it during bounce) */}
-          <View style={[styles.absoluteFill, { backgroundColor: "#000" }]} />
-
-          {/* Floating Close Button */}
-          <View style={styles.floatingHeader}>
-            <TouchableOpacity style={styles.roundButton} onPress={onClose}>
-              <BlurView
-                intensity={20}
-                tint="dark"
-                style={StyleSheet.absoluteFill}
-              />
-              <Ionicons name="close" size={24} color="#FFF" />
-            </TouchableOpacity>
-          </View>
-
-          <Animated.ScrollView
-            style={styles.scrollView}
-            contentContainerStyle={{ paddingBottom: 100 }}
-            scrollEventThrottle={16}
-            onScroll={Animated.event(
-              [{ nativeEvent: { contentOffset: { y: scrollY } } }],
-              { useNativeDriver: true }
-            )}
+          {/* Modal Sheet */}
+          <Animated.View
+            style={[
+              styles.modalContainer,
+              { transform: [{ translateY: slideAnim }] },
+            ]}
           >
-            {/* Parallax Image Header */}
-            <View style={styles.imageContainer}>
-              <Animated.View
-                style={[
-                  StyleSheet.absoluteFill,
-                  {
-                    transform: [
-                      { translateY: imageTranslateY },
-                      { scale: imageScale },
-                    ],
-                  },
-                ]}
-              >
-                {imageUrl ? (
-                  <Image
-                    source={{ uri: imageUrl }}
-                    style={styles.image}
-                    contentFit="cover"
-                    transition={200}
-                  />
-                ) : (
-                  <View style={styles.imagePlaceholder}>
-                    <Ionicons name="image-outline" size={64} color="#333" />
-                  </View>
-                )}
-                <LinearGradient
-                  colors={["transparent", "rgba(0,0,0,0.8)"]}
-                  style={styles.imageGradient}
+            {/* Background for modal content (so you don't see through it during bounce) */}
+            <View style={[styles.absoluteFill, { backgroundColor: "#000" }]} />
+
+            {/* Floating Close Button */}
+            <View style={styles.floatingHeader}>
+              <TouchableOpacity style={styles.roundButton} onPress={onClose}>
+                <BlurView
+                  intensity={20}
+                  tint="dark"
+                  style={StyleSheet.absoluteFill}
                 />
-              </Animated.View>
+                <Ionicons name="close" size={24} color="#FFF" />
+              </TouchableOpacity>
             </View>
 
-            {/* Content Sheet */}
-            <View style={styles.contentSheet}>
-              <View style={styles.handleBar} />
+            <Animated.ScrollView
+              style={styles.scrollView}
+              contentContainerStyle={{ paddingBottom: 100 }}
+              scrollEventThrottle={16}
+            >
+              {/* Content Sheet */}
+              <View style={styles.contentSheet}>
+                <PanGestureHandler
+                  onGestureEvent={onGestureEvent}
+                  onHandlerStateChange={onHandlerStateChange}
+                >
+                  <Animated.View>
+                    <View style={styles.handleBar} />
+                  </Animated.View>
+                </PanGestureHandler>
 
-              {/* 1. Header Section */}
-              <Animated.View
-                style={{
-                  opacity: headerOpacity,
-                  transform: [{ translateY: contentTranslateY(headerOpacity) }],
-                }}
-              >
-                {brand && (
-                  <Text style={styles.brandText}>{brand.toUpperCase()}</Text>
-                )}
-                <Text style={styles.titleText}>{title}</Text>
-
-                <View style={styles.priceRow}>
-                  {price != null ? (
-                    <Text style={styles.priceText}>
-                      {new Intl.NumberFormat("en-US", {
-                        style: "currency",
-                        currency: currency,
-                      }).format(price)}
-                    </Text>
-                  ) : (
-                    <Text style={styles.priceTextPlaceholder}>Price N/A</Text>
+                {/* 1. Header Section */}
+                <Animated.View
+                  style={{
+                    opacity: headerOpacity,
+                    transform: [{ translateY: contentTranslateY(headerOpacity) }],
+                  }}
+                >
+                  {brand && (
+                    <Text style={styles.brandText}>{brand.toUpperCase()}</Text>
                   )}
+                  <Text style={styles.titleText}>{title}</Text>
 
-                  {displayItem?.for_sale && (
-                    <View style={styles.badge}>
-                      <Text style={styles.badgeText}>FOR SALE</Text>
+                  <View style={styles.priceRow}>
+                    {price != null ? (
+                      <Text style={styles.priceText}>
+                        {new Intl.NumberFormat("en-US", {
+                          style: "currency",
+                          currency: currency,
+                        }).format(price)}
+                      </Text>
+                    ) : (
+                      <Text style={styles.priceTextPlaceholder}>Price N/A</Text>
+                    )}
+
+                    {displayItem?.for_sale && (
+                      <View style={styles.badge}>
+                        <Text style={styles.badgeText}>FOR SALE</Text>
+                      </View>
+                    )}
+                  </View>
+                </Animated.View>
+
+                <View style={styles.divider} />
+
+                {/* 2. Grid Section */}
+                <Animated.View
+                  style={[
+                    styles.gridContainer,
+                    {
+                      opacity: gridOpacity,
+                      transform: [{ translateY: contentTranslateY(gridOpacity) }],
+                    },
+                  ]}
+                >
+                  <InfoItem
+                    icon="ribbon-outline"
+                    label="Condition"
+                    value={displayItem?.condition || "N/A"}
+                    color={COLORS.primary}
+                  />
+                  <InfoItem
+                    icon="pricetag-outline"
+                    label="Category"
+                    value={category}
+                    color="#3B82F6"
+                  />
+                  <InfoItem
+                    icon="business-outline"
+                    label="Publisher"
+                    value={publisher}
+                    color="#F59E0B"
+                  />
+                  <InfoItem
+                    icon="calendar-outline"
+                    label="Added"
+                    value={
+                      displayItem?.created_at
+                        ? new Date(displayItem.created_at).toLocaleDateString()
+                        : "N/A"
+                    }
+                    color="#10B981"
+                  />
+                </Animated.View>
+
+                {/* 3. Description Section */}
+                <Animated.View
+                  style={{
+                    opacity: descOpacity,
+                    transform: [{ translateY: contentTranslateY(descOpacity) }],
+                  }}
+                >
+                  {(description || displayItem?.user_description) && (
+                    <View style={styles.section}>
+                      <Text style={styles.sectionTitle}>Description</Text>
+                      {displayItem?.user_description && (
+                        <Text style={[styles.descriptionText, { marginBottom: 10 }]}>{displayItem.user_description}</Text>
+                      )}
+                      {productData.searchableDescription && (
+                        <Text style={[styles.descriptionText, { color: COLORS.textDim }]}>{productData.searchableDescription}</Text>
+                      )}
                     </View>
                   )}
-                </View>
-              </Animated.View>
+                </Animated.View>
 
-              <View style={styles.divider} />
-
-              {/* 2. Grid Section */}
-              <Animated.View
-                style={[
-                  styles.gridContainer,
-                  {
-                    opacity: gridOpacity,
-                    transform: [{ translateY: contentTranslateY(gridOpacity) }],
-                  },
-                ]}
-              >
-                <InfoItem
-                  icon="ribbon-outline"
-                  label="Condition"
-                  value={displayItem?.condition || "N/A"}
-                  color={COLORS.primary}
-                />
-                <InfoItem
-                  icon="pricetag-outline"
-                  label="Category"
-                  value={category}
-                  color="#3B82F6"
-                />
-                <InfoItem
-                  icon="business-outline"
-                  label="Publisher"
-                  value={publisher}
-                  color="#F59E0B"
-                />
-                <InfoItem
-                  icon="calendar-outline"
-                  label="Added"
-                  value={
-                    displayItem?.created_at
-                      ? new Date(displayItem.created_at).toLocaleDateString()
-                      : "N/A"
-                  }
-                  color="#10B981"
-                />
-              </Animated.View>
-
-              {/* 3. Description Section */}
-              <Animated.View
-                style={{
-                  opacity: descOpacity,
-                  transform: [{ translateY: contentTranslateY(descOpacity) }],
-                }}
-              >
-                {(description || displayItem?.user_description) && (
-                  <View style={styles.section}>
-                    <Text style={styles.sectionTitle}>Description</Text>
-                    {displayItem?.user_description && (
-                      <Text style={[styles.descriptionText, { marginBottom: 10 }]}>{displayItem.user_description}</Text>
-                    )}
-                    {productData.searchableDescription && (
-                      <Text style={[styles.descriptionText, { color: COLORS.textDim }]}>{productData.searchableDescription}</Text>
-                    )}
+                {/* Identifiers (Static, part of desc block effectively) */}
+                <Animated.View style={{
+                  paddingTop: 20,
+                  opacity: descOpacity
+                }}>
+                  <Text style={styles.sectionTitle}>Identifiers</Text>
+                  <View style={styles.identifierRow}>
+                    <Text style={styles.identifierLabel}>EAN/UPC</Text>
+                    <Text style={styles.identifierValue}>{displayItem?.product_ean || 'N/A'}</Text>
                   </View>
-                )}
-              </Animated.View>
+                </Animated.View>
 
-              {/* Identifiers (Static, part of desc block effectively) */}
-              <Animated.View style={{
-                paddingTop: 20,
-                opacity: descOpacity
-              }}>
-                <Text style={styles.sectionTitle}>Identifiers</Text>
-                <View style={styles.identifierRow}>
-                  <Text style={styles.identifierLabel}>EAN/UPC</Text>
-                  <Text style={styles.identifierValue}>{displayItem?.product_ean || 'N/A'}</Text>
-                </View>
-              </Animated.View>
-
-            </View>
-          </Animated.ScrollView>
-        </Animated.View>
-      </View>
+              </View>
+            </Animated.ScrollView>
+          </Animated.View>
+        </View>
+      </GestureHandlerRootView>
     </Modal>
   );
 }
@@ -457,7 +435,6 @@ const styles = StyleSheet.create({
   contentSheet: {
     flex: 1,
     backgroundColor: "#000",
-    marginTop: -30, // Overlap the image
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
     paddingHorizontal: 24,
@@ -471,6 +448,7 @@ const styles = StyleSheet.create({
     borderRadius: 2,
     alignSelf: "center",
     marginBottom: 24,
+    marginTop: 10,
   },
   brandText: {
     color: "#9B5DE5",

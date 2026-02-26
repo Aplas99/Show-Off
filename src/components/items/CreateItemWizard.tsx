@@ -9,10 +9,8 @@ import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
     FlatList,
-    KeyboardAvoidingView,
     Modal,
     Platform,
-    ScrollView,
     StyleSheet,
     Switch,
     Text,
@@ -20,6 +18,7 @@ import {
     TouchableOpacity,
     View
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import Animated, {
     useAnimatedStyle,
     useSharedValue,
@@ -288,10 +287,7 @@ export default function CreateItemWizard({
             onRequestClose={handleClose}
         >
             <View style={styles.backdrop}>
-                <KeyboardAvoidingView
-                    style={styles.modal}
-                    behavior={Platform.OS === "ios" ? "padding" : "height"}
-                >
+                <View style={styles.modal}>
                     {/* Header */}
                     <View style={styles.header}>
                         <TouchableOpacity
@@ -324,10 +320,11 @@ export default function CreateItemWizard({
 
                     {/* Content */}
                     <Animated.View style={[styles.contentContainer, contentStyle]}>
-                        <ScrollView
+                        <KeyboardAwareScrollView
                             style={styles.content}
                             keyboardShouldPersistTaps="handled"
                             showsVerticalScrollIndicator={false}
+                            bottomOffset={20}
                         >
                             {currentStep === 1 && (
                                 <Step1ScanCode
@@ -369,7 +366,7 @@ export default function CreateItemWizard({
                                     haptics={haptics}
                                 />
                             )}
-                        </ScrollView>
+                        </KeyboardAwareScrollView>
                     </Animated.View>
 
                     {/* Navigation */}
@@ -422,7 +419,7 @@ export default function CreateItemWizard({
                             </TouchableOpacity>
                         )}
                     </View>
-                </KeyboardAvoidingView>
+                </View>
             </View>
 
             <ItemGenerationModal
@@ -1367,5 +1364,7 @@ const styles = StyleSheet.create({
     imageHint: {
         color: COLORS.grey,
         fontSize: 13,
+        textAlign: "center",
+        alignSelf: "stretch",
     },
 });

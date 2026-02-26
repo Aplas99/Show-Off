@@ -13,7 +13,7 @@ import {
     StyleSheet,
     Text,
     useWindowDimensions,
-    View,
+    View
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -26,7 +26,7 @@ export default function DiscoverScreen() {
 
     // Calculate total tab bar height including safe area insets and platform-specific padding
     const tabBarHeight = TAB_BAR_HEIGHT + insets.bottom + (Platform.OS === "android" ? 10 : 0);
-    
+
     // Use the full height minus tab bar height so cards don't extend behind the tab bar
     const usableHeight = screenHeight;
 
@@ -75,7 +75,7 @@ export default function DiscoverScreen() {
     return (
         <View style={styles.container}>
             <StatusBar barStyle="light-content" translucent backgroundColor="transparent" />
-            
+
             {/* Black bar to cover phone notification/status bar area */}
             <View style={[styles.statusBarOverlay, { height: insets.top }]} />
 
@@ -132,6 +132,7 @@ export default function DiscoverScreen() {
             </View>
 
             {selectedItemId !== null && (
+
                 <CommentModal
                     visible={commentModalVisible}
                     itemId={selectedItemId}
@@ -140,6 +141,7 @@ export default function DiscoverScreen() {
                         setSelectedItemId(null);
                     }}
                 />
+
             )}
         </View>
     );

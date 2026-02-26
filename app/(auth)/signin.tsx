@@ -6,13 +6,13 @@ import React, { useState } from "react";
 import {
   Alert,
   Image,
-  StatusBar,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { z } from "zod";
 
@@ -57,33 +57,34 @@ export default function SignIn() {
       />
       {/* Content Layer */}
       <SafeAreaView style={styles.safeArea}>
-        <StatusBar
-          translucent
-          backgroundColor="transparent"
-          barStyle="light-content"
-        />
-        {/* Top branding + illustration */}
-        <View style={styles.topContainer}>
-          <View style={styles.iconContainer}>
-            <Image
-              source={require("@/assets/images/NewIconImage.png")}
-              style={styles.icon}
-              resizeMode="contain"
-            />
+        <KeyboardAwareScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          bottomOffset={20}
+        >
+          {/* Top branding + illustration */}
+          <View style={styles.topContainer}>
+            <View style={styles.iconContainer}>
+              <Image
+                source={require("@/assets/images/NewIconImage.png")}
+                style={styles.icon}
+                resizeMode="contain"
+              />
+            </View>
+            <Text style={styles.title}>AuctionAlley</Text>
+            <Text style={styles.subtitle}>Welcome Back</Text>
           </View>
-          <Text style={styles.title}>AuctionAlley</Text>
-          <Text style={styles.subtitle}>Welcome Back</Text>
-        </View>
-        {/* Service Provider Icons Row */}
-        <View style={styles.providerIconsRow}>
-          <TouchableOpacity style={styles.providerButton}>
-            <Image
-              source={require("@/assets/images/google-icon.png")}
-              style={styles.providerIcon}
-              resizeMode="contain"
-            />
-          </TouchableOpacity>
-          {/* Example for future providers:
+          {/* Service Provider Icons Row */}
+          <View style={styles.providerIconsRow}>
+            <TouchableOpacity style={styles.providerButton}>
+              <Image
+                source={require("@/assets/images/google-icon.png")}
+                style={styles.providerIcon}
+                resizeMode="contain"
+              />
+            </TouchableOpacity>
+            {/* Example for future providers:
           <TouchableOpacity style={styles.providerButton}>
             <Image
               source={require("@/assets/images/apple-icon.png")}
@@ -99,57 +100,58 @@ export default function SignIn() {
             />
           </TouchableOpacity>
           */}
-        </View>
-        {/* Separator with OR */}
-        <View style={styles.separatorContainer}>
-          <View style={styles.separator} />
-          <Text style={styles.orText}>OR</Text>
-          <View style={styles.separator} />
-        </View>
-        {/* Form Inputs */}
-        <View style={styles.formContainer}>
-          <TextInput
-            style={styles.input}
-            placeholder="Email"
-            placeholderTextColor="#9CA3AF"
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            placeholderTextColor="#9CA3AF"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-          />
-          <TouchableOpacity style={styles.signInButton} onPress={handleSignIn}>
-            <Text style={styles.signInButtonText}>Sign In</Text>
-          </TouchableOpacity>
+          </View>
+          {/* Separator with OR */}
+          <View style={styles.separatorContainer}>
+            <View style={styles.separator} />
+            <Text style={styles.orText}>OR</Text>
+            <View style={styles.separator} />
+          </View>
+          {/* Form Inputs */}
+          <View style={styles.formContainer}>
+            <TextInput
+              style={styles.input}
+              placeholder="Email"
+              placeholderTextColor="#9CA3AF"
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Password"
+              placeholderTextColor="#9CA3AF"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+            />
+            <TouchableOpacity style={styles.signInButton} onPress={handleSignIn}>
+              <Text style={styles.signInButtonText}>Sign In</Text>
+            </TouchableOpacity>
 
-          <Link href="/signup" asChild>
-            <TouchableOpacity style={styles.dontHaveAccountButton}>
-              <Text style={styles.dontHaveAccountText}>
-                Don't have an account?
-                <Text style={styles.signupLink}> Sign Up </Text>
+            <Link href="/signup" asChild>
+              <TouchableOpacity style={styles.dontHaveAccountButton}>
+                <Text style={styles.dontHaveAccountText}>
+                  Don't have an account?
+                  <Text style={styles.signupLink}> Sign Up </Text>
+                </Text>
+              </TouchableOpacity>
+            </Link>
+
+            {/* Separator between account and forgot password */}
+            <View style={styles.formSeparator} />
+
+            <TouchableOpacity
+              style={styles.forgotPasswordButton}
+              onPress={() => { }}
+            >
+              <Text style={styles.forgotPasswordButtonText}>
+                Forgot Password?
               </Text>
             </TouchableOpacity>
-          </Link>
-
-          {/* Separator between account and forgot password */}
-          <View style={styles.formSeparator} />
-
-          <TouchableOpacity
-            style={styles.forgotPasswordButton}
-            onPress={() => { }}
-          >
-            <Text style={styles.forgotPasswordButtonText}>
-              Forgot Password?
-            </Text>
-          </TouchableOpacity>
-        </View>
+          </View>
+        </KeyboardAwareScrollView>
       </SafeAreaView>
     </View>
   );
@@ -168,8 +170,11 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: "transparent",
-    alignItems: "center",
     zIndex: 1,
+  },
+  scrollContent: {
+    alignItems: "center",
+    flexGrow: 1,
   },
   topContainer: {
     alignItems: "center",
