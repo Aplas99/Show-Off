@@ -59,20 +59,20 @@ export const BookcaseView: React.FC<BookcaseViewProps> = ({
     return result;
   }, [items]);
 
-  // Handle scroll events for parallax and page tracking
+  // Native-driver scroll — no JS listener on every tick (was causing jank)
   const handleScroll = useCallback(
     Animated.event(
       [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-      {
-        useNativeDriver: true,
-        listener: (event: NativeSyntheticEvent<NativeScrollEvent>) => {
-          const page = Math.round(event.nativeEvent.contentOffset.x / PAGE_WIDTH);
-          setCurrentPage(page);
-        }
-      }
+      { useNativeDriver: true }
     ),
     []
   );
+
+  // Page tracking runs only on settled scroll end — JS thread stays idle during scroll
+  const handleMomentumEnd = useCallback((event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const page = Math.round(event.nativeEvent.contentOffset.x / PAGE_WIDTH);
+    setCurrentPage(page);
+  }, []);
 
   // Render empty state
   if (items.length === 0) {
@@ -105,7 +105,7 @@ export const BookcaseView: React.FC<BookcaseViewProps> = ({
       {/* Hanging Bookmark Control */}
       <HangingBookmark onPress={onBookmarkPress} />
 
-      {/* Main Flalist with Virtualization */}
+      {/* Main FlatList with Virtualization */}
       <Animated.FlatList
         data={pages}
         horizontal
@@ -116,51 +116,44 @@ export const BookcaseView: React.FC<BookcaseViewProps> = ({
         snapToAlignment="center"
         scrollEventThrottle={16}
         onScroll={handleScroll}
+        onMomentumScrollEnd={handleMomentumEnd}
         keyExtractor={(_, index) => `page-${index}`}
         getItemLayout={(_, index) => ({
           length: PAGE_WIDTH,
           offset: PAGE_WIDTH * index,
           index,
         })}
-        // Render only current page + 1 neighbor
         initialNumToRender={1}
         maxToRenderPerBatch={1}
         windowSize={3}
+        removeClippedSubviews
         contentContainerStyle={[
           styles.scrollContent,
           { paddingHorizontal: 0 }
         ]}
         renderItem={({ item: pageItems, index: pageIndex }) => (
           <View style={styles.page}>
-            {/* Render 3 shelves per page, 3 books per shelf */}
             {[0, 1, 2].map((rowIndex) => {
               const rowItems = pageItems.slice(
                 rowIndex * ITEMS_PER_SHELF,
                 (rowIndex + 1) * ITEMS_PER_SHELF
               );
-
               const pageBaseX = pageIndex * PAGE_WIDTH;
 
               return (
                 <View key={rowIndex} style={styles.shelfRow}>
-                  {/* Shelf backing */}
-                  <View style={styles.shelfBacking}>
-                    <WoodGrain intensity={0.8} />
-                  </View>
+                  {/* Shelf backing — plain View, WoodGrain removed (was 40% opacity, wasted render) */}
+                  <View style={styles.shelfBacking} />
 
-                  {/* Books container - 3 items */}
+                  {/* Books */}
                   <View style={styles.booksContainer}>
                     {rowItems.map((item, colIndex) => {
                       const globalIndex = pageIndex * ITEMS_PER_PAGE + rowIndex * ITEMS_PER_SHELF + colIndex;
                       const positionX = pageBaseX + SHELF_PADDING + (colIndex * (ITEM_WIDTH + ITEM_SPACING));
-
                       return (
                         <View
                           key={item.id || globalIndex}
-                          style={[
-                            styles.bookContainer,
-                            { width: ITEM_WIDTH, marginRight: ITEM_SPACING }
-                          ]}
+                          style={[styles.bookContainer, { width: ITEM_WIDTH, marginRight: ITEM_SPACING }]}
                         >
                           <BookItem
                             item={item}
@@ -172,7 +165,6 @@ export const BookcaseView: React.FC<BookcaseViewProps> = ({
                         </View>
                       );
                     })}
-                    {/* Empty slot placeholders if row has fewer than 3 */}
                     {rowItems.length < ITEMS_PER_SHELF &&
                       [...Array(ITEMS_PER_SHELF - rowItems.length)].map((_, i) => (
                         <View key={`empty-${i}`} style={{ width: ITEM_WIDTH, marginRight: ITEM_SPACING }} />
@@ -180,7 +172,7 @@ export const BookcaseView: React.FC<BookcaseViewProps> = ({
                     }
                   </View>
 
-                  {/* Shelf Board */}
+                  {/* Shelf Board — WoodGrain only here */}
                   <View style={styles.shelfBoard}>
                     <WoodGrain />
                     <View style={styles.shelfEdge}>
