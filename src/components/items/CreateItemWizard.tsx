@@ -3,14 +3,14 @@ import { COLORS } from "@/constants/theme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { validateCreateItem } from "@/lib/createItemValidation";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
+import * as ImagePicker from "expo-image-picker";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
     FlatList,
-    KeyboardAvoidingView,
     Modal,
     Platform,
-    ScrollView,
     StyleSheet,
     Switch,
     Text,
@@ -18,6 +18,7 @@ import {
     TouchableOpacity,
     View
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import Animated, {
     useAnimatedStyle,
     useSharedValue,
@@ -52,6 +53,7 @@ interface ItemData {
     price: string;
     forSale: boolean;
     selectedShowcaseIds: string[];
+    imageUri: string | null;
 }
 
 export default function CreateItemWizard({
@@ -67,6 +69,7 @@ export default function CreateItemWizard({
     const [currentStep, setCurrentStep] = useState<Step>(1);
     const [successModalOpen, setSuccessModalOpen] = useState(false);
     const [generationModalOpen, setGenerationModalOpen] = useState(false);
+    const [apiFinished, setApiFinished] = useState(false);
 
     const [itemData, setItemData] = useState<ItemData>({
         barcode: initialBarcode,
@@ -76,6 +79,7 @@ export default function CreateItemWizard({
         price: "",
         forSale: false,
         selectedShowcaseIds: [],
+        imageUri: null,
     });
 
     // Entry animation values
@@ -140,7 +144,7 @@ export default function CreateItemWizard({
         contentOpacity.value = withTiming(0, { duration: 150 }, () => {
             // Update step here after fade out
             slideAnim.value = direction === "next" ? 30 : -30;
-            
+
             // Fade in
             contentOpacity.value = withTiming(1, { duration: 200 });
             slideAnim.value = withSpring(0, { damping: 20, stiffness: 200 });
@@ -184,13 +188,16 @@ export default function CreateItemWizard({
                 userDescription: itemData.description || null,
                 forSale: itemData.forSale,
                 price: itemData.price.trim() !== "" ? Number(itemData.price) : null,
+                imageFile: itemData.imageUri || undefined,
                 imageUrl: null,
             };
 
             validateCreateItem(payload);
             setGenerationModalOpen(true);
+            setApiFinished(false);
 
             const res = await createItemWithProduct.mutateAsync(payload);
+            setApiFinished(true);
 
             if (itemData.selectedShowcaseIds.length > 0 && res?.itemId) {
                 await linkToShowcases.mutateAsync({
@@ -239,6 +246,7 @@ export default function CreateItemWizard({
             price: "",
             forSale: false,
             selectedShowcaseIds: [],
+            imageUri: null,
         });
     };
 
@@ -279,10 +287,7 @@ export default function CreateItemWizard({
             onRequestClose={handleClose}
         >
             <View style={styles.backdrop}>
-                <KeyboardAvoidingView
-                    style={styles.modal}
-                    behavior={Platform.OS === "ios" ? "padding" : "height"}
-                >
+                <View style={styles.modal}>
                     {/* Header */}
                     <View style={styles.header}>
                         <TouchableOpacity
@@ -315,10 +320,11 @@ export default function CreateItemWizard({
 
                     {/* Content */}
                     <Animated.View style={[styles.contentContainer, contentStyle]}>
-                        <ScrollView
+                        <KeyboardAwareScrollView
                             style={styles.content}
                             keyboardShouldPersistTaps="handled"
                             showsVerticalScrollIndicator={false}
+                            bottomOffset={20}
                         >
                             {currentStep === 1 && (
                                 <Step1ScanCode
@@ -342,6 +348,8 @@ export default function CreateItemWizard({
                                     onConditionChange={(c) => setItemData(prev => ({ ...prev, condition: c }))}
                                     onDescriptionChange={(d) => setItemData(prev => ({ ...prev, description: d }))}
                                     haptics={haptics}
+                                    imageUri={itemData.imageUri}
+                                    onImageChange={(uri) => setItemData(prev => ({ ...prev, imageUri: uri }))}
                                 />
                             )}
 
@@ -358,14 +366,14 @@ export default function CreateItemWizard({
                                     haptics={haptics}
                                 />
                             )}
-                        </ScrollView>
+                        </KeyboardAwareScrollView>
                     </Animated.View>
 
                     {/* Navigation */}
                     <View style={styles.navigation}>
                         {currentStep > 1 && (
-                            <TouchableOpacity 
-                                style={styles.backButton} 
+                            <TouchableOpacity
+                                style={styles.backButton}
                                 onPress={prevStep}
                                 activeOpacity={0.7}
                             >
@@ -411,12 +419,13 @@ export default function CreateItemWizard({
                             </TouchableOpacity>
                         )}
                     </View>
-                </KeyboardAvoidingView>
+                </View>
             </View>
 
             <ItemGenerationModal
                 visible={generationModalOpen}
                 onComplete={handleGenerationComplete}
+                isFinished={apiFinished}
             />
 
             <ItemSuccessModal
@@ -436,9 +445,9 @@ function ProgressIndicator({ currentStep }: { currentStep: Step }) {
     return (
         <View style={styles.progressContainer}>
             {[1, 2, 3].map((step) => (
-                <StepDot 
-                    key={step} 
-                    step={step} 
+                <StepDot
+                    key={step}
+                    step={step}
                     isActive={currentStep === step}
                     isCompleted={currentStep > step}
                 />
@@ -447,12 +456,12 @@ function ProgressIndicator({ currentStep }: { currentStep: Step }) {
     );
 }
 
-function StepDot({ 
-    step, 
-    isActive, 
-    isCompleted 
-}: { 
-    step: number; 
+function StepDot({
+    step,
+    isActive,
+    isCompleted
+}: {
+    step: number;
     isActive: boolean;
     isCompleted: boolean;
 }) {
@@ -570,10 +579,10 @@ function Step1ScanCode({
             {barcode.length > 0 && (
                 <View style={styles.barcodeInfo}>
                     <View style={styles.barcodeStatusRow}>
-                        <Ionicons 
-                            name={isValidBarcode ? "checkmark-circle" : "information-circle"} 
-                            size={18} 
-                            color={isValidBarcode ? "#4CAF50" : COLORS.grey} 
+                        <Ionicons
+                            name={isValidBarcode ? "checkmark-circle" : "information-circle"}
+                            size={18}
+                            color={isValidBarcode ? "#4CAF50" : COLORS.grey}
                         />
                         <Text
                             style={[
@@ -607,6 +616,8 @@ function Step2Details({
     onConditionChange,
     onDescriptionChange,
     haptics,
+    imageUri,
+    onImageChange,
 }: {
     productData?: Product | null;
     barcode: string;
@@ -615,8 +626,35 @@ function Step2Details({
     onConditionChange: (val: ItemCondition | "") => void;
     onDescriptionChange: (val: string) => void;
     haptics: ReturnType<typeof useHaptics>;
+    imageUri: string | null;
+    onImageChange: (uri: string | null) => void;
 }) {
     const [conditionModalOpen, setConditionModalOpen] = useState(false);
+
+    const handlePickImage = async () => {
+        const result = await ImagePicker.launchImageLibraryAsync({
+            mediaTypes: ['images'],
+            allowsEditing: true,
+            aspect: [1, 1], // Square aspect ratio typically good for items
+            quality: 0.8,
+            base64: false,
+        });
+
+        if (!result.canceled && result.assets[0]) {
+            const asset = result.assets[0];
+            const MAX_SIZE = 5 * 1024 * 1024; // 5MB
+
+            if (asset.fileSize && asset.fileSize > MAX_SIZE) {
+                alert("Image too large. Please select an image smaller than 5MB.");
+                return;
+            }
+
+            await haptics.selection();
+            onImageChange(asset.uri);
+        }
+    };
+
+    const displayImage = imageUri || (productData?.images && productData.images.length > 0 ? productData.images[0] : null);
 
     const handleOpenCondition = async () => {
         await haptics.light();
@@ -639,6 +677,34 @@ function Step2Details({
                     <Text style={styles.productBrand}>{productData.brand}</Text>
                 </View>
             )}
+
+            <View style={styles.imageSection}>
+                <TouchableOpacity
+                    style={styles.imagePreview}
+                    onPress={handlePickImage}
+                    activeOpacity={0.8}
+                >
+                    {displayImage ? (
+                        <Image
+                            source={{ uri: displayImage }}
+                            style={styles.image}
+                            contentFit="cover"
+                            transition={200}
+                        />
+                    ) : (
+                        <View style={styles.imagePlaceholder}>
+                            <Ionicons name="camera-outline" size={32} color={COLORS.grey} />
+                            <Text style={styles.placeholderText}>Add Photo</Text>
+                        </View>
+                    )}
+                    <View style={styles.editIconContainer}>
+                        <Ionicons name="pencil" size={12} color={COLORS.white} />
+                    </View>
+                </TouchableOpacity>
+                <Text style={styles.imageHint}>
+                    {displayImage ? "Tap to change image" : "Tap to add a photo"}
+                </Text>
+            </View>
 
             <View style={styles.fieldContainer}>
                 <Text style={styles.fieldLabel}>Condition *</Text>
@@ -804,10 +870,10 @@ function Step3PricingVisibility({
                     disabled={loadingShowcases}
                     activeOpacity={0.7}
                 >
-                    <Ionicons 
-                        name="albums-outline" 
-                        size={18} 
-                        color={selectedShowcaseIds.length > 0 ? COLORS.primary : COLORS.grey} 
+                    <Ionicons
+                        name="albums-outline"
+                        size={18}
+                        color={selectedShowcaseIds.length > 0 ? COLORS.primary : COLORS.grey}
                     />
                     <Text style={[
                         styles.selectorText,
@@ -817,10 +883,10 @@ function Step3PricingVisibility({
                             ? "Select showcase(s)"
                             : `${selectedShowcaseIds.length} selected`}
                     </Text>
-                    <Ionicons 
-                        name="chevron-forward" 
-                        size={18} 
-                        color={selectedShowcaseIds.length > 0 ? COLORS.primary : COLORS.grey} 
+                    <Ionicons
+                        name="chevron-forward"
+                        size={18}
+                        color={selectedShowcaseIds.length > 0 ? COLORS.primary : COLORS.grey}
                     />
                 </TouchableOpacity>
             </View>
@@ -867,8 +933,8 @@ function Step3PricingVisibility({
                             }
                             showsVerticalScrollIndicator={false}
                         />
-                        <TouchableOpacity 
-                            style={styles.modalCancel} 
+                        <TouchableOpacity
+                            style={styles.modalCancel}
                             onPress={() => setShowcaseModalOpen(false)}
                             activeOpacity={0.7}
                         >
@@ -1244,5 +1310,61 @@ const styles = StyleSheet.create({
         textAlign: "center",
         marginTop: 4,
         fontSize: 14,
+    },
+    imageSection: {
+        marginBottom: 24,
+        alignItems: "center",
+    },
+    imagePreview: {
+        width: 120,
+        height: 120,
+        borderRadius: 16,
+        backgroundColor: COLORS.surface,
+        borderWidth: 1,
+        borderColor: COLORS.surfaceLight,
+        overflow: "hidden",
+        justifyContent: "center",
+        alignItems: "center",
+        marginBottom: 12,
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2,
+        shadowRadius: 8,
+        elevation: 4,
+    },
+    image: {
+        width: "100%",
+        height: "100%",
+    },
+    imagePlaceholder: {
+        alignItems: "center",
+        justifyContent: "center",
+        gap: 8,
+    },
+    placeholderText: {
+        color: COLORS.grey,
+        fontSize: 12,
+        fontWeight: "500",
+    },
+    editIconContainer: {
+        position: "absolute",
+        bottom: 8,
+        right: 8,
+        backgroundColor: COLORS.primary,
+        width: 24,
+        height: 24,
+        borderRadius: 12,
+        justifyContent: "center",
+        alignItems: "center",
+        shadowColor: "#000",
+        shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2,
+        shadowRadius: 4,
+    },
+    imageHint: {
+        color: COLORS.grey,
+        fontSize: 13,
+        textAlign: "center",
+        alignSelf: "stretch",
     },
 });

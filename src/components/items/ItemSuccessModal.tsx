@@ -215,9 +215,9 @@ export default function ItemSuccessModal({
                 {/* Confetti particles */}
                 <View style={styles.confettiContainer} pointerEvents="none">
                     {particleValues.map((particle, index) => (
-                        <ConfettiParticle 
-                            key={index} 
-                            particle={particle} 
+                        <ConfettiParticle
+                            key={index}
+                            particle={particle}
                             color={PARTICLE_COLORS[index % PARTICLE_COLORS.length]}
                             isCircle={index % 2 === 0}
                         />
@@ -393,7 +393,8 @@ const styles = StyleSheet.create({
         borderRadius: 24,
         padding: 32,
         alignItems: "center",
-        maxWidth: 360,
+        width: "90%",
+        maxWidth: 500,
         alignSelf: "center",
         borderWidth: 1,
         borderColor: COLORS.surfaceLight,

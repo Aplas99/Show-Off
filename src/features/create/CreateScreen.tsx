@@ -13,9 +13,7 @@ import { Image } from "expo-image";
 import React, { useCallback, useEffect, useState } from "react";
 import {
     FlatList,
-    KeyboardAvoidingView,
     Modal,
-    Platform,
     ScrollView,
     StatusBar,
     StyleSheet,
@@ -227,9 +225,8 @@ export default function Create() {
     }, [isFetchingNextPage]);
 
     return (
-        <KeyboardAvoidingView
+        <View
             style={styles.container}
-            behavior={Platform.OS === "ios" ? "padding" : "height"}
         >
             <StatusBar barStyle="light-content" />
             <View
@@ -673,7 +670,7 @@ export default function Create() {
                     onSuccess={handleWizardSuccess}
                 />
             )}
-        </KeyboardAvoidingView>
+        </View>
     );
 }
 

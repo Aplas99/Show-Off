@@ -7,13 +7,13 @@ import {
   Alert,
   Image,
   SafeAreaView,
-  StatusBar,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
+import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 import { z } from "zod";
 
 export default function SignUp() {
@@ -56,83 +56,85 @@ export default function SignUp() {
       />
       {/* Content Layer */}
       <SafeAreaView style={styles.safeArea}>
-        <StatusBar
-          translucent
-          backgroundColor="transparent"
-          barStyle="light-content"
-        />
-        {/* Top branding + illustration */}
-        <View style={styles.topContainer}>
-          <View style={styles.iconContainer}>
-            <Image
-              source={require("@/assets/images/NewIconImage.png")}
-              style={styles.icon}
-              resizeMode="contain"
-            />
+        <KeyboardAwareScrollView
+          contentContainerStyle={styles.scrollContent}
+          keyboardShouldPersistTaps="handled"
+          showsVerticalScrollIndicator={false}
+          bottomOffset={20}
+        >
+          {/* Top branding + illustration */}
+          <View style={styles.topContainer}>
+            <View style={styles.iconContainer}>
+              <Image
+                source={require("@/assets/images/NewIconImage.png")}
+                style={styles.icon}
+                resizeMode="contain"
+              />
+            </View>
+            <Text style={styles.title}>AuctionAlley</Text>
+            <Text style={styles.subtitle}>Collect Em All</Text>
           </View>
-          <Text style={styles.title}>AuctionAlley</Text>
-          <Text style={styles.subtitle}>Collect Em All</Text>
-        </View>
-        {/* Auth Provider Buttons */}
-        <View style={styles.providerIconsRow}>
-          <TouchableOpacity
-            style={styles.providerButton}
-            onPress={handleGoogleSignIn}
-          >
-            <Image
-              source={require("@/assets/images/google-icon.png")}
-              style={styles.providerIcon}
-              resizeMode="contain"
-            />
-          </TouchableOpacity>
-          {/* Add more provider buttons here if needed */}
-        </View>
-        {/* Separator with OR */}
-        <View style={styles.separatorContainer}>
-          <View style={styles.separator} />
-          <Text style={styles.orText}>OR</Text>
-          <View style={styles.separator} />
-        </View>
-        {/* Form Inputs */}
-        <View style={styles.formContainer}>
-          <TextInput
-            style={styles.input}
-            placeholder="Username"
-            placeholderTextColor="#9CA3AF"
-            value={username}
-            onChangeText={setUsername}
-            autoCapitalize="none"
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Email"
-            placeholderTextColor="#9CA3AF"
-            value={email}
-            onChangeText={setEmail}
-            autoCapitalize="none"
-            keyboardType="email-address"
-          />
-          <TextInput
-            style={styles.input}
-            placeholder="Password"
-            placeholderTextColor="#9CA3AF"
-            value={password}
-            onChangeText={setPassword}
-            secureTextEntry
-          />
-          <TouchableOpacity style={styles.signUpButton} onPress={handleSignUp}>
-            <Text style={styles.signUpButtonText}>Sign Up</Text>
-          </TouchableOpacity>
-          {/* Already have an account? */}
-          <Link href="/signin" asChild>
-            <TouchableOpacity style={styles.haveAccountButton}>
-              <Text style={styles.haveAccountText}>
-                Already have an account?
-                <Text style={styles.signinLink}> Sign In</Text>
-              </Text>
+          {/* Auth Provider Buttons */}
+          <View style={styles.providerIconsRow}>
+            <TouchableOpacity
+              style={styles.providerButton}
+              onPress={handleGoogleSignIn}
+            >
+              <Image
+                source={require("@/assets/images/google-icon.png")}
+                style={styles.providerIcon}
+                resizeMode="contain"
+              />
             </TouchableOpacity>
-          </Link>
-        </View>
+            {/* Add more provider buttons here if needed */}
+          </View>
+          {/* Separator with OR */}
+          <View style={styles.separatorContainer}>
+            <View style={styles.separator} />
+            <Text style={styles.orText}>OR</Text>
+            <View style={styles.separator} />
+          </View>
+          {/* Form Inputs */}
+          <View style={styles.formContainer}>
+            <TextInput
+              style={styles.input}
+              placeholder="Username"
+              placeholderTextColor="#9CA3AF"
+              value={username}
+              onChangeText={setUsername}
+              autoCapitalize="none"
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Email"
+              placeholderTextColor="#9CA3AF"
+              value={email}
+              onChangeText={setEmail}
+              autoCapitalize="none"
+              keyboardType="email-address"
+            />
+            <TextInput
+              style={styles.input}
+              placeholder="Password"
+              placeholderTextColor="#9CA3AF"
+              value={password}
+              onChangeText={setPassword}
+              secureTextEntry
+            />
+            <TouchableOpacity style={styles.signUpButton} onPress={handleSignUp}>
+              <Text style={styles.signUpButtonText}>Sign Up</Text>
+            </TouchableOpacity>
+            {/* Already have an account? */}
+            <Link href="/signin" asChild>
+              <TouchableOpacity style={styles.haveAccountButton}>
+                <Text style={styles.haveAccountText}>
+                  Already have an account?
+                  <Text style={styles.signinLink}> Sign In</Text>
+                </Text>
+              </TouchableOpacity>
+            </Link>
+          </View>
+        </KeyboardAwareScrollView>
       </SafeAreaView>
     </View>
   );
@@ -151,8 +153,11 @@ const styles = StyleSheet.create({
   safeArea: {
     flex: 1,
     backgroundColor: "transparent",
-    alignItems: "center",
     zIndex: 1,
+  },
+  scrollContent: {
+    alignItems: "center",
+    flexGrow: 1,
   },
   topContainer: {
     alignItems: "center",

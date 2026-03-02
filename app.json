@@ -13,6 +13,7 @@
       "bundleIdentifier": "com.zed99.showoff"
     },
     "android": {
+      "softwareKeyboardLayoutMode": "adjustResize",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "assets/images/android-icon-foreground.png",

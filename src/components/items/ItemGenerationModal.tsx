@@ -73,7 +73,8 @@ export default function ItemGenerationModal({
     visible,
     onClose,
     onComplete,
-}: ItemGenerationModalProps) {
+    isFinished = false,
+}: ItemGenerationModalProps & { isFinished?: boolean }) {
     const haptics = useHaptics();
     const [currentStep, setCurrentStep] = useState(0);
     const [subMessageIndex, setSubMessageIndex] = useState(0);
@@ -85,8 +86,25 @@ export default function ItemGenerationModal({
     const cardScale = useSharedValue(0.9);
     const cardOpacity = useSharedValue(0);
 
+    // Handle isFinished prop
+    useEffect(() => {
+        if (visible && isFinished) {
+            // Fast forward to end
+            setCurrentStep(PROGRESS_STEPS.length - 1);
+            progress.value = withTiming(100, { duration: 500 });
+
+            const timer = setTimeout(() => {
+                haptics.success();
+                onComplete?.();
+            }, 800);
+            return () => clearTimeout(timer);
+        }
+    }, [visible, isFinished, haptics, onComplete, progress]);
+
     useEffect(() => {
         if (visible) {
+            if (isFinished) return; // Skip if already finished
+
             // Entry animation
             cardScale.value = withSpring(1, { damping: 15, stiffness: 200 });
             cardOpacity.value = withTiming(1, { duration: 300 });
@@ -95,19 +113,14 @@ export default function ItemGenerationModal({
             // Start step progression
             const stepInterval = setInterval(() => {
                 setCurrentStep((prev) => {
-                    if (prev < PROGRESS_STEPS.length - 1) {
+                    const next = prev + 1;
+                    if (next < PROGRESS_STEPS.length - 1) {
                         // Haptic feedback on step change
                         haptics.light();
-                        return prev + 1;
-                    } else {
-                        clearInterval(stepInterval);
-                        // Complete
-                        setTimeout(() => {
-                            haptics.success();
-                            onComplete?.();
-                        }, 800);
-                        return prev;
+                        return next;
                     }
+                    // Don't auto-complete if we're waiting for isFinished
+                    return prev;
                 });
             }, 1800);
 
@@ -128,7 +141,7 @@ export default function ItemGenerationModal({
             cardOpacity.value = 0;
             progress.value = 0;
         }
-    }, [visible, haptics, onComplete, cardScale, cardOpacity, progress]);
+    }, [visible, haptics, cardScale, cardOpacity, progress, isFinished]);
 
     useEffect(() => {
         // Animate progress based on current step
