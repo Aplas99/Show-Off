@@ -3,7 +3,8 @@ import {
     useGetItemComments,
     type Comment,
 } from "@/api/social/comments";
-import { COLORS } from "@/constants/theme";
+import { useColors, type ThemeColors } from "@/constants/theme";
+import { useThemeStore } from "@/hooks/useThemeStore";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useState } from "react";
 import {
@@ -48,6 +49,9 @@ export default function CommentModal({
 }: CommentModalProps) {
     const insets = useSafeAreaInsets();
     const { height: SCREEN_HEIGHT } = useWindowDimensions();
+    const colors = useColors();
+    const isDark = useThemeStore((s) => s.isDark);
+    const styles = getStyles(colors, isDark);
 
     const BOTTOM_SHEET_MAX_HEIGHT = SCREEN_HEIGHT * 0.85;
     const SWIPE_THRESHOLD = 100;
@@ -63,11 +67,9 @@ export default function CommentModal({
     const translateY = useSharedValue(SCREEN_HEIGHT);
     const opacity = useSharedValue(0);
 
-    // Native keyboard tracking from react-native-keyboard-controller
-    // `height` is a shared value (negative when keyboard is open, 0 when closed)
+    // Native keyboard tracking
     const { height: keyboardAnimatedHeight } = useReanimatedKeyboardAnimation();
 
-    // Spring configs for smooth, natural motion
     const OPEN_SPRING = { damping: 20, stiffness: 200, mass: 0.8 };
     const CLOSE_SPRING = { damping: 25, stiffness: 300, mass: 0.8 };
 
@@ -88,7 +90,6 @@ export default function CommentModal({
         .onUpdate((event) => {
             if (event.translationY > 0) {
                 translateY.value = event.translationY;
-                // Fade backdrop as user drags down
                 opacity.value = 1 - (event.translationY / BOTTOM_SHEET_MAX_HEIGHT);
             }
         })
@@ -102,7 +103,6 @@ export default function CommentModal({
                 });
                 opacity.value = withTiming(0, { duration: 200 });
             } else {
-                // Snap back with spring for a natural bounce
                 translateY.value = withSpring(0, CLOSE_SPRING);
                 opacity.value = withSpring(1, CLOSE_SPRING);
             }
@@ -116,8 +116,6 @@ export default function CommentModal({
         opacity: opacity.value,
     }));
 
-    // Animated style that pushes the input container up by the keyboard height
-    // keyboardAnimatedHeight is negative when keyboard is open (it's a translateY value), so we negate it
     const inputAnimatedStyle = useAnimatedStyle(() => {
         const kbHeight = Math.abs(keyboardAnimatedHeight.value);
         return {
@@ -198,7 +196,7 @@ export default function CommentModal({
                     />
                 </Animated.View>
 
-                {/* Bottom Sheet wrapper */}
+                {/* Bottom Sheet */}
                 <Animated.View
                     style={[
                         styles.bottomSheet,
@@ -212,16 +210,16 @@ export default function CommentModal({
                             <View style={styles.header}>
                                 <Text style={styles.headerTitle}>Comments</Text>
                                 <TouchableOpacity onPress={handleClose} style={styles.closeButton}>
-                                    <Ionicons name="close" size={24} color={COLORS.white} />
+                                    <Ionicons name="close" size={24} color={colors.text} />
                                 </TouchableOpacity>
                             </View>
                         </View>
                     </GestureDetector>
-                    {/* Middle Content: Comments List (flex: 1 is mandatory) */}
+
                     <View style={styles.commentsContainer}>
                         {isLoading ? (
                             <View style={styles.loadingContainer}>
-                                <ActivityIndicator size="large" color={COLORS.primary} />
+                                <ActivityIndicator size="large" color={colors.primary} />
                             </View>
                         ) : isError ? (
                             <View style={styles.errorContainer}>
@@ -252,12 +250,11 @@ export default function CommentModal({
                         )}
                     </View>
 
-                    {/* Bottom Container: Input Field — animated by keyboard */}
                     <Animated.View style={[styles.inputContainer, inputAnimatedStyle]}>
                         <TextInput
                             style={styles.input}
                             placeholder="Add a comment..."
-                            placeholderTextColor="#666"
+                            placeholderTextColor={colors.grey}
                             value={commentText}
                             onChangeText={setCommentText}
                             multiline
@@ -274,9 +271,9 @@ export default function CommentModal({
                             ]}
                         >
                             {createComment.isPending ? (
-                                <ActivityIndicator size="small" color={COLORS.white} />
+                                <ActivityIndicator size="small" color="#FFF" />
                             ) : (
-                                <Ionicons name="arrow-up" size={24} color={COLORS.white} />
+                                <Ionicons name="arrow-up" size={24} color="#FFF" />
                             )}
                         </TouchableOpacity>
                     </Animated.View>
@@ -286,32 +283,32 @@ export default function CommentModal({
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
     modalContainer: {
         flex: 1,
     },
     backdrop: {
         ...StyleSheet.absoluteFillObject,
-        backgroundColor: "rgba(0, 0, 0, 0.6)",
+        backgroundColor: colors.overlay,
     },
     bottomSheet: {
         position: "absolute",
         bottom: 0,
         left: 0,
         right: 0,
-        backgroundColor: "#16181D",
+        backgroundColor: isDark ? "#16181D" : colors.card,
         borderTopLeftRadius: 20,
         borderTopRightRadius: 20,
         overflow: "hidden",
     },
     dragHandleContainer: {
         paddingTop: 12,
-        backgroundColor: "#16181D",
+        backgroundColor: isDark ? "#16181D" : colors.card,
     },
     dragHandle: {
         width: 36,
         height: 4,
-        backgroundColor: "#333",
+        backgroundColor: colors.border,
         borderRadius: 2,
         alignSelf: "center",
         marginBottom: 8,
@@ -323,10 +320,10 @@ const styles = StyleSheet.create({
         paddingHorizontal: 20,
         paddingBottom: 12,
         borderBottomWidth: 1,
-        borderBottomColor: "#222",
+        borderBottomColor: colors.border,
     },
     headerTitle: {
-        color: COLORS.white,
+        color: colors.text,
         fontSize: 16,
         fontWeight: "700",
     },
@@ -334,7 +331,7 @@ const styles = StyleSheet.create({
         padding: 4,
     },
     commentsContainer: {
-        flex: 1, // This ensures it shrinks when keyboard appears
+        flex: 1,
     },
     loadingContainer: {
         flex: 1,
@@ -349,12 +346,12 @@ const styles = StyleSheet.create({
         gap: 8,
     },
     errorTitle: {
-        color: COLORS.white,
+        color: colors.text,
         fontSize: 16,
         fontWeight: "700",
     },
     errorSubtext: {
-        color: "#888",
+        color: colors.textDim,
         fontSize: 13,
         textAlign: "center",
         lineHeight: 18,
@@ -364,10 +361,10 @@ const styles = StyleSheet.create({
         paddingHorizontal: 16,
         paddingVertical: 10,
         borderRadius: 12,
-        backgroundColor: COLORS.primary,
+        backgroundColor: colors.primary,
     },
     retryText: {
-        color: COLORS.white,
+        color: "#FFF",
         fontWeight: "700",
     },
     commentsList: {
@@ -381,13 +378,13 @@ const styles = StyleSheet.create({
         width: 32,
         height: 32,
         borderRadius: 16,
-        backgroundColor: COLORS.primary,
+        backgroundColor: colors.primary,
         justifyContent: "center",
         alignItems: "center",
         marginRight: 12,
     },
     avatarText: {
-        color: COLORS.white,
+        color: "#FFF",
         fontSize: 14,
         fontWeight: "700",
     },
@@ -401,20 +398,20 @@ const styles = StyleSheet.create({
         gap: 8,
     },
     username: {
-        color: "#999",
+        color: colors.grey,
         fontSize: 13,
         fontWeight: "600",
         flexShrink: 1,
     },
     timestampBelow: {
-        color: "#555",
+        color: colors.textDim,
         fontSize: 11,
         lineHeight: 16,
         marginTop: 6,
         paddingBottom: 4,
     },
     commentTextContent: {
-        color: "#EEE",
+        color: isDark ? "#EEE" : colors.text,
         fontSize: 14,
         lineHeight: 20,
     },
@@ -423,17 +420,17 @@ const styles = StyleSheet.create({
         alignItems: "center",
         paddingHorizontal: 16,
         paddingTop: 12,
-        backgroundColor: "#1B1E26",
+        backgroundColor: isDark ? "#1B1E26" : colors.surface,
         borderTopWidth: 1,
-        borderTopColor: "#222",
+        borderTopColor: colors.border,
     },
     input: {
         flex: 1,
-        backgroundColor: "#121212",
+        backgroundColor: colors.inputBg,
         borderRadius: 20,
         paddingHorizontal: 16,
         paddingVertical: 10,
-        color: COLORS.white,
+        color: colors.text,
         fontSize: 15,
         maxHeight: 100,
         marginRight: 12,
@@ -442,12 +439,12 @@ const styles = StyleSheet.create({
         width: 40,
         height: 40,
         borderRadius: 20,
-        backgroundColor: COLORS.primary,
+        backgroundColor: colors.primary,
         justifyContent: "center",
         alignItems: "center",
     },
     submitButtonDisabled: {
-        backgroundColor: "#333",
+        backgroundColor: colors.border,
         opacity: 0.5,
     },
     emptyState: {
@@ -455,13 +452,13 @@ const styles = StyleSheet.create({
         alignItems: "center",
     },
     emptyStateText: {
-        color: "#FFF",
+        color: colors.text,
         fontSize: 16,
         fontWeight: "600",
         marginBottom: 4,
     },
     emptyStateSubtext: {
-        color: "#666",
+        color: colors.textDim,
         fontSize: 13,
     },
 });

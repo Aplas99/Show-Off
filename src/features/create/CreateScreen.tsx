@@ -1,6 +1,7 @@
 import { useProductSearch, type Product } from "@/api/items";
-import { COLORS } from "@/constants/theme";
+import { useColors, type ThemeColors } from "@/constants/theme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useThemeStore } from "@/hooks/useThemeStore";
 import BarcodeScannerModal from "@/src/components/items/BarcodeScannerModal";
 import CreateItemWizard from "@/src/components/items/CreateItemWizard";
 import ManualCreateItemWizard from "@/src/components/items/ManualCreateItemWizard";
@@ -56,6 +57,9 @@ const CATEGORIES = [
 export default function Create() {
     const insets = useSafeAreaInsets();
     const haptics = useHaptics();
+    const colors = useColors();
+    const isDark = useThemeStore((s) => s.isDark);
+    const styles = getStyles(colors);
 
     const [wizardVisible, setWizardVisible] = useState(false);
     const [inputMode, setInputMode] = useState<InputMode>("barcode");
@@ -210,9 +214,10 @@ export default function Create() {
                 item={item}
                 index={index}
                 onPress={() => handleProductSelect(item)}
+                colors={colors}
             />
         ),
-        [handleProductSelect]
+        [handleProductSelect, colors]
     );
 
     const renderFooter = useCallback(() => {
@@ -222,13 +227,13 @@ export default function Create() {
                 <PulseLoader size="small" />
             </View>
         );
-    }, [isFetchingNextPage]);
+    }, [isFetchingNextPage, styles.footerLoader]);
 
     return (
         <View
             style={styles.container}
         >
-            <StatusBar barStyle="light-content" />
+            <StatusBar barStyle={isDark ? "light-content" : "dark-content"} />
             <View
                 style={[
                     styles.contentContainer,
@@ -258,7 +263,7 @@ export default function Create() {
                                 name="barcode-outline"
                                 size={20}
                                 color={
-                                    inputMode === "barcode" ? COLORS.white : COLORS.grey
+                                    inputMode === "barcode" ? colors.text : colors.grey
                                 }
                             />
                             <Text
@@ -283,7 +288,7 @@ export default function Create() {
                                 name="create-outline"
                                 size={20}
                                 color={
-                                    inputMode === "manual" ? COLORS.white : COLORS.grey
+                                    inputMode === "manual" ? colors.text : colors.grey
                                 }
                             />
                             <Text
@@ -308,7 +313,7 @@ export default function Create() {
                                 name="search-outline"
                                 size={20}
                                 color={
-                                    inputMode === "search" ? COLORS.white : COLORS.grey
+                                    inputMode === "search" ? colors.text : colors.grey
                                 }
                             />
                             <Text
@@ -339,7 +344,7 @@ export default function Create() {
                                     <TextInput
                                         style={styles.input}
                                         placeholder="Enter barcode manually"
-                                        placeholderTextColor={COLORS.grey}
+                                        placeholderTextColor={colors.grey}
                                         value={barcodeInput}
                                         onChangeText={setBarcodeInput}
                                         keyboardType="numeric"
@@ -356,7 +361,7 @@ export default function Create() {
                                         <Ionicons
                                             name="camera"
                                             size={24}
-                                            color={COLORS.white}
+                                            color="#FFF"
                                         />
                                     </TouchableOpacity>
                                 </View>
@@ -375,7 +380,7 @@ export default function Create() {
                                     <Ionicons
                                         name="arrow-forward"
                                         size={20}
-                                        color={COLORS.white}
+                                        color="#FFF"
                                         style={{ marginLeft: 8 }}
                                     />
                                 </TouchableOpacity>
@@ -389,7 +394,7 @@ export default function Create() {
                                 <Ionicons
                                     name="create-outline"
                                     size={48}
-                                    color={COLORS.primary}
+                                    color={colors.primary}
                                 />
                             </View>
                             <Text style={styles.sectionTitle}>
@@ -409,7 +414,7 @@ export default function Create() {
                                 <Ionicons
                                     name="arrow-forward"
                                     size={20}
-                                    color={COLORS.white}
+                                    color="#FFF"
                                     style={{ marginLeft: 8 }}
                                 />
                             </TouchableOpacity>
@@ -423,7 +428,7 @@ export default function Create() {
                                     <TextInput
                                         style={styles.input}
                                         placeholder="Search by name, brand, etc."
-                                        placeholderTextColor={COLORS.grey}
+                                        placeholderTextColor={colors.grey}
                                         value={searchInput}
                                         onChangeText={setSearchInput}
                                         onSubmitEditing={handleSearchSubmit}
@@ -446,8 +451,8 @@ export default function Create() {
                                             size={24}
                                             color={
                                                 searchInput.trim()
-                                                    ? COLORS.white
-                                                    : COLORS.grey
+                                                    ? colors.text
+                                                    : colors.grey
                                             }
                                         />
                                     </TouchableOpacity>
@@ -466,7 +471,7 @@ export default function Create() {
                                                 { flex: 1, marginRight: 8 },
                                             ]}
                                             placeholder="Brand"
-                                            placeholderTextColor={COLORS.grey}
+                                            placeholderTextColor={colors.grey}
                                             value={brandInput}
                                             onChangeText={setBrandInput}
                                             autoCapitalize="words"
@@ -474,7 +479,7 @@ export default function Create() {
                                         <TextInput
                                             style={[styles.filterInput, { flex: 1 }]}
                                             placeholder="Manufacturer"
-                                            placeholderTextColor={COLORS.grey}
+                                            placeholderTextColor={colors.grey}
                                             value={manufacturerInput}
                                             onChangeText={setManufacturerInput}
                                             autoCapitalize="words"
@@ -489,7 +494,7 @@ export default function Create() {
                                         <Text
                                             style={[
                                                 styles.categoryText,
-                                                !categoryInput && { color: COLORS.grey },
+                                                !categoryInput && { color: colors.grey },
                                             ]}
                                         >
                                             {categoryInput || "Select Category"}
@@ -497,7 +502,7 @@ export default function Create() {
                                         <Ionicons
                                             name="chevron-down"
                                             size={16}
-                                            color={COLORS.grey}
+                                            color={colors.grey}
                                         />
                                     </TouchableOpacity>
                                 </View>
@@ -520,7 +525,7 @@ export default function Create() {
                                         <Ionicons
                                             name="alert-circle-outline"
                                             size={48}
-                                            color={COLORS.secondary}
+                                            color={colors.secondary}
                                         />
                                     </View>
                                     <Text style={styles.errorText}>
@@ -545,7 +550,7 @@ export default function Create() {
                                         <Ionicons
                                             name="search-outline"
                                             size={48}
-                                            color={COLORS.grey}
+                                            color={colors.grey}
                                         />
                                     </View>
                                     <Text style={styles.emptyText}>
@@ -600,7 +605,7 @@ export default function Create() {
                                         style={[
                                             styles.categoryOptionText,
                                             categoryInput === item && {
-                                                color: COLORS.primary,
+                                                color: colors.primary,
                                             },
                                         ]}
                                     >
@@ -610,7 +615,7 @@ export default function Create() {
                                         <Ionicons
                                             name="checkmark"
                                             size={20}
-                                            color={COLORS.primary}
+                                            color={colors.primary}
                                         />
                                     )}
                                 </TouchableOpacity>
@@ -623,7 +628,7 @@ export default function Create() {
                                 style={{ marginRight: 20 }}
                                 activeOpacity={0.7}
                             >
-                                <Text style={{ color: COLORS.grey }}>Clear</Text>
+                                <Text style={{ color: colors.grey }}>Clear</Text>
                             </TouchableOpacity>
                             <TouchableOpacity
                                 onPress={handleCloseCategoryModal}
@@ -631,7 +636,7 @@ export default function Create() {
                             >
                                 <Text
                                     style={{
-                                        color: COLORS.primary,
+                                        color: colors.primary,
                                         fontWeight: "600",
                                     }}
                                 >
@@ -679,14 +684,17 @@ function SearchResultItem({
     item,
     index,
     onPress,
+    colors,
 }: {
     item: Product;
     index: number;
     onPress: () => void;
+    colors: ThemeColors;
 }) {
     const scale = useSharedValue(1);
     const opacity = useSharedValue(0);
     const translateY = useSharedValue(20);
+    const styles = getStyles(colors);
 
     useEffect(() => {
         opacity.value = withDelay(
@@ -734,7 +742,7 @@ function SearchResultItem({
                         <Ionicons
                             name="image-outline"
                             size={24}
-                            color={COLORS.grey}
+                            color={colors.grey}
                         />
                     )}
                 </View>
@@ -758,16 +766,16 @@ function SearchResultItem({
                         )}
                     </View>
                 </View>
-                <Ionicons name="chevron-forward" size={20} color={COLORS.grey} />
+                <Ionicons name="chevron-forward" size={20} color={colors.grey} />
             </TouchableOpacity>
         </Animated.View>
     );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: ThemeColors) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: COLORS.background,
+        backgroundColor: colors.background,
     },
     contentContainer: {
         flex: 1,
@@ -786,14 +794,14 @@ const styles = StyleSheet.create({
         marginBottom: 24,
     },
     title: {
-        color: COLORS.white,
+        color: colors.text,
         fontSize: 32,
         fontWeight: "800",
         marginBottom: 8,
         textAlign: "center",
     },
     description: {
-        color: COLORS.grey,
+        color: colors.grey,
         fontSize: 16,
         textAlign: "center",
         lineHeight: 24,
@@ -801,12 +809,12 @@ const styles = StyleSheet.create({
     // Tab Styles
     tabContainer: {
         flexDirection: "row",
-        backgroundColor: COLORS.surface,
+        backgroundColor: colors.surface,
         borderRadius: 16,
         padding: 4,
         marginBottom: 20,
         borderWidth: 1,
-        borderColor: COLORS.surfaceLight,
+        borderColor: colors.surfaceLight,
     },
     tab: {
         flex: 1,
@@ -819,22 +827,22 @@ const styles = StyleSheet.create({
         gap: 8,
     },
     activeTab: {
-        backgroundColor: COLORS.surfaceLight,
+        backgroundColor: colors.surfaceLight,
     },
     tabText: {
-        color: COLORS.grey,
+        color: colors.grey,
         fontSize: 15,
         fontWeight: "600",
     },
     activeTabText: {
-        color: COLORS.white,
+        color: colors.text,
     },
     // Form Styles
     formSection: {
         marginBottom: 24,
     },
     sectionTitle: {
-        color: COLORS.white,
+        color: colors.text,
         fontSize: 20,
         fontWeight: "700",
         marginBottom: 16,
@@ -848,22 +856,22 @@ const styles = StyleSheet.create({
     input: {
         flex: 1,
         height: 56,
-        backgroundColor: COLORS.surface,
+        backgroundColor: colors.inputBg,
         borderRadius: 16,
         paddingHorizontal: 16,
-        color: COLORS.white,
+        color: colors.text,
         fontSize: 16,
         borderWidth: 1,
-        borderColor: COLORS.surfaceLight,
+        borderColor: colors.border,
     },
     scanButton: {
         width: 56,
         height: 56,
-        backgroundColor: COLORS.primary,
+        backgroundColor: colors.primary,
         borderRadius: 16,
         justifyContent: "center",
         alignItems: "center",
-        shadowColor: COLORS.primary,
+        shadowColor: colors.primary,
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,
@@ -872,35 +880,35 @@ const styles = StyleSheet.create({
     searchButtonIcon: {
         width: 56,
         height: 56,
-        backgroundColor: COLORS.surface,
+        backgroundColor: colors.surface,
         borderRadius: 16,
         justifyContent: "center",
         alignItems: "center",
         borderWidth: 1,
-        borderColor: COLORS.surfaceLight,
+        borderColor: colors.surfaceLight,
     },
     searchButtonDisabled: {
         opacity: 0.5,
     },
     submitButton: {
-        backgroundColor: COLORS.primary,
+        backgroundColor: colors.primary,
         height: 56,
         borderRadius: 16,
         alignItems: "center",
         justifyContent: "center",
         flexDirection: "row",
-        shadowColor: COLORS.primary,
+        shadowColor: colors.primary,
         shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.3,
         shadowRadius: 8,
         elevation: 4,
     },
     disabledButton: {
-        backgroundColor: COLORS.surface,
+        backgroundColor: colors.surface,
         shadowOpacity: 0,
     },
     submitButtonText: {
-        color: COLORS.white,
+        color: "#FFF",
         fontSize: 16,
         fontWeight: "700",
     },
@@ -927,7 +935,7 @@ const styles = StyleSheet.create({
         marginBottom: 16,
     },
     filtersHint: {
-        color: COLORS.grey,
+        color: colors.grey,
         fontSize: 12,
         marginBottom: 8,
         marginLeft: 4,
@@ -938,27 +946,27 @@ const styles = StyleSheet.create({
     },
     filterInput: {
         height: 44,
-        backgroundColor: COLORS.surface,
+        backgroundColor: colors.inputBg,
         borderRadius: 12,
         paddingHorizontal: 12,
-        color: COLORS.white,
+        color: colors.text,
         fontSize: 14,
         borderWidth: 1,
-        borderColor: COLORS.surfaceLight,
+        borderColor: colors.border,
     },
     categorySelector: {
         height: 44,
-        backgroundColor: COLORS.surface,
+        backgroundColor: colors.inputBg,
         borderRadius: 12,
         paddingHorizontal: 12,
         flexDirection: "row",
         alignItems: "center",
         justifyContent: "space-between",
         borderWidth: 1,
-        borderColor: COLORS.surfaceLight,
+        borderColor: colors.border,
     },
     categoryText: {
-        color: COLORS.white,
+        color: colors.text,
         fontSize: 14,
     },
     listContent: {
@@ -967,19 +975,19 @@ const styles = StyleSheet.create({
     },
     resultItem: {
         flexDirection: "row",
-        backgroundColor: COLORS.surface,
+        backgroundColor: colors.surface,
         padding: 12,
         borderRadius: 12,
         marginBottom: 12,
         alignItems: "center",
         borderWidth: 1,
-        borderColor: COLORS.surfaceLight,
+        borderColor: colors.border,
     },
     resultImageContainer: {
         width: 50,
         height: 50,
         borderRadius: 8,
-        backgroundColor: COLORS.surfaceLight,
+        backgroundColor: colors.surfaceLight,
         justifyContent: "center",
         alignItems: "center",
         marginRight: 12,
@@ -994,13 +1002,13 @@ const styles = StyleSheet.create({
         marginRight: 8,
     },
     resultTitle: {
-        color: COLORS.white,
+        color: colors.text,
         fontSize: 16,
         fontWeight: "600",
         marginBottom: 4,
     },
     resultBrand: {
-        color: COLORS.grey,
+        color: colors.grey,
         fontSize: 14,
         marginBottom: 2,
     },
@@ -1010,12 +1018,12 @@ const styles = StyleSheet.create({
         gap: 8,
     },
     resultCategory: {
-        color: COLORS.primary,
+        color: colors.primary,
         fontSize: 12,
         fontWeight: "500",
     },
     resultEan: {
-        color: COLORS.textDim,
+        color: colors.textDim,
         fontSize: 12,
     },
     // Loading States
@@ -1036,30 +1044,30 @@ const styles = StyleSheet.create({
         width: 80,
         height: 80,
         borderRadius: 40,
-        backgroundColor: `${COLORS.secondary}20`,
+        backgroundColor: `${colors.secondary}20`,
         justifyContent: "center",
         alignItems: "center",
         marginBottom: 16,
     },
     errorText: {
-        color: COLORS.white,
+        color: colors.text,
         fontSize: 18,
         fontWeight: "700",
         marginBottom: 4,
     },
     errorSubtext: {
-        color: COLORS.grey,
+        color: colors.grey,
         fontSize: 14,
         marginBottom: 20,
     },
     retryButton: {
-        backgroundColor: COLORS.primary,
+        backgroundColor: colors.primary,
         paddingHorizontal: 24,
         paddingVertical: 12,
         borderRadius: 12,
     },
     retryButtonText: {
-        color: COLORS.white,
+        color: "#FFF",
         fontSize: 14,
         fontWeight: "600",
     },
@@ -1067,19 +1075,19 @@ const styles = StyleSheet.create({
         width: 80,
         height: 80,
         borderRadius: 40,
-        backgroundColor: COLORS.surface,
+        backgroundColor: colors.surface,
         justifyContent: "center",
         alignItems: "center",
         marginBottom: 16,
     },
     emptyText: {
-        color: COLORS.white,
+        color: colors.text,
         fontSize: 18,
         fontWeight: "700",
         marginBottom: 4,
     },
     emptySubtext: {
-        color: COLORS.grey,
+        color: colors.grey,
         fontSize: 14,
     },
     footerLoader: {
@@ -1089,20 +1097,20 @@ const styles = StyleSheet.create({
     // Modal Styles
     modalBackdrop: {
         flex: 1,
-        backgroundColor: "rgba(0,0,0,0.7)",
+        backgroundColor: colors.overlay,
         justifyContent: "center",
         padding: 20,
     },
     modalCard: {
-        backgroundColor: COLORS.surface,
+        backgroundColor: colors.surface,
         borderRadius: 20,
         padding: 20,
         maxHeight: "70%",
         borderWidth: 1,
-        borderColor: COLORS.surfaceLight,
+        borderColor: colors.border,
     },
     modalTitle: {
-        color: COLORS.white,
+        color: colors.text,
         fontSize: 18,
         fontWeight: "700",
         marginBottom: 16,
@@ -1114,10 +1122,10 @@ const styles = StyleSheet.create({
         justifyContent: "space-between",
         paddingVertical: 14,
         borderBottomWidth: 1,
-        borderBottomColor: COLORS.surfaceLight,
+        borderBottomColor: colors.border,
     },
     categoryOptionText: {
-        color: COLORS.white,
+        color: colors.text,
         fontSize: 16,
     },
     modalFooter: {

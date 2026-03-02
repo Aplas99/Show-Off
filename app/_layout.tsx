@@ -3,16 +3,19 @@ import { KeyboardProvider } from "react-native-keyboard-controller";
 import { SafeAreaProvider } from "react-native-safe-area-context";
 import AuthInitializer from "./providers/AuthInitializer";
 import QueryProvider from "./providers/QueryProvider";
+import ThemeProvider from "./providers/ThemeProvider";
 
 export default function RootLayout() {
   return (
     <SafeAreaProvider>
       <KeyboardProvider statusBarTranslucent navigationBarTranslucent>
-        <QueryProvider>
-          <AuthInitializer>
-            <Stack screenOptions={{ headerShown: false }} />
-          </AuthInitializer>
-        </QueryProvider>
+        <ThemeProvider>
+          <QueryProvider>
+            <AuthInitializer>
+              <Stack screenOptions={{ headerShown: false }} />
+            </AuthInitializer>
+          </QueryProvider>
+        </ThemeProvider>
       </KeyboardProvider>
     </SafeAreaProvider>
   );

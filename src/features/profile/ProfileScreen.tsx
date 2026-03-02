@@ -1,5 +1,6 @@
 import { useGetCurrentUserProfile } from "@/api/profile/index";
-import { COLORS } from "@/constants/theme";
+import { useColors, type ThemeColors } from "@/constants/theme";
+import { useThemeStore } from "@/hooks/useThemeStore";
 import { supabase } from "@/lib/supabase";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
@@ -8,7 +9,6 @@ import {
     ActivityIndicator,
     Alert,
     ScrollView,
-    StatusBar,
     StyleSheet,
     Text,
     TouchableOpacity,
@@ -20,11 +20,14 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 export default function ProfileScreen() {
     const { data, isLoading, error } = useGetCurrentUserProfile();
     const insets = useSafeAreaInsets();
+    const colors = useColors();
+    const isDark = useThemeStore((s) => s.isDark);
+    const styles = getStyles(colors);
 
     if (isLoading) {
         return (
             <View style={styles.centerContainer}>
-                <ActivityIndicator size="large" color={COLORS.primary} />
+                <ActivityIndicator size="large" color={colors.primary} />
             </View>
         );
     }
@@ -32,7 +35,7 @@ export default function ProfileScreen() {
     if (error || !data) {
         return (
             <View style={styles.centerContainer}>
-                <Ionicons name="alert-circle-outline" size={48} color={COLORS.grey} />
+                <Ionicons name="alert-circle-outline" size={48} color={colors.grey} />
                 <Text style={styles.errorText}>Unable to load profile</Text>
             </View>
         );
@@ -60,25 +63,34 @@ export default function ProfileScreen() {
 
     return (
         <View style={styles.container}>
-            <StatusBar barStyle="light-content" />
             <ScrollView
                 contentContainerStyle={[
                     styles.scrollContent,
                     { paddingTop: insets.top + 20 }
                 ]}
             >
+                {/* Header with Settings Gear */}
+                <Animated.View
+                    entering={FadeInDown.delay(50).duration(400)}
+                    style={styles.topBar}
+                >
+                    <View style={{ width: 36 }} />
+                    <Text style={styles.screenTitle}>Profile</Text>
+                    <TouchableOpacity
+                        onPress={() => router.push("/(tabs)/profile/settings" as any)}
+                        style={styles.settingsButton}
+                    >
+                        <Ionicons name="settings-outline" size={24} color={colors.text} />
+                    </TouchableOpacity>
+                </Animated.View>
+
                 {/* Header Profile Section */}
                 <Animated.View
                     entering={FadeInDown.delay(100).duration(500)}
                     style={styles.header}
                 >
                     <View style={styles.avatarContainer}>
-                        {profile?.avatar_url ? (
-                            // In a real app use <Image /> or Expo Image here
-                            <Ionicons name="person" size={40} color="#FFF" />
-                        ) : (
-                            <Ionicons name="person" size={40} color="#FFF" />
-                        )}
+                        <Ionicons name="person" size={40} color={isDark ? "#FFF" : colors.primary} />
                     </View>
                     <Text style={styles.name}>
                         {profile?.full_name || profile?.username || "Collector"}
@@ -96,28 +108,12 @@ export default function ProfileScreen() {
                     entering={FadeInDown.delay(200).duration(500)}
                     style={styles.statsRow}
                 >
-                    <StatItem label="Showcases" value="0" />
+                    <StatItem label="Showcases" value="0" colors={colors} />
                     <View style={styles.statDivider} />
-                    <StatItem label="Items" value={String(socialStats.items)} />
+                    <StatItem label="Items" value={String(socialStats.items)} colors={colors} />
                     <View style={styles.statDivider} />
-                    <StatItem label="Followers" value={String(socialStats.followers)} />
+                    <StatItem label="Followers" value={String(socialStats.followers)} colors={colors} />
                 </Animated.View>
-
-                {/* Admin Dashboard Link - Only visible if admin
-                {!!profile?.is_admin && (
-                    <Animated.View
-                        entering={FadeInDown.delay(250).duration(500)}
-                        style={styles.adminSection}
-                    >
-                        <Link href="/(admin)/menu" asChild>
-                            <TouchableOpacity style={styles.adminButton}>
-                                <Ionicons name="shield-checkmark" size={20} color="#FFF" />
-                                <Text style={styles.adminButtonText}>Admin Dashboard</Text>
-                                <Ionicons name="chevron-forward" size={20} color="#FFF" />
-                            </TouchableOpacity>
-                        </Link>
-                    </Animated.View>
-                )} */}
 
                 {/* Info Section */}
                 <Animated.View
@@ -129,17 +125,20 @@ export default function ProfileScreen() {
                         icon="mail-outline"
                         label="Email"
                         value={user?.email || ""}
+                        colors={colors}
                     />
                     <InfoRow
                         icon="calendar-outline"
                         label="Joined"
                         value={new Date(user?.created_at || "").toLocaleDateString()}
+                        colors={colors}
                     />
                     {profile?.bio && (
                         <InfoRow
                             icon="information-circle-outline"
                             label="Bio"
                             value={profile.bio}
+                            colors={colors}
                         />
                     )}
                 </Animated.View>
@@ -153,7 +152,7 @@ export default function ProfileScreen() {
                         style={styles.logoutButton}
                         onPress={handleLogout}
                     >
-                        <Ionicons name="log-out-outline" size={20} color="#EF4444" />
+                        <Ionicons name="log-out-outline" size={20} color={colors.danger} />
                         <Text style={styles.logoutText}>Sign Out</Text>
                     </TouchableOpacity>
                 </Animated.View>
@@ -162,33 +161,40 @@ export default function ProfileScreen() {
     );
 }
 
-const StatItem = ({ label, value }: { label: string, value: string }) => (
-    <View style={styles.statItem}>
-        <Text style={styles.statValue}>{value}</Text>
-        <Text style={styles.statLabel}>{label}</Text>
+const StatItem = ({ label, value, colors }: { label: string, value: string, colors: ThemeColors }) => (
+    <View style={{ alignItems: "center", flex: 1 }}>
+        <Text style={{ fontSize: 20, fontWeight: "700", color: colors.text, marginBottom: 4 }}>
+            {value}
+        </Text>
+        <Text style={{ fontSize: 12, color: colors.grey, textTransform: "uppercase" }}>
+            {label}
+        </Text>
     </View>
 );
 
-const InfoRow = ({ icon, label, value }: { icon: any, label: string, value: string }) => (
-    <View style={styles.infoRow}>
-        <View style={styles.iconBox}>
-            <Ionicons name={icon} size={20} color={COLORS.grey} />
+const InfoRow = ({ icon, label, value, colors }: { icon: any, label: string, value: string, colors: ThemeColors }) => {
+    const styles = getStyles(colors);
+    return (
+        <View style={styles.infoRow}>
+            <View style={styles.iconBox}>
+                <Ionicons name={icon} size={20} color={colors.grey} />
+            </View>
+            <View style={styles.infoText}>
+                <Text style={styles.infoLabel}>{label}</Text>
+                <Text style={styles.infoValue}>{value}</Text>
+            </View>
         </View>
-        <View style={styles.infoText}>
-            <Text style={styles.infoLabel}>{label}</Text>
-            <Text style={styles.infoValue}>{value}</Text>
-        </View>
-    </View>
-);
+    );
+};
 
-const styles = StyleSheet.create({
+const getStyles = (colors: ThemeColors) => StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: COLORS.background,
+        backgroundColor: colors.background,
     },
     centerContainer: {
         flex: 1,
-        backgroundColor: COLORS.background,
+        backgroundColor: colors.background,
         justifyContent: "center",
         alignItems: "center",
     },
@@ -197,9 +203,28 @@ const styles = StyleSheet.create({
         paddingBottom: 40,
     },
     errorText: {
-        color: COLORS.grey,
+        color: colors.grey,
         marginTop: 12,
         fontSize: 16,
+    },
+    topBar: {
+        flexDirection: "row",
+        justifyContent: "space-between",
+        alignItems: "center",
+        marginBottom: 24,
+    },
+    screenTitle: {
+        fontSize: 18,
+        fontWeight: "700",
+        color: colors.text,
+    },
+    settingsButton: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+        backgroundColor: colors.surface,
+        justifyContent: "center",
+        alignItems: "center",
     },
     header: {
         alignItems: "center",
@@ -209,26 +234,26 @@ const styles = StyleSheet.create({
         width: 88,
         height: 88,
         borderRadius: 44,
-        backgroundColor: COLORS.surface, // Dark grey
+        backgroundColor: colors.surface,
         justifyContent: "center",
         alignItems: "center",
         marginBottom: 16,
         borderWidth: 1,
-        borderColor: "#333",
+        borderColor: colors.border,
     },
     name: {
         fontSize: 24,
         fontWeight: "700",
-        color: "#FFF",
+        color: colors.text,
         marginBottom: 4,
     },
     email: {
         fontSize: 14,
-        color: COLORS.grey,
+        color: colors.grey,
     },
     adminBadge: {
         marginTop: 8,
-        backgroundColor: "#EF4444",
+        backgroundColor: colors.danger,
         paddingHorizontal: 8,
         paddingVertical: 4,
         borderRadius: 4,
@@ -242,32 +267,17 @@ const styles = StyleSheet.create({
         flexDirection: "row",
         justifyContent: "space-around",
         alignItems: "center",
-        backgroundColor: COLORS.surface,
+        backgroundColor: colors.surface,
         borderRadius: 16,
         paddingVertical: 20,
         marginBottom: 32,
         borderWidth: 1,
-        borderColor: "#333",
-    },
-    statItem: {
-        alignItems: "center",
-        flex: 1,
-    },
-    statValue: {
-        fontSize: 20,
-        fontWeight: "700",
-        color: "#FFF",
-        marginBottom: 4,
-    },
-    statLabel: {
-        fontSize: 12,
-        color: COLORS.grey,
-        textTransform: "uppercase",
+        borderColor: colors.border,
     },
     statDivider: {
         width: 1,
         height: 30,
-        backgroundColor: "#333",
+        backgroundColor: colors.border,
     },
     section: {
         marginBottom: 32,
@@ -275,7 +285,7 @@ const styles = StyleSheet.create({
     sectionTitle: {
         fontSize: 18,
         fontWeight: "700",
-        color: "#FFF",
+        color: colors.text,
         marginBottom: 16,
     },
     infoRow: {
@@ -287,7 +297,7 @@ const styles = StyleSheet.create({
         width: 40,
         height: 40,
         borderRadius: 12,
-        backgroundColor: COLORS.surface,
+        backgroundColor: colors.surface,
         justifyContent: "center",
         alignItems: "center",
         marginRight: 16,
@@ -297,12 +307,12 @@ const styles = StyleSheet.create({
     },
     infoLabel: {
         fontSize: 12,
-        color: COLORS.grey,
+        color: colors.grey,
         marginBottom: 2,
     },
     infoValue: {
         fontSize: 16,
-        color: "#FFF",
+        color: colors.text,
         fontWeight: "500",
     },
     footer: {
@@ -315,31 +325,13 @@ const styles = StyleSheet.create({
         paddingVertical: 16,
         borderRadius: 16,
         borderWidth: 1,
-        borderColor: "#EF4444",
-        backgroundColor: "rgba(239, 68, 68, 0.1)",
+        borderColor: colors.danger,
+        backgroundColor: `${colors.danger}15`,
     },
     logoutText: {
-        color: "#EF4444",
+        color: colors.danger,
         fontSize: 16,
         fontWeight: "700",
         marginLeft: 8,
-    },
-    adminSection: {
-        marginBottom: 32,
-    },
-    adminButton: {
-        flexDirection: "row",
-        alignItems: "center",
-        backgroundColor: "#EF4444",
-        padding: 16,
-        borderRadius: 16,
-        justifyContent: "space-between",
-    },
-    adminButtonText: {
-        color: "#FFF",
-        fontWeight: "700",
-        fontSize: 16,
-        marginLeft: 8,
-        flex: 1,
     },
 });

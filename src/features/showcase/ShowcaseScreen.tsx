@@ -1,5 +1,5 @@
 import { ShowcaseRow, useGetVisibleShowcases } from "@/api/showcase";
-import { COLORS } from "@/constants/theme";
+import { useColors, type ThemeColors } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
 import { Link, useRouter } from "expo-router";
 import React from "react";
@@ -16,6 +16,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 export default function ShowcaseScreen() {
   const insets = useSafeAreaInsets();
   const router = useRouter();
+  const colors = useColors();
+  const styles = getStyles(colors);
   const { data: showcases, isLoading, error } = useGetVisibleShowcases();
 
   const renderItem = ({ item }: { item: ShowcaseRow }) => (
@@ -40,12 +42,12 @@ export default function ShowcaseScreen() {
             Created: {new Date(item.created_at).toLocaleDateString()}
           </Text>
           {item.is_public ? (
-            <Ionicons name="globe-outline" size={16} color={COLORS.textDim} />
+            <Ionicons name="globe-outline" size={16} color={colors.textDim} />
           ) : (
             <Ionicons
               name="lock-closed-outline"
               size={16}
-              color={COLORS.textDim}
+              color={colors.textDim}
             />
           )}
         </View>
@@ -56,7 +58,7 @@ export default function ShowcaseScreen() {
   if (isLoading) {
     return (
       <View style={[styles.container, styles.centered]}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
+        <ActivityIndicator size="large" color={colors.primary} />
       </View>
     );
   }
@@ -74,7 +76,6 @@ export default function ShowcaseScreen() {
     <View style={[styles.container, { paddingTop: insets.top }]}>
       <View style={styles.header}>
         <Text style={styles.title}>My Showcases</Text>
-        {/* Future: Add Create Button */}
       </View>
 
       <FlatList
@@ -84,7 +85,7 @@ export default function ShowcaseScreen() {
         contentContainerStyle={styles.listContent}
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
-            <Ionicons name="library-outline" size={64} color={COLORS.textDim} />
+            <Ionicons name="library-outline" size={64} color={colors.textDim} />
             <Text style={styles.emptyText}>No showcases found</Text>
             <Text style={styles.emptySubText}>
               Create your first showcase to get started!
@@ -96,10 +97,10 @@ export default function ShowcaseScreen() {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: COLORS.background || "#000",
+    backgroundColor: colors.background,
   },
   centered: {
     justifyContent: "center",
@@ -109,23 +110,23 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#222",
+    borderBottomColor: colors.border,
   },
   title: {
     fontSize: 28,
     fontWeight: "bold",
-    color: COLORS.white || "#FFF",
+    color: colors.text,
   },
   listContent: {
     padding: 16,
   },
   card: {
-    backgroundColor: COLORS.surface || "#1A1A1A",
+    backgroundColor: colors.surface,
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: colors.border,
   },
   cardHeader: {
     flexDirection: "row",
@@ -136,7 +137,7 @@ const styles = StyleSheet.create({
   cardTitle: {
     fontSize: 18,
     fontWeight: "600",
-    color: COLORS.white || "#FFF",
+    color: colors.text,
   },
   cardFooter: {
     flexDirection: "row",
@@ -145,26 +146,26 @@ const styles = StyleSheet.create({
   },
   date: {
     fontSize: 12,
-    color: COLORS.textDim || "#888",
+    color: colors.textDim,
   },
   defaultBadge: {
-    backgroundColor: "rgba(168, 85, 247, 0.2)", // Purple tint
+    backgroundColor: `${colors.primary}30`,
     paddingHorizontal: 8,
     paddingVertical: 2,
     borderRadius: 4,
   },
   defaultText: {
     fontSize: 10,
-    color: COLORS.primary || "#A855F7",
+    color: colors.primary,
     fontWeight: "bold",
   },
   errorText: {
-    color: "#FF5252",
+    color: colors.danger,
     fontSize: 16,
     marginBottom: 8,
   },
   errorSubText: {
-    color: COLORS.textDim || "#888",
+    color: colors.textDim,
     fontSize: 14,
   },
   emptyContainer: {
@@ -172,13 +173,13 @@ const styles = StyleSheet.create({
     marginTop: 60,
   },
   emptyText: {
-    color: COLORS.white || "#FFF",
+    color: colors.text,
     fontSize: 18,
     fontWeight: "600",
     marginTop: 16,
   },
   emptySubText: {
-    color: COLORS.textDim || "#888",
+    color: colors.textDim,
     fontSize: 14,
     marginTop: 8,
   },

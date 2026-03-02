@@ -1,5 +1,5 @@
 import { TAB_BAR_HEIGHT } from "@/constants/layoutConfig";
-import { COLORS } from "@/constants/theme";
+import { useColors } from "@/constants/theme";
 import { useAuthStore } from "@/hooks/useAuthStore";
 import { Ionicons } from "@expo/vector-icons";
 import AntDesign from "@expo/vector-icons/AntDesign";
@@ -13,11 +13,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 export default function TabLayout() {
   const insets = useSafeAreaInsets();
   const { session } = useAuthStore();
+  const colors = useColors();
 
   useEffect(() => {
     if (Platform.OS === "android") {
-      // Hide Android nav bar
-      // NavigationBar.setVisibilityAsync("hidden");
       NavigationBar.setBehaviorAsync("overlay-swipe");
     }
   }, []);
@@ -31,15 +30,15 @@ export default function TabLayout() {
       screenOptions={{
         tabBarShowLabel: false,
         headerShown: false,
-        tabBarActiveTintColor: COLORS.primary,
-        tabBarInactiveTintColor: COLORS.grey,
+        tabBarActiveTintColor: colors.primary,
+        tabBarInactiveTintColor: colors.grey,
         tabBarHideOnKeyboard: true,
         tabBarStyle: {
           height:
             TAB_BAR_HEIGHT +
             insets.bottom +
             (Platform.OS === "android" ? 10 : 0),
-          backgroundColor: COLORS.surface,
+          backgroundColor: colors.surface,
           borderTopWidth: 0,
           paddingTop: 10,
           paddingBottom: insets.bottom + (Platform.OS === "android" ? 10 : 0),
@@ -108,3 +107,4 @@ export default function TabLayout() {
     </Tabs>
   );
 }
+
