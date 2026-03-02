@@ -1,9 +1,34 @@
 import { Appearance } from "react-native";
 import { create } from "zustand";
 
-const storage = new MMKV({ id: "theme-store" });
-
 export type ThemeMode = "light" | "dark" | "system";
+
+/**
+ * Simple synchronous key/value store for theme persistence.
+ * Tries MMKV first (dev builds), falls back to in-memory (Expo Go).
+ */
+interface SyncStorage {
+    getString(key: string): string | undefined;
+    set(key: string, value: string): void;
+}
+
+function createStorage(): SyncStorage {
+    try {
+        // MMKV is a native module — only works in dev builds, not Expo Go
+        const { MMKV } = require("react-native-mmkv");
+        const mmkv = new MMKV({ id: "theme-store" });
+        return mmkv as SyncStorage;
+    } catch {
+        // Fallback: in-memory store (Expo Go compatibility)
+        const mem = new Map<string, string>();
+        return {
+            getString: (key: string) => mem.get(key),
+            set: (key: string, value: string) => mem.set(key, value),
+        };
+    }
+}
+
+const storage = createStorage();
 
 interface ThemeState {
     mode: ThemeMode;
