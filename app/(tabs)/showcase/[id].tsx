@@ -5,6 +5,7 @@ import ItemDetailModal from "@/src/features/showcase/ItemDetailModal";
 import ShowcaseCarousel from "@/src/features/showcase/ShowcaseCarousel";
 import ShowcaseListItem from "@/src/features/showcase/ShowcaseListItem";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import React, {
   useCallback,
@@ -25,7 +26,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -49,9 +50,9 @@ const AnimatedGridItem = ({
         toValue: 1,
         delay: index * 50,
         useNativeDriver: true,
-        ...(Platform.OS === "ios"
-          ? { bounciness: 8, speed: 12 }
-          : { tension: 40, friction: 4 }),
+        // Calm spring values — avoids choking the UI thread on Android
+        tension: 80,
+        friction: 8,
       }).start();
     } else {
       scaleAnim.setValue(1);
@@ -80,7 +81,9 @@ export default function ShowcaseDetail() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   // View mode state
-  const [viewMode, setViewMode] = useState<"grid" | "carousel" | "bookcase">("bookcase");
+  const [viewMode, setViewMode] = useState<"grid" | "carousel" | "bookcase">("grid");
+  // Tracks whether images have been prefetched before bookcase is revealed
+  const [bookcaseReady, setBookcaseReady] = useState(false);
 
   // Modal state
   const [selectedItem, setSelectedItem] = useState<ItemWithProduct | null>(
@@ -137,13 +140,7 @@ export default function ShowcaseDetail() {
     }).start();
   }, [controlsVisible]);
 
-  const handleToggleView = useCallback(() => {
-    setViewMode((prev) => {
-      if (prev === "grid") return "carousel";
-      if (prev === "carousel") return "bookcase";
-      return "grid";
-    });
-  }, []);
+  // handleToggleView declared below, after items + filteredItems are available
 
   const handleItemPress = useCallback((item: ItemWithProduct) => {
     setSelectedItem(item);
@@ -162,6 +159,7 @@ export default function ShowcaseDetail() {
     refetch,
     isRefetching,
   } = useGetItemsWithProductData(showcaseId!);
+
 
   // Filter and sort
   const filteredItems = useMemo(() => {
@@ -216,6 +214,29 @@ export default function ShowcaseDetail() {
 
     return filtered;
   }, [items, searchQuery, selectedCondition, priceRange, sortBy, sortOrder]);
+
+  const handleToggleView = useCallback(async () => {
+    const next: "grid" | "carousel" | "bookcase" =
+      viewMode === "grid" ? "carousel" :
+        viewMode === "carousel" ? "bookcase" :
+          "grid";
+
+    if (next === "bookcase" && filteredItems.length > 0) {
+      setBookcaseReady(false);
+      setViewMode("bookcase");
+      // Prefetch all images — wait until all are cached, then reveal
+      const prefetches = filteredItems.map((item) => {
+        const productData = item.products?.data || {};
+        const url = item.image_url || (productData?.images?.[0] ?? null);
+        return url ? Image.prefetch(url) : Promise.resolve();
+      });
+      await Promise.all(prefetches);
+      setBookcaseReady(true);
+    } else {
+      if (next !== "bookcase") setBookcaseReady(false);
+      setViewMode(next);
+    }
+  }, [viewMode, filteredItems]);
 
   if (!showcaseId) {
     return (
@@ -325,12 +346,20 @@ export default function ShowcaseDetail() {
           ]}
           pointerEvents={viewMode === "bookcase" ? "auto" : "none"}
         >
-          <BookcaseView
-            items={filteredItems}
-            onItemPress={handleItemPress}
-            showcaseName="Showcase" // Could be dynamic if we fetch showcase details
-            onBookmarkPress={() => setControlsVisible(prev => !prev)}
-          />
+          {/* Loading overlay — shown while images are being prefetched */}
+          {viewMode === "bookcase" && !bookcaseReady ? (
+            <View style={styles.bookcaseLoading}>
+              <ActivityIndicator size="large" color="#9B5DE5" />
+              <Text style={styles.bookcaseLoadingText}>Preparing bookcase…</Text>
+            </View>
+          ) : (
+            <BookcaseView
+              items={filteredItems}
+              onItemPress={handleItemPress}
+              showcaseName="Showcase"
+              onBookmarkPress={() => setControlsVisible(prev => !prev)}
+            />
+          )}
         </Animated.View>
       </View>
 
@@ -630,4 +659,18 @@ const styles = StyleSheet.create({
   modalActions: { flexDirection: "row", justifyContent: "flex-end" },
   cancelButton: { padding: 10 },
   cancelButtonText: { color: "#9B5DE5", fontSize: 16, fontWeight: "600" },
+
+  // Bookcase prefetch loading overlay
+  bookcaseLoading: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#0f0906",
+    gap: 16,
+  },
+  bookcaseLoadingText: {
+    color: "#8b6b5c",
+    fontSize: 14,
+    fontWeight: "500",
+  },
 });
