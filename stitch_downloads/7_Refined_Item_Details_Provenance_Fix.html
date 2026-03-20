@@ -1,0 +1,237 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<link href="https://fonts.googleapis.com" rel="preconnect"/>
+<link crossorigin="" href="https://fonts.gstatic.com" rel="preconnect"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&amp;family=Manrope:wght@700;800&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<script id="tailwind-config">
+    tailwind.config = {
+      darkMode: "class",
+      theme: {
+        extend: {
+          colors: {
+            "surface": "#0e0e0e",
+            "surface-variant": "#262626",
+            "primary": "#c899ff",
+            "on-secondary": "#510d72",
+            "on-surface-variant": "#adaaaa",
+            "secondary": "#de98ff",
+            "on-tertiary-fixed": "#39000f",
+            "surface-dim": "#0e0e0e",
+            "on-tertiary-container": "#56001b",
+            "secondary-container": "#682888",
+            "primary-container": "#be87ff",
+            "outline-variant": "#484847",
+            "on-tertiary": "#680925",
+            "surface-container-highest": "#262626",
+            "error": "#ff6e84",
+            "on-secondary-container": "#edc1ff",
+            "inverse-surface": "#fcf9f8",
+            "on-primary-container": "#340064",
+            "secondary-fixed": "#eec2ff",
+            "on-primary-fixed": "#000000",
+            "on-secondary-fixed-variant": "#723393",
+            "tertiary": "#ff94a4",
+            "primary-fixed": "#be87ff",
+            "inverse-primary": "#7c39c7",
+            "tertiary-container": "#fd7e93",
+            "surface-container": "#1a1a1a",
+            "surface-bright": "#2c2c2c",
+            "background": "#0e0e0e",
+            "secondary-dim": "#cf8bf0",
+            "tertiary-dim": "#f3778c",
+            "on-surface": "#ffffff",
+            "surface-container-low": "#131313",
+            "on-secondary-fixed": "#530f74",
+            "primary-fixed-dim": "#b374ff",
+            "error-dim": "#d73357",
+            "surface-tint": "#c899ff",
+            "inverse-on-surface": "#565555",
+            "on-error": "#490013",
+            "on-error-container": "#ffb2b9",
+            "outline": "#767575",
+            "on-tertiary-fixed-variant": "#71122b",
+            "tertiary-fixed-dim": "#fa7c91",
+            "surface-container-high": "#20201f",
+            "tertiary-fixed": "#ff90a0",
+            "secondary-fixed-dim": "#e7afff",
+            "primary-dim": "#bc83ff",
+            "error-container": "#a70138",
+            "on-background": "#ffffff",
+            "surface-container-lowest": "#000000",
+            "on-primary": "#44007f",
+            "on-primary-fixed-variant": "#41007a"
+          },
+          fontFamily: {
+            "headline": ["Manrope"],
+            "body": ["Inter"],
+            "label": ["Inter"]
+          },
+          borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+        },
+      },
+    }
+  </script>
+<style>
+    .material-symbols-outlined {
+      font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+    }
+    .glass-shelf {
+      background: linear-gradient(180deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0) 100%);
+      box-shadow: inset 0 1px 0 0 rgba(255,255,255,0.1);
+    }
+    .museum-glow {
+      box-shadow: 0 -20px 60px -10px rgba(200, 153, 255, 0.2);
+    }
+    .tonal-transition-no-border {
+      border: none !important;
+    }
+    .hide-scrollbar::-webkit-scrollbar {
+      display: none;
+    }
+  </style>
+</head>
+<body class="bg-surface text-on-surface font-body selection:bg-primary/30 min-h-screen">
+<!-- TopAppBar (from COMPONENTS_26) -->
+<header class="fixed top-0 w-full z-50 bg-[#0e0e0e]/80 backdrop-blur-xl shadow-[0_12px_32px_rgba(0,0,0,0.4)] flex items-center justify-between px-6 h-16 tonal-transition-no-border">
+<div class="flex items-center gap-4">
+<button class="text-[#c899ff] hover:bg-white/10 transition-colors active:scale-95 duration-200 p-2 rounded-full">
+<span class="material-symbols-outlined">arrow_back</span>
+</button>
+<h1 class="font-['Manrope'] font-bold tracking-tight text-white text-lg">Item Details</h1>
+</div>
+<div class="flex items-center gap-2">
+<button class="text-white/70 hover:bg-white/10 transition-colors active:scale-95 duration-200 p-2 rounded-full">
+<span class="material-symbols-outlined">more_vert</span>
+</button>
+</div>
+</header>
+<main class="pt-16 pb-32 max-w-2xl mx-auto overflow-y-auto">
+<!-- Hero Section: Image Carousel -->
+<section class="relative aspect-[4/5] w-full overflow-hidden bg-surface-container-lowest">
+<!-- Museum Background Gradient -->
+<div class="absolute inset-0 bg-gradient-to-b from-surface via-surface-container-low to-surface"></div>
+<!-- Lighting Effect -->
+<div class="absolute top-0 left-1/2 -translate-x-1/2 w-full h-full bg-[radial-gradient(circle_at_50%_20%,_rgba(200,153,255,0.15)_0%,_transparent_60%)]"></div>
+<!-- The Mahogany Shelf Area -->
+<div class="absolute inset-x-0 bottom-0 h-48 bg-[#2a1a12] shadow-[inset_0_10px_40px_rgba(0,0,0,0.8)] border-t border-white/5">
+<div class="absolute top-0 w-full h-1 bg-gradient-to-r from-transparent via-white/20 to-transparent"></div>
+</div>
+<!-- Carousel Container -->
+<div class="absolute inset-0 flex flex-col">
+<div class="flex-1 overflow-x-auto snap-x snap-mandatory flex hide-scrollbar">
+<!-- Carousel Slide 1 -->
+<div class="min-w-full h-full snap-center flex items-center justify-center p-8 pb-20">
+<div class="relative w-full h-full max-w-sm glass-shelf rounded-t-xl border border-white/10 museum-glow flex items-end justify-center">
+<img alt="Momo Figure Front" class="w-full h-full object-contain z-10 drop-shadow-[0_25px_25px_rgba(0,0,0,0.9)] scale-110 mb-4" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCv_dQQkEKjjoLxdEsPUGuduS_aJaK2mXLhC7SHFtTL2lDRdQbD5bJAhEmKi4yAVrfQoUs79nQsydz-zM3MS9Vy_5Wq00uDT_IlAEO4P8-qN1RvJSXYJBLLuYiha4V2fgx2Hcbm0CiHLafSk59QUKZM-kfb0oejM4LX8uS6GZCFMzT5ZzizZRojm32gWqaOlTt5Dlc1rhEmOcMU7zBvldccdwlRlypsv67jFU-0xnTil-BeRXMeC6CnfVrvtIscQWnwXvEFg3m0Q9HD"/>
+<div class="absolute inset-0 bg-gradient-to-tr from-white/5 to-transparent pointer-events-none"></div>
+</div>
+</div>
+<!-- Carousel Slide 2 -->
+<div class="min-w-full h-full snap-center flex items-center justify-center p-8 pb-20">
+<div class="relative w-full h-full max-w-sm glass-shelf rounded-t-xl border border-white/10 museum-glow flex items-end justify-center opacity-80">
+<img alt="Momo Figure View 2" class="w-full h-full object-contain z-10 drop-shadow-[0_25px_25px_rgba(0,0,0,0.9)] scale-100 mb-4" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCv_dQQkEKjjoLxdEsPUGuduS_aJaK2mXLhC7SHFtTL2lDRdQbD5bJAhEmKi4yAVrfQoUs79nQsydz-zM3MS9Vy_5Wq00uDT_IlAEO4P8-qN1RvJSXYJBLLuYiha4V2fgx2Hcbm0CiHLafSk59QUKZM-kfb0oejM4LX8uS6GZCFMzT5ZzizZRojm32gWqaOlTt5Dlc1rhEmOcMU7zBvldccdwlRlypsv67jFU-0xnTil-BeRXMeC6CnfVrvtIscQWnwXvEFg3m0Q9HD"/>
+</div>
+</div>
+<!-- Carousel Slide 3 -->
+<div class="min-w-full h-full snap-center flex items-center justify-center p-8 pb-20">
+<div class="relative w-full h-full max-w-sm glass-shelf rounded-t-xl border border-white/10 museum-glow flex items-end justify-center opacity-60">
+<img alt="Momo Figure View 3" class="w-full h-full object-contain z-10 drop-shadow-[0_25px_25px_rgba(0,0,0,0.9)] scale-90 mb-4" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCv_dQQkEKjjoLxdEsPUGuduS_aJaK2mXLhC7SHFtTL2lDRdQbD5bJAhEmKi4yAVrfQoUs79nQsydz-zM3MS9Vy_5Wq00uDT_IlAEO4P8-qN1RvJSXYJBLLuYiha4V2fgx2Hcbm0CiHLafSk59QUKZM-kfb0oejM4LX8uS6GZCFMzT5ZzizZRojm32gWqaOlTt5Dlc1rhEmOcMU7zBvldccdwlRlypsv67jFU-0xnTil-BeRXMeC6CnfVrvtIscQWnwXvEFg3m0Q9HD"/>
+</div>
+</div>
+</div>
+<!-- Indicator Dots -->
+<div class="absolute bottom-24 left-1/2 -translate-x-1/2 flex gap-1.5 z-30">
+<div class="w-1.5 h-1.5 rounded-full bg-primary shadow-[0_0_8px_rgba(200,153,255,0.8)]"></div>
+<div class="w-1.5 h-1.5 rounded-full bg-white/20"></div>
+<div class="w-1.5 h-1.5 rounded-full bg-white/20"></div>
+</div>
+</div>
+</section>
+<!-- Content Section -->
+<div class="px-6 -mt-10 relative z-20">
+<!-- Action Buttons: Edit and Share side-by-side -->
+<div class="flex justify-end gap-3 mb-8">
+<button class="bg-gradient-to-tr from-[#c899ff] to-[#be87ff] text-on-primary-fixed font-headline font-bold px-5 py-2.5 rounded-full shadow-[0_4px_16px_rgba(200,153,255,0.3)] active:scale-95 transition-transform flex items-center gap-2 text-sm">
+<span class="material-symbols-outlined text-[18px]" style="font-variation-settings: 'FILL' 1;">edit</span>
+          Edit
+        </button>
+<button class="w-10 h-10 flex items-center justify-center bg-surface-container-high/60 backdrop-blur-md border border-white/10 text-white rounded-full transition-all active:scale-95">
+<span class="material-symbols-outlined text-[20px]">share</span>
+</button>
+</div>
+<!-- Header Information -->
+<div class="mb-10">
+<div class="flex items-center gap-2 mb-2">
+<span class="text-primary font-label text-[10px] tracking-widest uppercase bg-primary/10 px-3 py-1 rounded-full">Bandai Exclusive</span>
+</div>
+<h2 class="font-headline text-5xl font-extrabold tracking-tighter text-white mb-2">Momo Figure</h2>
+<div class="flex items-baseline gap-3">
+<span class="text-3xl font-headline font-bold text-white">$19.99</span>
+<span class="text-on-surface-variant line-through text-sm">$24.99</span>
+</div>
+</div>
+<!-- Bento-style Details Grid -->
+<div class="grid grid-cols-2 gap-4">
+<!-- Condition -->
+<div class="col-span-1 bg-surface-container-high/40 backdrop-blur-md rounded-xl p-5 border border-white/[0.03] hover:bg-surface-container-high/60 transition-colors">
+<span class="text-on-surface-variant font-label text-[10px] uppercase tracking-widest block mb-1">Condition</span>
+<span class="text-white font-headline font-bold text-lg">New</span>
+</div>
+<!-- Category -->
+<div class="col-span-1 bg-surface-container-high/40 backdrop-blur-md rounded-xl p-5 border border-white/[0.03] hover:bg-surface-container-high/60 transition-colors">
+<span class="text-on-surface-variant font-label text-[10px] uppercase tracking-widest block mb-1">Category</span>
+<span class="text-white font-headline font-bold text-lg">Figures</span>
+</div>
+<!-- Publisher -->
+<div class="col-span-2 bg-surface-container-high/40 backdrop-blur-md rounded-xl p-5 border border-white/[0.03] flex items-center justify-between hover:bg-surface-container-high/60 transition-colors">
+<div>
+<span class="text-on-surface-variant font-label text-[10px] uppercase tracking-widest block mb-1">Publisher</span>
+<span class="text-white font-headline font-bold text-xl">Bandai</span>
+</div>
+<div class="w-12 h-12 rounded-lg bg-surface flex items-center justify-center">
+<span class="material-symbols-outlined text-primary">verified</span>
+</div>
+</div>
+<!-- Date Added -->
+<div class="col-span-2 bg-surface-container-high/40 backdrop-blur-md rounded-xl p-5 border border-white/[0.03] flex items-center gap-4 hover:bg-surface-container-high/60 transition-colors">
+<span class="material-symbols-outlined text-on-surface-variant">calendar_today</span>
+<div>
+<span class="text-on-surface-variant font-label text-[10px] uppercase tracking-widest block">Date Added</span>
+<span class="text-white font-body font-medium">February 2, 2026</span>
+</div>
+</div>
+</div>
+<!-- Description Section -->
+<div class="mt-16 pt-12 mb-10 border-t border-white/5">
+<h3 class="font-headline text-2xl font-bold text-white mb-6 tracking-tight">Provenance</h3>
+<p class="text-on-surface/80 leading-loose font-body text-[15px]">
+    Part of the 2026 'Obsidian Archive' special collection. This Momo figure features high-density PVC construction with museum-quality paint application. Encased in a protective environment since acquisition.
+  </p>
+</div>
+<!-- EAN/UPC Text -->
+<div class="pb-8 text-center">
+<p class="text-[10px] text-white/30 font-body tracking-wider">EAN/UPC: 1234567890123</p>
+</div>
+</div>
+</main>
+<!-- BottomNavBar (from COMPONENTS_26) -->
+<nav class="fixed bottom-0 left-0 w-full flex justify-around items-center px-8 pb-8 pt-4 bg-[#0e0e0e]/80 backdrop-blur-xl shadow-[0_-12px_32px_rgba(0,0,0,0.4)] rounded-t-[1.5rem] z-50 tonal-transition-no-border">
+<a class="flex items-center justify-center text-white/50 p-3 hover:text-white transition-all active:scale-90 duration-300" href="#">
+<span class="material-symbols-outlined">grid_view</span>
+</a>
+<a class="flex items-center justify-center text-white/50 p-3 hover:text-white transition-all active:scale-90 duration-300" href="#">
+<span class="material-symbols-outlined">search</span>
+</a>
+<a class="flex items-center justify-center bg-gradient-to-tr from-[#c899ff] to-[#be87ff] text-black rounded-full p-3 shadow-[0_0_15px_rgba(200,153,255,0.4)] active:scale-90 duration-300" href="#">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">auto_awesome</span>
+</a>
+<a class="flex items-center justify-center text-white/50 p-3 hover:text-white transition-all active:scale-90 duration-300" href="#">
+<span class="material-symbols-outlined">person</span>
+</a>
+</nav>
+</body></html>

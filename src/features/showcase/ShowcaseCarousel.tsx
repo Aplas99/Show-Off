@@ -1,4 +1,5 @@
 import { ItemWithProduct } from "@/api/items";
+import { COLORS } from "@/constants/theme";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useRef } from "react";
@@ -108,10 +109,10 @@ const Backdrop = React.memo(
         })}
         <LinearGradient
           colors={[
-            "rgba(0,0,0,0)",
-            "rgba(0,0,0,0.3)",
-            "rgba(0,0,0,0.8)",
-            "#000000",
+            "rgba(14,14,14,0)",
+            "rgba(14,14,14,0.3)",
+            "rgba(14,14,14,0.8)",
+            COLORS.background,
           ]}
           locations={[0, 0.4, 0.7, 1]}
           style={styles.backdropGradient}
@@ -187,6 +188,12 @@ function ShowcaseCarousel({ data, onItemPress, onIndexChange }: Props) {
               ? productData.images[0]
               : undefined);
 
+          const displayTitle =
+            actualItem.custom_title ||
+            actualItem.products?.searchableTitle ||
+            "Untitled";
+
+
           return (
             <Animated.View
               style={[
@@ -194,7 +201,7 @@ function ShowcaseCarousel({ data, onItemPress, onIndexChange }: Props) {
                 {
                   width: ITEM_SIZE,
                   transform: [{ scale }],
-                  paddingTop: screenHeight * 0.25 + insets.top, // Adjust for status bar
+                  paddingTop: screenHeight * 0.25 + insets.top,
                 },
               ]}
             >
@@ -213,6 +220,19 @@ function ShowcaseCarousel({ data, onItemPress, onIndexChange }: Props) {
                     priority="high"
                     recyclingKey={actualItem.id.toString()}
                   />
+                  {/* Bottom fade gradient */}
+                  <LinearGradient
+                    colors={["transparent", "rgba(0,0,0,0.8)"]}
+                    locations={[0.3, 1]}
+                    style={styles.posterFade}
+                  />
+                  {/* Glassmorphic Overlay */}
+                  <View style={styles.glassOverlay}>
+                    {/* Title */}
+                    <Text style={styles.cardTitle} numberOfLines={1}>
+                      {displayTitle}
+                    </Text>
+                  </View>
                 </View>
               </TouchableOpacity>
             </Animated.View>
@@ -287,8 +307,7 @@ const styles = StyleSheet.create({
   backdropImage: {
     width: screenWidth,
     height: BACKDROP_HEIGHT,
-    // Improve image rendering quality
-    backgroundColor: "#000",
+    backgroundColor: COLORS.background,
   },
   backdropGradient: {
     position: "absolute",
@@ -303,7 +322,6 @@ const styles = StyleSheet.create({
   itemContainer: {
     justifyContent: "flex-start",
     alignItems: "center",
-    // paddingTop is handled inline to account for safe area insets
   },
   itemContent: {
     width: "100%",
@@ -312,36 +330,48 @@ const styles = StyleSheet.create({
   posterCard: {
     width: "100%",
     height: POSTER_HEIGHT,
-    backgroundColor: "#FFF",
-    borderRadius: 20,
-    padding: 8,
+    borderRadius: 12,
+    overflow: "hidden",
+    backgroundColor: COLORS.surfaceContainerHigh,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
+    shadowOffset: { width: 0, height: 20 },
+    shadowOpacity: 0.6,
+    shadowRadius: 50,
     elevation: 12,
-    marginTop: 0,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
   },
   posterImage: {
     width: "100%",
     height: "100%",
-    backgroundColor: "#E0E0E0",
-    borderRadius: 14,
-    // Improve image rendering quality
-    overflow: "hidden",
+    backgroundColor: COLORS.surfaceContainerHigh,
   },
-  imagePlaceholder: {
-    width: "100%",
-    height: "100%",
-    backgroundColor: "#E0E0E0",
-    borderRadius: 14,
-    justifyContent: "center",
-    alignItems: "center",
+  // --- Poster fade gradient ---
+  posterFade: {
+    position: "absolute",
+    left: 0,
+    right: 0,
+    bottom: 0,
+    height: "50%",
   },
-  placeholderText: {
-    color: "#999",
-    fontSize: 14,
+  // --- Glassmorphic Overlay ---
+  glassOverlay: {
+    position: "absolute",
+    bottom: 16,
+    left: 16,
+    right: 16,
+    backgroundColor: "rgba(0,0,0,0.4)",
+    borderRadius: 12,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.05)",
   },
+  cardTitle: {
+    fontSize: 22,
+    fontWeight: "700",
+    color: "#FFF",
+  },
+  // ---
   emptyContainer: {
     flex: 1,
     justifyContent: "center",
@@ -349,7 +379,7 @@ const styles = StyleSheet.create({
     paddingVertical: 40,
   },
   emptyText: {
-    color: "#9CA3AF",
+    color: COLORS.onSurfaceVariant,
     fontSize: 16,
     textAlign: "center",
   },
