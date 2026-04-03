@@ -12,6 +12,7 @@ import {
     FlatList,
     Keyboard,
     Modal,
+    Platform,
     StyleSheet,
     Text,
     TextInput,
@@ -52,6 +53,7 @@ export default function CommentModal({
     const colors = useColors();
     const isDark = useThemeStore((s) => s.isDark);
     const styles = getStyles(colors, isDark);
+    const androidTextBuffer = Platform.OS === "android" ? "\u00A0" : "";
 
     const BOTTOM_SHEET_MAX_HEIGHT = SCREEN_HEIGHT * 0.85;
     const SWIPE_THRESHOLD = 100;
@@ -242,8 +244,8 @@ export default function CommentModal({
                                 keyboardDismissMode="interactive"
                                 ListEmptyComponent={
                                     <View style={styles.emptyState}>
-                                        <Text style={styles.emptyStateText}>No comments yet</Text>
-                                        <Text style={styles.emptyStateSubtext}>Be the first to comment!</Text>
+                                        <Text style={styles.emptyStateText}>{`No comments yet${androidTextBuffer}`}</Text>
+                                        <Text style={styles.emptyStateSubtext}>{`Be the first to comment!${androidTextBuffer}`}</Text>
                                     </View>
                                 }
                             />
@@ -253,7 +255,7 @@ export default function CommentModal({
                     <Animated.View style={[styles.inputContainer, inputAnimatedStyle]}>
                         <TextInput
                             style={styles.input}
-                            placeholder="Add a comment..."
+                            placeholder={`Add a comment...${androidTextBuffer}`}
                             placeholderTextColor={colors.grey}
                             value={commentText}
                             onChangeText={setCommentText}
@@ -261,6 +263,7 @@ export default function CommentModal({
                             maxLength={500}
                             returnKeyType="send"
                             onSubmitEditing={handleSubmit}
+                            underlineColorAndroid="transparent"
                         />
                         <TouchableOpacity
                             onPress={handleSubmit}
@@ -426,14 +429,18 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
     },
     input: {
         flex: 1,
+        minWidth: 0,
         backgroundColor: colors.inputBg,
         borderRadius: 20,
-        paddingHorizontal: 16,
+        paddingLeft: 16,
+        paddingRight: Platform.OS === "android" ? 28 : 16,
         paddingVertical: 10,
         color: colors.text,
         fontSize: 15,
+        lineHeight: 20,
         maxHeight: 100,
         marginRight: 12,
+        ...(Platform.OS === "android" ? { fontFamily: "sans-serif" } : null),
     },
     submitButton: {
         width: 40,
@@ -449,6 +456,8 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
     },
     emptyState: {
         paddingVertical: 60,
+        paddingHorizontal: 24,
+        alignSelf: "stretch",
         alignItems: "center",
     },
     emptyStateText: {
@@ -456,9 +465,19 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         fontSize: 16,
         fontWeight: "600",
         marginBottom: 4,
+        textAlign: "center",
+        width: "100%",
+        ...(Platform.OS === "android"
+            ? { paddingHorizontal: 12, fontFamily: "sans-serif-medium" }
+            : null),
     },
     emptyStateSubtext: {
         color: colors.textDim,
         fontSize: 13,
+        textAlign: "center",
+        width: "100%",
+        ...(Platform.OS === "android"
+            ? { paddingHorizontal: 12, fontFamily: "sans-serif" }
+            : null),
     },
 });

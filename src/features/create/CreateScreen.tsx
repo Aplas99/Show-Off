@@ -15,6 +15,7 @@ import React, { useCallback, useEffect, useState } from "react";
 import {
   FlatList,
   Modal,
+  Platform,
   ScrollView,
   StatusBar,
   StyleSheet,
@@ -35,23 +36,18 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 type InputMode = "barcode" | "manual" | "search";
 
 const CATEGORIES = [
-  "Electronics",
-  "Media",
-  "Toys",
+  "TCG",
+   "Books",
+  "Music",
+  "Movies",
+  "Figures",
   "Games",
   "Apparel",
   "Home",
-  "Garden",
-  "Sports",
   "Automotive",
-  "Office",
-  "Health & Beauty",
-  "Food & Beverages",
-  "Arts & Crafts",
-  "Pet Supplies",
-  "Books",
-  "Music",
-  "Movies",
+  "Beyond Comprehension",
+ 
+
 ];
 
 export default function Create() {
@@ -60,6 +56,7 @@ export default function Create() {
   const colors = useColors();
   const isDark = useThemeStore((s) => s.isDark);
   const styles = getStyles(colors);
+  const androidTextBuffer = Platform.OS === "android" ? "\u00A0" : "";
 
   const [wizardVisible, setWizardVisible] = useState(false);
   const [inputMode, setInputMode] = useState<InputMode>("barcode");
@@ -618,23 +615,16 @@ export default function Create() {
             <View style={styles.modalFooter}>
               <TouchableOpacity
                 onPress={handleClearCategory}
-                style={{ marginRight: 20 }}
+                style={styles.modalFooterSecondaryAction}
                 activeOpacity={0.7}
               >
-                <Text style={{ color: colors.grey }}>Clear</Text>
+                <Text style={styles.modalFooterSecondaryText}>{`Clear${androidTextBuffer}`}</Text>
               </TouchableOpacity>
               <TouchableOpacity
                 onPress={handleCloseCategoryModal}
                 activeOpacity={0.7}
               >
-                <Text
-                  style={{
-                    color: colors.primary,
-                    fontWeight: "600",
-                  }}
-                >
-                  Close
-                </Text>
+                <Text style={styles.modalFooterPrimaryText}>{`Close${androidTextBuffer}`}</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -1037,6 +1027,9 @@ const getStyles = (colors: ThemeColors) =>
     categoryText: {
       color: colors.text,
       fontSize: 14,
+      flex: 1,
+      minWidth: 0,
+      ...(Platform.OS === "android" ? { paddingRight: 6 } : null),
     },
     listContent: {
       paddingHorizontal: 24,
@@ -1200,11 +1193,30 @@ const getStyles = (colors: ThemeColors) =>
     categoryOptionText: {
       color: colors.text,
       fontSize: 16,
+      flex: 1,
+      minWidth: 0,
+      ...(Platform.OS === "android" ? { paddingRight: 10 } : null),
     },
     modalFooter: {
       flexDirection: "row",
       justifyContent: "flex-end",
       marginTop: 16,
       alignItems: "center",
+    },
+    modalFooterSecondaryAction: {
+      marginRight: 20,
+    },
+    modalFooterSecondaryText: {
+      color: colors.grey,
+      ...(Platform.OS === "android"
+        ? { paddingRight: 8, fontFamily: "sans-serif" }
+        : null),
+    },
+    modalFooterPrimaryText: {
+      color: colors.primary,
+      fontWeight: "600",
+      ...(Platform.OS === "android"
+        ? { paddingRight: 8, fontFamily: "sans-serif-medium" }
+        : null),
     },
   });
