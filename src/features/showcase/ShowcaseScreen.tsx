@@ -166,13 +166,13 @@ const getStyles = (colors: ThemeColors) =>
       paddingVertical: 6,
       borderRadius: 999,
       borderWidth: 1,
-      borderColor: "rgba(255,255,255,0.2)",
-      backgroundColor: "rgba(255,255,255,0.05)",
+      borderColor: `${colors.outlineVariant}33`,
+      backgroundColor: `${colors.surfaceContainerHigh}80`,
     },
     heroPillLabel: {
       fontSize: 10,
       fontWeight: "700",
-      color: "rgba(255,255,255,0.4)",
+      color: colors.onSurfaceVariant,
       textTransform: "uppercase",
       letterSpacing: 2,
     },
@@ -188,9 +188,9 @@ const getStyles = (colors: ThemeColors) =>
       gap: 20,
       padding: 16,
       borderRadius: 16,
-      backgroundColor: "rgba(26,26,26,0.6)",
+      backgroundColor: `${colors.surfaceContainer}99`,
       borderWidth: 1,
-      borderColor: "rgba(255,255,255,0.15)",
+      borderColor: `${colors.outlineVariant}26`,
       marginBottom: 12,
     },
     thumbnail: {
@@ -218,7 +218,7 @@ const getStyles = (colors: ThemeColors) =>
     dateText: {
       fontSize: 10,
       fontWeight: "700",
-      color: "rgba(255,255,255,0.4)",
+      color: colors.onSurfaceVariant,
       textTransform: "uppercase",
       letterSpacing: 2,
     },
@@ -226,7 +226,7 @@ const getStyles = (colors: ThemeColors) =>
       width: 4,
       height: 4,
       borderRadius: 2,
-      backgroundColor: "rgba(255,255,255,0.2)",
+      backgroundColor: `${colors.onSurfaceVariant}33`,
     },
     cardTitle: {
       fontSize: 22,
@@ -236,7 +236,7 @@ const getStyles = (colors: ThemeColors) =>
     },
     cardDescription: {
       fontSize: 12,
-      color: "rgba(255,255,255,0.5)",
+      color: colors.onSurfaceVariant,
     },
     // --- States ---
     errorText: {

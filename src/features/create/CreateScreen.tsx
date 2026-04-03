@@ -795,12 +795,12 @@ const getStyles = (colors: ThemeColors) =>
     // Tab Styles — Pill segmented control
     tabContainer: {
       flexDirection: "row",
-      backgroundColor: `${colors.surfaceContainerLow}99`,
+      backgroundColor: colors.surfaceContainerHighest,
       borderRadius: 999,
       padding: 6,
       marginBottom: 24,
       borderWidth: 1,
-      borderColor: "rgba(255,255,255,0.05)",
+      borderColor: `${colors.outlineVariant}66`,
     },
     tab: {
       flex: 1,
@@ -820,7 +820,7 @@ const getStyles = (colors: ThemeColors) =>
       shadowRadius: 20,
     },
     tabText: {
-      color: "rgba(255,255,255,0.4)",
+      color: colors.onSurfaceVariant,
       fontSize: 11,
       fontWeight: "800",
       textTransform: "uppercase",
