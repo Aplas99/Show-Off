@@ -1,7 +1,7 @@
 import { ItemWithProduct } from "@/api/items";
 import { COLORS } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
-import { BlurView } from "expo-blur";
+
 import React, { useEffect, useRef } from "react";
 import {
   Animated,
@@ -22,28 +22,21 @@ type Props = {
   onClose: () => void;
 };
 
-const { height: SCREEN_HEIGHT } = Dimensions.get("window");
-// Reduced header height slightly to fit better on standard screens
-const HEADER_HEIGHT = 350;
+const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get("window");
 
 export default function ItemDetailModal({ visible, item, onClose }: Props) {
-  // Modal Transition Animations
   const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
-
-  // Staggered Entrance Animations (Opacity)
   const headerOpacity = useRef(new Animated.Value(0)).current;
   const gridOpacity = useRef(new Animated.Value(0)).current;
   const descOpacity = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (visible) {
-      // 1. Reset values
       headerOpacity.setValue(0);
       gridOpacity.setValue(0);
       descOpacity.setValue(0);
 
-      // 2. Start Modal Entrance
       Animated.parallel([
         Animated.spring(slideAnim, {
           toValue: 0,
@@ -58,7 +51,6 @@ export default function ItemDetailModal({ visible, item, onClose }: Props) {
         }),
       ]).start();
 
-      // 3. Trigger Staggered Content Animation sooner (overlapped with modal)
       Animated.sequence([
         Animated.delay(100),
         Animated.stagger(80, [
@@ -80,7 +72,6 @@ export default function ItemDetailModal({ visible, item, onClose }: Props) {
         ]),
       ]).start();
     } else {
-      // Exit Animation
       Animated.parallel([
         Animated.timing(slideAnim, {
           toValue: SCREEN_HEIGHT,
@@ -97,7 +88,6 @@ export default function ItemDetailModal({ visible, item, onClose }: Props) {
   }, [visible, slideAnim, fadeAnim]);
 
   if (!item && !visible) return null;
-
   const displayItem = item;
   if (!displayItem && visible) return null;
 
@@ -115,11 +105,6 @@ export default function ItemDetailModal({ visible, item, onClose }: Props) {
     }
   }
 
-  const imageUrl =
-    displayItem?.image_url ||
-    (productData.images && productData.images.length > 0
-      ? productData.images[0]
-      : null);
 
   const title =
     displayItem?.custom_title ||
@@ -148,9 +133,6 @@ export default function ItemDetailModal({ visible, item, onClose }: Props) {
     productData.publisher ||
     "Unknown";
 
-  // --- Animation Interpolations ---
-
-  // Slide-up effect for content sections matching opacity
   const contentTranslateY = (anim: Animated.Value) =>
     anim.interpolate({
       inputRange: [0, 1],
@@ -186,39 +168,26 @@ export default function ItemDetailModal({ visible, item, onClose }: Props) {
     >
       <GestureHandlerRootView style={{ flex: 1 }}>
         <View style={styles.overlay}>
-          {/* Backdrop */}
           <Animated.View style={[styles.backdrop, { opacity: fadeAnim }]}>
             <Pressable style={styles.backdropPressable} onPress={onClose} />
           </Animated.View>
 
-          {/* Modal Sheet */}
           <Animated.View
             style={[
               styles.modalContainer,
               { transform: [{ translateY: slideAnim }] },
             ]}
           >
-            {/* Background for modal content (so you don't see through it during bounce) */}
-            <View style={[styles.absoluteFill, { backgroundColor: "#000" }]} />
+            <View style={[styles.absoluteFill, { backgroundColor: COLORS.background }]} />
 
-            {/* Floating Close Button */}
-            <View style={styles.floatingHeader}>
-              <TouchableOpacity style={styles.roundButton} onPress={onClose}>
-                <BlurView
-                  intensity={20}
-                  tint="dark"
-                  style={StyleSheet.absoluteFill}
-                />
-                <Ionicons name="close" size={24} color="#FFF" />
-              </TouchableOpacity>
-            </View>
+
 
             <Animated.ScrollView
               style={styles.scrollView}
               contentContainerStyle={{ paddingBottom: 100 }}
               scrollEventThrottle={16}
             >
-              {/* Content Sheet */}
+              {/* Content */}
               <View style={styles.contentSheet}>
                 <PanGestureHandler
                   onGestureEvent={onGestureEvent}
@@ -229,6 +198,22 @@ export default function ItemDetailModal({ visible, item, onClose }: Props) {
                   </Animated.View>
                 </PanGestureHandler>
 
+                {/* Back + More Row */}
+                <View style={styles.inlineHeader}>
+                  <TouchableOpacity style={styles.backButton} onPress={onClose}>
+                    <Ionicons name="arrow-back" size={22} color={COLORS.primary} />
+                  </TouchableOpacity>
+                  <View style={styles.actionRow}>
+                    <TouchableOpacity style={styles.editButton}>
+                      <Ionicons name="pencil" size={16} color="#000" />
+                      <Text style={styles.editButtonText}>Edit</Text>
+                    </TouchableOpacity>
+                    <TouchableOpacity style={styles.shareButton}>
+                      <Ionicons name="share-outline" size={18} color="#FFF" />
+                    </TouchableOpacity>
+                  </View>
+                </View>
+
                 {/* 1. Header Section */}
                 <Animated.View
                   style={{
@@ -237,10 +222,11 @@ export default function ItemDetailModal({ visible, item, onClose }: Props) {
                   }}
                 >
                   {brand && (
-                    <Text style={styles.brandText}>{brand.toUpperCase()}</Text>
+                    <View style={styles.brandBadge}>
+                      <Text style={styles.brandText}>{brand}</Text>
+                    </View>
                   )}
                   <Text style={styles.titleText}>{title}</Text>
-
                   <View style={styles.priceRow}>
                     {price != null ? (
                       <Text style={styles.priceText}>
@@ -252,58 +238,63 @@ export default function ItemDetailModal({ visible, item, onClose }: Props) {
                     ) : (
                       <Text style={styles.priceTextPlaceholder}>Price N/A</Text>
                     )}
-
                     {displayItem?.for_sale && (
-                      <View style={styles.badge}>
-                        <Text style={styles.badgeText}>FOR SALE</Text>
+                      <View style={styles.saleBadge}>
+                        <Text style={styles.saleBadgeText}>FOR SALE</Text>
                       </View>
                     )}
                   </View>
                 </Animated.View>
 
-                <View style={styles.divider} />
-
-                {/* 2. Grid Section */}
+                {/* 2. Bento Grid */}
                 <Animated.View
                   style={[
-                    styles.gridContainer,
+                    styles.bentoGrid,
                     {
                       opacity: gridOpacity,
                       transform: [{ translateY: contentTranslateY(gridOpacity) }],
                     },
                   ]}
                 >
-                  <InfoItem
-                    icon="ribbon-outline"
-                    label="Condition"
-                    value={displayItem?.condition || "N/A"}
-                    color={COLORS.primary}
-                  />
-                  <InfoItem
-                    icon="pricetag-outline"
-                    label="Category"
-                    value={category}
-                    color="#3B82F6"
-                  />
-                  <InfoItem
-                    icon="business-outline"
+                  <View style={styles.bentoRow}>
+                    <BentoItem
+                      label="Condition"
+                      value={displayItem?.condition || "N/A"}
+                      flex={1}
+                    />
+                    <BentoItem
+                      label="Category"
+                      value={category}
+                      flex={1}
+                    />
+                  </View>
+                  <BentoItem
                     label="Publisher"
                     value={publisher}
-                    color="#F59E0B"
+                    trailing={
+                      <View style={styles.verifiedIcon}>
+                        <Ionicons name="checkmark-circle" size={22} color={COLORS.primary} />
+                      </View>
+                    }
+                    fullWidth
                   />
-                  <InfoItem
-                    icon="calendar-outline"
-                    label="Added"
+                  <BentoItem
+                    label="Date Added"
                     value={
                       displayItem?.created_at
-                        ? new Date(displayItem.created_at).toLocaleDateString()
+                        ? new Date(displayItem.created_at).toLocaleDateString("en-US", {
+                            year: "numeric",
+                            month: "long",
+                            day: "numeric",
+                          })
                         : "N/A"
                     }
-                    color="#10B981"
+                    icon="calendar-outline"
+                    fullWidth
                   />
                 </Animated.View>
 
-                {/* 3. Description Section */}
+                {/* 3. Provenance Section */}
                 <Animated.View
                   style={{
                     opacity: descOpacity,
@@ -311,30 +302,26 @@ export default function ItemDetailModal({ visible, item, onClose }: Props) {
                   }}
                 >
                   {(description || displayItem?.user_description) && (
-                    <View style={styles.section}>
-                      <Text style={styles.sectionTitle}>Description</Text>
+                    <View style={styles.provenanceSection}>
+                      <Text style={styles.provenanceTitle}>Provenance</Text>
                       {displayItem?.user_description && (
-                        <Text style={[styles.descriptionText, { marginBottom: 10 }]}>{displayItem.user_description}</Text>
+                        <Text style={styles.provenanceText}>{displayItem.user_description}</Text>
                       )}
                       {productData.searchableDescription && (
-                        <Text style={[styles.descriptionText, { color: COLORS.textDim }]}>{productData.searchableDescription}</Text>
+                        <Text style={[styles.provenanceText, { color: "rgba(255,255,255,0.6)" }]}>
+                          {productData.searchableDescription}
+                        </Text>
                       )}
                     </View>
                   )}
                 </Animated.View>
 
-                {/* Identifiers (Static, part of desc block effectively) */}
-                <Animated.View style={{
-                  paddingTop: 20,
-                  opacity: descOpacity
-                }}>
-                  <Text style={styles.sectionTitle}>Identifiers</Text>
-                  <View style={styles.identifierRow}>
-                    <Text style={styles.identifierLabel}>EAN/UPC</Text>
-                    <Text style={styles.identifierValue}>{displayItem?.product_ean || 'N/A'}</Text>
-                  </View>
+                {/* EAN/UPC */}
+                <Animated.View style={{ opacity: descOpacity, paddingVertical: 24 }}>
+                  <Text style={styles.eanText}>
+                    EAN/UPC: {displayItem?.product_ean || "N/A"}
+                  </Text>
                 </Animated.View>
-
               </View>
             </Animated.ScrollView>
           </Animated.View>
@@ -344,29 +331,66 @@ export default function ItemDetailModal({ visible, item, onClose }: Props) {
   );
 }
 
-const InfoItem = ({
-  icon,
+// --- Bento Grid Item ---
+const BentoItem = ({
   label,
   value,
-  color,
+  icon,
+  trailing,
+  flex,
+  fullWidth,
 }: {
-  icon: any;
   label: string;
   value: string;
-  color: string;
+  icon?: any;
+  trailing?: React.ReactNode;
+  flex?: number;
+  fullWidth?: boolean;
 }) => (
-  <View style={styles.gridItem}>
-    <View style={[styles.iconBox, { backgroundColor: color + "20" }]}>
-      <Ionicons name={icon} size={20} color={color} />
+  <View
+    style={[
+      bentoStyles.container,
+      flex ? { flex } : {},
+      fullWidth ? { flexDirection: "row", alignItems: "center", justifyContent: "space-between" } : {},
+    ]}
+  >
+    {icon && (
+      <Ionicons
+        name={icon}
+        size={20}
+        color={COLORS.onSurfaceVariant}
+        style={{ marginRight: 12 }}
+      />
+    )}
+    <View style={fullWidth && !icon ? { flex: 1 } : {}}>
+      <Text style={bentoStyles.label}>{label}</Text>
+      <Text style={bentoStyles.value}>{value}</Text>
     </View>
-    <View style={{ flex: 1 }}>
-      <Text style={styles.gridLabel}>{label}</Text>
-      <Text style={styles.gridValue} numberOfLines={1}>
-        {value}
-      </Text>
-    </View>
+    {trailing}
   </View>
 );
+
+const bentoStyles = StyleSheet.create({
+  container: {
+    backgroundColor: `${COLORS.surfaceContainerHigh}66`,
+    borderRadius: 12,
+    padding: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.03)",
+  },
+  label: {
+    fontSize: 10,
+    color: COLORS.onSurfaceVariant,
+    textTransform: "uppercase",
+    letterSpacing: 2,
+    marginBottom: 4,
+  },
+  value: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#FFF",
+  },
+});
 
 const styles = StyleSheet.create({
   overlay: {
@@ -381,27 +405,19 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   modalContainer: {
-    height: "90%",
+    height: "95%",
     borderTopLeftRadius: 30,
     borderTopRightRadius: 30,
     overflow: "hidden",
-    // Base bg color, but content sheet covers most of it
-    backgroundColor: "#000",
+    backgroundColor: COLORS.background,
   },
   absoluteFill: {
     ...StyleSheet.absoluteFillObject,
   },
-  floatingHeader: {
-    position: "absolute",
-    top: 20,
-    right: 20,
-    zIndex: 100,
-  },
-  roundButton: {
+  backButton: {
     width: 40,
     height: 40,
     borderRadius: 20,
-    overflow: "hidden",
     alignItems: "center",
     justifyContent: "center",
     backgroundColor: "rgba(0,0,0,0.3)",
@@ -409,153 +425,155 @@ const styles = StyleSheet.create({
   scrollView: {
     flex: 1,
   },
-  imageContainer: {
-    height: HEADER_HEIGHT,
-    width: "100%",
-    overflow: "hidden",
-  },
-  image: {
-    width: "100%",
-    height: "100%",
-  },
-  imagePlaceholder: {
-    width: "100%",
-    height: "100%",
-    backgroundColor: "#111",
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  imageGradient: {
-    position: "absolute",
-    bottom: 0,
-    left: 0,
-    right: 0,
-    height: 120, // Taller gradient for better fade
-  },
+  // --- Content Sheet ---
   contentSheet: {
-    flex: 1,
-    backgroundColor: "#000",
-    borderTopLeftRadius: 30,
-    borderTopRightRadius: 30,
+    backgroundColor: COLORS.background,
     paddingHorizontal: 24,
     paddingTop: 12,
-    minHeight: 500,
   },
   handleBar: {
     width: 40,
     height: 4,
-    backgroundColor: "#333",
+    backgroundColor: COLORS.outlineVariant,
     borderRadius: 2,
     alignSelf: "center",
     marginBottom: 24,
     marginTop: 10,
   },
-  brandText: {
-    color: "#9B5DE5",
-    fontSize: 13,
+  // --- Inline Header ---
+  inlineHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 32,
+  },
+  // --- Action Row ---
+  actionRow: {
+    flexDirection: "row",
+    gap: 12,
+  },
+  editButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    backgroundColor: COLORS.primary,
+    paddingHorizontal: 20,
+    paddingVertical: 10,
+    borderRadius: 999,
+    shadowColor: COLORS.primary,
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+  },
+  editButtonText: {
+    color: "#000",
+    fontSize: 14,
     fontWeight: "700",
-    letterSpacing: 1,
+  },
+  shareButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: `${COLORS.surfaceContainerHigh}99`,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+  // --- Header Info ---
+  brandBadge: {
+    alignSelf: "flex-start",
+    backgroundColor: `${COLORS.primary}1A`,
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 999,
     marginBottom: 8,
+  },
+  brandText: {
+    color: COLORS.primary,
+    fontSize: 10,
+    fontWeight: "700",
+    letterSpacing: 2,
+    textTransform: "uppercase",
   },
   titleText: {
     color: "#FFF",
-    fontSize: 26,
-    fontWeight: "bold",
+    fontSize: 40,
+    fontWeight: "800",
+    letterSpacing: -2,
     marginBottom: 8,
-    lineHeight: 32,
   },
   priceRow: {
     flexDirection: "row",
-    alignItems: "center",
+    alignItems: "baseline",
     gap: 12,
-    marginTop: 8,
+    marginBottom: 32,
   },
   priceText: {
     color: "#FFF",
-    fontSize: 22,
+    fontSize: 28,
     fontWeight: "700",
   },
   priceTextPlaceholder: {
-    color: "#666",
+    color: COLORS.outline,
     fontSize: 20,
     fontWeight: "600",
   },
-  badge: {
+  saleBadge: {
     backgroundColor: COLORS.primary,
     paddingHorizontal: 10,
     paddingVertical: 4,
     borderRadius: 8,
   },
-  badgeText: {
-    color: "#FFF",
-    fontSize: 12,
-    fontWeight: "700",
+  saleBadgeText: {
+    color: "#000",
+    fontSize: 10,
+    fontWeight: "800",
   },
-  divider: {
-    height: 1,
-    backgroundColor: "#222",
-    marginVertical: 24,
-  },
-  gridContainer: {
-    flexDirection: "row",
-    flexWrap: "wrap",
+  // --- Bento Grid ---
+  bentoGrid: {
     gap: 16,
-    marginBottom: 24,
+    marginBottom: 32,
   },
-  gridItem: {
-    width: "47%",
-    backgroundColor: "#111",
-    borderRadius: 12,
-    padding: 12,
+  bentoRow: {
     flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
+    gap: 16,
   },
-  iconBox: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    alignItems: "center",
+  verifiedIcon: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: COLORS.background,
     justifyContent: "center",
+    alignItems: "center",
   },
-  gridLabel: {
-    color: "#666",
-    fontSize: 11,
-    marginBottom: 2,
-  },
-  gridValue: {
-    color: "#FFF",
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  section: {
+  // --- Provenance ---
+  provenanceSection: {
+    borderTopWidth: 1,
+    borderTopColor: "rgba(255,255,255,0.05)",
+    paddingTop: 48,
+    marginTop: 32,
     marginBottom: 20,
   },
-  sectionTitle: {
+  provenanceTitle: {
+    fontSize: 22,
+    fontWeight: "700",
     color: "#FFF",
-    fontSize: 18,
-    fontWeight: "600",
-    marginBottom: 12,
+    letterSpacing: -0.5,
+    marginBottom: 24,
   },
-  descriptionText: {
-    color: "#CCC",
+  provenanceText: {
+    color: "rgba(255,255,255,0.8)",
     fontSize: 15,
-    lineHeight: 24,
+    lineHeight: 28,
+    marginBottom: 10,
   },
-  identifierRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    paddingVertical: 12,
-    borderBottomWidth: 1,
-    borderBottomColor: "#111",
-  },
-  identifierLabel: {
-    color: "#666",
-    fontSize: 15,
-  },
-  identifierValue: {
-    color: "#FFF",
-    fontSize: 15,
+  // --- EAN ---
+  eanText: {
+    fontSize: 10,
+    color: "rgba(255,255,255,0.3)",
+    textAlign: "center",
+    letterSpacing: 1,
     fontFamily: Platform.OS === "ios" ? "Courier" : "monospace",
   },
 });

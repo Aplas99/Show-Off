@@ -1,5 +1,5 @@
 import { ITEM_CONDITIONS, ITEM_CONDITION_LABELS, ItemCondition } from "@/constants/itemCondition";
-import { COLORS } from "@/constants/theme";
+import { useColors, type ThemeColors } from "@/constants/theme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { validateCreateItem } from "@/lib/createItemValidation";
 import { Ionicons } from "@expo/vector-icons";
@@ -59,6 +59,8 @@ export default function ManualCreateItemWizard({
 }: Props) {
     const router = useRouter();
     const haptics = useHaptics();
+    const colors = useColors();
+    const styles = getStyles(colors);
 
     const [currentStep, setCurrentStep] = useState<Step>(1);
     const [successModalOpen, setSuccessModalOpen] = useState(false);
@@ -184,7 +186,7 @@ export default function ManualCreateItemWizard({
             customBrand: "",
             customPublisher: "",
             customCategory: "",
-            condition: "", // Clear condition to prevent carrying over
+            condition: "",
             description: "",
             price: "",
             forSale: false,
@@ -235,14 +237,14 @@ export default function ManualCreateItemWizard({
                             onPress={handleClose}
                             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                         >
-                            <Ionicons name="close" size={24} color={COLORS.white} />
+                            <Ionicons name="close" size={24} color={colors.text} />
                         </TouchableOpacity>
                         <Text style={styles.title}>Manual Creation</Text>
                         <View style={{ width: 24 }} />
                     </View>
 
                     {/* Progress Indicator */}
-                    <ProgressIndicator currentStep={currentStep} />
+                    <ProgressIndicator currentStep={currentStep} colors={colors} />
 
                     {/* Content */}
                     <Animated.View style={[styles.contentWrapper, contentStyle]}>
@@ -252,7 +254,6 @@ export default function ManualCreateItemWizard({
                             showsVerticalScrollIndicator={false}
                             bottomOffset={20}
                         >
-                            {/* Step Content */}
                             {currentStep === 1 && (
                                 <Step1Details
                                     customTitle={itemData.customTitle}
@@ -272,6 +273,7 @@ export default function ManualCreateItemWizard({
                                     onImageChange={(uri) =>
                                         setItemData((prev) => ({ ...prev, imageUri: uri }))
                                     }
+                                    colors={colors}
                                 />
                             )}
 
@@ -290,6 +292,7 @@ export default function ManualCreateItemWizard({
                                         setItemData((prev) => ({ ...prev, description: val }))
                                     }
                                     haptics={haptics}
+                                    colors={colors}
                                 />
                             )}
 
@@ -311,19 +314,14 @@ export default function ManualCreateItemWizard({
                                         setItemData((prev) => {
                                             const selected = prev.selectedShowcaseIds;
                                             if (selected.includes(id)) {
-                                                return {
-                                                    ...prev,
-                                                    selectedShowcaseIds: selected.filter((sId) => sId !== id),
-                                                };
+                                                return { ...prev, selectedShowcaseIds: selected.filter((sId) => sId !== id) };
                                             } else {
-                                                return {
-                                                    ...prev,
-                                                    selectedShowcaseIds: [...selected, id],
-                                                };
+                                                return { ...prev, selectedShowcaseIds: [...selected, id] };
                                             }
                                         });
                                     }}
                                     haptics={haptics}
+                                    colors={colors}
                                 />
                             )}
                         </KeyboardAwareScrollView>
@@ -352,7 +350,7 @@ export default function ManualCreateItemWizard({
                                 activeOpacity={0.8}
                             >
                                 <Text style={styles.nextButtonText}>Next</Text>
-                                <Ionicons name="arrow-forward" size={18} color={COLORS.white} style={{ marginLeft: 4 }} />
+                                <Ionicons name="arrow-forward" size={18} color="#FFF" style={{ marginLeft: 4 }} />
                             </TouchableOpacity>
                         ) : (
                             <TouchableOpacity
@@ -366,7 +364,7 @@ export default function ManualCreateItemWizard({
                                 disabled={!canCreateItem || generationModalOpen}
                                 activeOpacity={0.8}
                             >
-                                <Ionicons name="checkmark" size={18} color={COLORS.white} style={{ marginRight: 4 }} />
+                                <Ionicons name="checkmark" size={18} color="#FFF" style={{ marginRight: 4 }} />
                                 <Text style={styles.createButtonText}>Create Item</Text>
                             </TouchableOpacity>
                         )}
@@ -393,12 +391,13 @@ export default function ManualCreateItemWizard({
 }
 
 // Progress Indicator
-function ProgressIndicator({ currentStep }: { currentStep: Step }) {
+function ProgressIndicator({ currentStep, colors }: { currentStep: Step; colors: ThemeColors }) {
+    const styles = getStyles(colors);
     return (
         <View style={styles.progressContainer}>
-            <StepIndicator step={1} currentStep={currentStep} label="Details" />
-            <StepIndicator step={2} currentStep={currentStep} label="Info" />
-            <StepIndicator step={3} currentStep={currentStep} label="Pricing" />
+            <StepIndicator step={1} currentStep={currentStep} label="Details" colors={colors} />
+            <StepIndicator step={2} currentStep={currentStep} label="Info" colors={colors} />
+            <StepIndicator step={3} currentStep={currentStep} label="Pricing" colors={colors} />
         </View>
     );
 }
@@ -407,12 +406,14 @@ function StepIndicator({
     step,
     currentStep,
     label,
+    colors,
 }: {
     step: number;
     currentStep: number;
     label: string;
+    colors: ThemeColors;
 }) {
-
+    const styles = getStyles(colors);
     const isActive = step === currentStep;
     const isCompleted = step < currentStep;
 
@@ -450,7 +451,7 @@ function StepIndicator({
             >
                 {isCompleted && (
                     <Animated.View style={checkStyle}>
-                        <Ionicons name="checkmark" size={12} color={COLORS.white} />
+                        <Ionicons name="checkmark" size={12} color="#FFF" />
                     </Animated.View>
                 )}
                 {!isCompleted && (
@@ -466,7 +467,7 @@ function StepIndicator({
     );
 }
 
-// Step 1: Basic Details (Image, Title, Brand, Publisher)
+// Step 1: Basic Details
 function Step1Details({
     customTitle,
     customBrand,
@@ -477,6 +478,7 @@ function Step1Details({
     haptics,
     imageUri,
     onImageChange,
+    colors,
 }: {
     customTitle: string;
     customBrand: string;
@@ -487,19 +489,21 @@ function Step1Details({
     haptics: ReturnType<typeof useHaptics>;
     imageUri: string | null;
     onImageChange: (uri: string | null) => void;
+    colors: ThemeColors;
 }) {
+    const styles = getStyles(colors);
     const handlePickImage = async () => {
         const result = await ImagePicker.launchImageLibraryAsync({
             mediaTypes: ['images'],
             allowsEditing: true,
-            aspect: [1, 1], // Square aspect ratio typically good for items
+            aspect: [1, 1],
             quality: 0.8,
             base64: false,
         });
 
         if (!result.canceled && result.assets[0]) {
             const asset = result.assets[0];
-            const MAX_SIZE = 5 * 1024 * 1024; // 5MB
+            const MAX_SIZE = 5 * 1024 * 1024;
 
             if (asset.fileSize && asset.fileSize > MAX_SIZE) {
                 alert("Image too large. Please select an image smaller than 5MB.");
@@ -530,12 +534,12 @@ function Step1Details({
                         />
                     ) : (
                         <View style={styles.imagePlaceholder}>
-                            <Ionicons name="camera-outline" size={32} color={COLORS.grey} />
+                            <Ionicons name="camera-outline" size={32} color={colors.grey} />
                             <Text style={styles.placeholderText}>Add Photo</Text>
                         </View>
                     )}
                     <View style={styles.editIconContainer}>
-                        <Ionicons name="pencil" size={12} color={COLORS.white} />
+                        <Ionicons name="pencil" size={12} color="#FFF" />
                     </View>
                 </TouchableOpacity>
                 <Text style={styles.imageHint}>
@@ -548,7 +552,7 @@ function Step1Details({
                 <TextInput
                     style={styles.textInput}
                     placeholder="e.g. Vintage Camera"
-                    placeholderTextColor={COLORS.grey}
+                    placeholderTextColor={colors.grey}
                     value={customTitle}
                     onChangeText={onCustomTitleChange}
                     autoFocus
@@ -560,7 +564,7 @@ function Step1Details({
                 <TextInput
                     style={styles.textInput}
                     placeholder="e.g. Canon"
-                    placeholderTextColor={COLORS.grey}
+                    placeholderTextColor={colors.grey}
                     value={customBrand}
                     onChangeText={onCustomBrandChange}
                 />
@@ -571,7 +575,7 @@ function Step1Details({
                 <TextInput
                     style={styles.textInput}
                     placeholder="e.g. Penguin Books"
-                    placeholderTextColor={COLORS.grey}
+                    placeholderTextColor={colors.grey}
                     value={customPublisher}
                     onChangeText={onCustomPublisherChange}
                 />
@@ -580,7 +584,7 @@ function Step1Details({
     );
 }
 
-// Step 2: Info (Category, Condition, Description)
+// Step 2: Info
 function Step2Info({
     customCategory,
     condition,
@@ -589,6 +593,7 @@ function Step2Info({
     onConditionChange,
     onDescriptionChange,
     haptics,
+    colors,
 }: {
     customCategory: string;
     condition: ItemCondition | "";
@@ -597,7 +602,9 @@ function Step2Info({
     onConditionChange: (val: ItemCondition | "") => void;
     onDescriptionChange: (val: string) => void;
     haptics: ReturnType<typeof useHaptics>;
+    colors: ThemeColors;
 }) {
+    const styles = getStyles(colors);
     const [conditionModalOpen, setConditionModalOpen] = useState(false);
 
     const handleOpenCondition = async () => {
@@ -620,7 +627,7 @@ function Step2Info({
                 <TextInput
                     style={styles.textInput}
                     placeholder="e.g. Electronics, Books"
-                    placeholderTextColor={COLORS.grey}
+                    placeholderTextColor={colors.grey}
                     value={customCategory}
                     onChangeText={onCustomCategoryChange}
                     autoFocus
@@ -632,18 +639,20 @@ function Step2Info({
                 <TouchableOpacity
                     style={[
                         styles.selectorButton,
-                        condition && styles.selectorButtonActive
+                        condition && styles.selectorButtonActive,
                     ]}
                     onPress={handleOpenCondition}
                     activeOpacity={0.7}
                 >
-                    <Text style={[
-                        styles.selectorText,
-                        !condition && styles.selectorTextPlaceholder
-                    ]}>
+                    <Text
+                        style={[
+                            styles.selectorText,
+                            !condition && styles.selectorTextPlaceholder,
+                        ]}
+                    >
                         {condition ? ITEM_CONDITION_LABELS[condition] : "Select Condition"}
                     </Text>
-                    <Ionicons name="chevron-down" size={18} color={condition ? COLORS.primary : COLORS.grey} />
+                    <Ionicons name="chevron-down" size={18} color={condition ? colors.primary : colors.grey} />
                 </TouchableOpacity>
             </View>
 
@@ -652,7 +661,7 @@ function Step2Info({
                 <TextInput
                     style={styles.descriptionInput}
                     placeholder="Notes about this item..."
-                    placeholderTextColor={COLORS.grey}
+                    placeholderTextColor={colors.grey}
                     value={description}
                     onChangeText={onDescriptionChange}
                     multiline
@@ -680,7 +689,7 @@ function Step2Info({
                                 >
                                     <Text style={styles.optionText}>{ITEM_CONDITION_LABELS[item]}</Text>
                                     {condition === item && (
-                                        <Ionicons name="checkmark" size={20} color={COLORS.primary} />
+                                        <Ionicons name="checkmark" size={20} color={colors.primary} />
                                     )}
                                 </TouchableOpacity>
                             )}
@@ -711,6 +720,7 @@ function Step3Pricing({
     onForSaleChange,
     onToggleShowcase,
     haptics,
+    colors,
 }: {
     price: string;
     forSale: boolean;
@@ -721,7 +731,9 @@ function Step3Pricing({
     onForSaleChange: (val: boolean) => void;
     onToggleShowcase: (id: string) => void;
     haptics: ReturnType<typeof useHaptics>;
+    colors: ThemeColors;
 }) {
+    const styles = getStyles(colors);
     const [showcaseModalOpen, setShowcaseModalOpen] = useState(false);
 
     const handleOpenShowcase = async () => {
@@ -745,7 +757,7 @@ function Step3Pricing({
                     <TextInput
                         style={styles.priceInput}
                         placeholder="0.00"
-                        placeholderTextColor={COLORS.grey}
+                        placeholderTextColor={colors.grey}
                         value={price}
                         onChangeText={onPriceChange}
                         keyboardType="decimal-pad"
@@ -762,8 +774,8 @@ function Step3Pricing({
                     <Switch
                         value={forSale}
                         onValueChange={onForSaleChange}
-                        trackColor={{ false: COLORS.slate, true: COLORS.primary }}
-                        thumbColor={COLORS.white}
+                        trackColor={{ false: colors.slate, true: colors.primary }}
+                        thumbColor={forSale ? "#FFF" : colors.grey}
                     />
                 </View>
             </View>
@@ -773,7 +785,7 @@ function Step3Pricing({
                 <TouchableOpacity
                     style={[
                         styles.selectorButton,
-                        selectedShowcaseIds.length > 0 && styles.selectorButtonActive
+                        selectedShowcaseIds.length > 0 && styles.selectorButtonActive,
                     ]}
                     onPress={handleOpenShowcase}
                     disabled={loadingShowcases}
@@ -782,12 +794,14 @@ function Step3Pricing({
                     <Ionicons
                         name="albums-outline"
                         size={18}
-                        color={selectedShowcaseIds.length > 0 ? COLORS.primary : COLORS.grey}
+                        color={selectedShowcaseIds.length > 0 ? colors.primary : colors.grey}
                     />
-                    <Text style={[
-                        styles.selectorText,
-                        selectedShowcaseIds.length === 0 && styles.selectorTextPlaceholder
-                    ]}>
+                    <Text
+                        style={[
+                            styles.selectorText,
+                            selectedShowcaseIds.length === 0 && styles.selectorTextPlaceholder,
+                        ]}
+                    >
                         {selectedShowcaseIds.length === 0
                             ? "Select showcase(s)"
                             : `${selectedShowcaseIds.length} selected`}
@@ -795,7 +809,7 @@ function Step3Pricing({
                     <Ionicons
                         name="chevron-forward"
                         size={18}
-                        color={selectedShowcaseIds.length > 0 ? COLORS.primary : COLORS.grey}
+                        color={selectedShowcaseIds.length > 0 ? colors.primary : colors.grey}
                     />
                 </TouchableOpacity>
             </View>
@@ -824,18 +838,20 @@ function Step3Pricing({
                                         <Ionicons
                                             name={checked ? "checkbox" : "square-outline"}
                                             size={20}
-                                            color={checked ? COLORS.primary : COLORS.grey}
+                                            color={checked ? colors.primary : colors.grey}
                                         />
-                                        <Text style={[
-                                            styles.optionText,
-                                            checked && styles.optionTextActive
-                                        ]}>{label}</Text>
+                                        <Text
+                                            style={[
+                                                styles.optionText,
+                                                checked && styles.optionTextActive,
+                                            ]}
+                                        >{label}</Text>
                                     </TouchableOpacity>
                                 );
                             }}
                             ListEmptyComponent={
                                 <View style={styles.emptyContainer}>
-                                    <Ionicons name="albums-outline" size={40} color={COLORS.grey} />
+                                    <Ionicons name="albums-outline" size={40} color={colors.grey} />
                                     <Text style={styles.emptyText}>No showcases found</Text>
                                     <Text style={styles.emptySubtext}>Create a showcase first</Text>
                                 </View>
@@ -856,361 +872,124 @@ function Step3Pricing({
     );
 }
 
-const styles = StyleSheet.create({
-    backdrop: {
-        flex: 1,
-        backgroundColor: COLORS.background,
-    },
-    modal: {
-        flex: 1,
-        backgroundColor: COLORS.background,
-    },
+const getStyles = (colors: ThemeColors) => StyleSheet.create({
+    backdrop: { flex: 1, backgroundColor: colors.background },
+    modal: { flex: 1, backgroundColor: colors.background },
     header: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        padding: 16,
-        paddingTop: Platform.OS === "ios" ? 60 : 16,
-        borderBottomWidth: 1,
-        borderBottomColor: COLORS.surfaceLight,
+        flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+        padding: 16, paddingTop: Platform.OS === "ios" ? 60 : 16,
+        borderBottomWidth: 1, borderBottomColor: colors.border,
     },
-    title: {
-        color: COLORS.white,
-        fontSize: 18,
-        fontWeight: "700",
-    },
-    contentWrapper: {
-        flex: 1,
-    },
-    content: {
-        flex: 1,
-        padding: 20,
-    },
+    title: { color: colors.text, fontSize: 18, fontWeight: "700" },
+    contentWrapper: { flex: 1 },
+    content: { flex: 1, padding: 20 },
     progressContainer: {
-        flexDirection: "row",
-        justifyContent: "center",
-        paddingVertical: 20,
-        borderBottomWidth: 1,
-        borderBottomColor: COLORS.surfaceLight,
-        gap: 60,
+        flexDirection: "row", justifyContent: "center", paddingVertical: 20,
+        borderBottomWidth: 1, borderBottomColor: colors.border, gap: 60,
     },
-    progressStep: {
-        alignItems: "center",
-    },
+    progressStep: { alignItems: "center" },
     progressDot: {
-        width: 32,
-        height: 32,
-        borderRadius: 16,
-        backgroundColor: COLORS.surfaceLight,
-        marginBottom: 8,
-        justifyContent: "center",
-        alignItems: "center",
-        borderWidth: 2,
-        borderColor: COLORS.surfaceLight,
+        width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surfaceLight,
+        marginBottom: 8, justifyContent: "center", alignItems: "center",
+        borderWidth: 2, borderColor: colors.surfaceLight,
     },
-    progressDotActive: {
-        backgroundColor: COLORS.primary,
-        borderColor: COLORS.primary,
-    },
-    progressDotCompleted: {
-        backgroundColor: "#4CAF50",
-        borderColor: "#4CAF50",
-    },
-    progressNumber: {
-        color: COLORS.grey,
-        fontSize: 14,
-        fontWeight: "700",
-    },
-    progressNumberActive: {
-        color: COLORS.white,
-    },
-    progressLabel: {
-        color: COLORS.grey,
-        fontSize: 12,
-        fontWeight: "500",
-    },
-    progressLabelActive: {
-        color: COLORS.white,
-        fontWeight: "600",
-    },
-    stepContent: {
-        flex: 1,
-    },
-    stepTitle: {
-        color: COLORS.white,
-        fontSize: 24,
-        fontWeight: "700",
-        marginBottom: 20,
-    },
-    fieldContainer: {
-        marginBottom: 20,
-    },
-    fieldLabel: {
-        color: COLORS.white,
-        fontSize: 15,
-        fontWeight: "600",
-        marginBottom: 10,
-    },
+    progressDotActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+    progressDotCompleted: { backgroundColor: "#4CAF50", borderColor: "#4CAF50" },
+    progressNumber: { color: colors.grey, fontSize: 14, fontWeight: "700" },
+    progressNumberActive: { color: "#FFF" },
+    progressLabel: { color: colors.grey, fontSize: 12, fontWeight: "500" },
+    progressLabelActive: { color: colors.text, fontWeight: "600" },
+    stepContent: { flex: 1 },
+    stepTitle: { color: colors.text, fontSize: 24, fontWeight: "700", marginBottom: 20 },
+    fieldContainer: { marginBottom: 20 },
+    fieldLabel: { color: colors.text, fontSize: 15, fontWeight: "600", marginBottom: 10 },
     textInput: {
-        height: 56,
-        backgroundColor: COLORS.surface,
-        borderRadius: 12,
-        paddingHorizontal: 16,
-        color: COLORS.white,
-        borderWidth: 1,
-        borderColor: COLORS.surfaceLight,
-        fontSize: 16,
+        height: 56, backgroundColor: colors.inputBg, borderRadius: 12,
+        paddingHorizontal: 16, color: colors.text, borderWidth: 1,
+        borderColor: colors.border, fontSize: 16,
     },
     descriptionInput: {
-        backgroundColor: COLORS.surface,
-        borderRadius: 12,
-        padding: 16,
-        color: COLORS.white,
-        borderWidth: 1,
-        borderColor: COLORS.surfaceLight,
-        minHeight: 120,
-        textAlignVertical: "top",
-        fontSize: 15,
+        backgroundColor: colors.inputBg, borderRadius: 12, padding: 16,
+        color: colors.text, borderWidth: 1, borderColor: colors.border,
+        minHeight: 120, textAlignVertical: "top", fontSize: 15,
     },
     selectorButton: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        height: 56,
-        backgroundColor: COLORS.surface,
-        borderRadius: 12,
-        paddingHorizontal: 16,
-        borderWidth: 1,
-        borderColor: COLORS.surfaceLight,
+        flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+        height: 56, backgroundColor: colors.inputBg, borderRadius: 12,
+        paddingHorizontal: 16, borderWidth: 1, borderColor: colors.border,
     },
-    selectorButtonActive: {
-        borderColor: COLORS.primary,
-    },
-    selectorText: {
-        color: COLORS.white,
-        fontSize: 16,
-        fontWeight: "500",
-    },
-    selectorTextPlaceholder: {
-        color: COLORS.grey,
-        fontWeight: "400",
-    },
+    selectorButtonActive: { borderColor: colors.primary },
+    selectorText: { color: colors.text, fontSize: 16, fontWeight: "500" },
+    selectorTextPlaceholder: { color: colors.grey, fontWeight: "400" },
     priceInputContainer: {
-        flexDirection: "row",
-        alignItems: "center",
-        backgroundColor: COLORS.surface,
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: COLORS.surfaceLight,
-        paddingHorizontal: 16,
-        height: 56,
+        flexDirection: "row", alignItems: "center", backgroundColor: colors.inputBg,
+        borderRadius: 12, borderWidth: 1, borderColor: colors.border,
+        paddingHorizontal: 16, height: 56,
     },
-    currencySymbol: {
-        color: COLORS.grey,
-        fontSize: 20,
-        marginRight: 8,
-        fontWeight: "600",
-    },
-    priceInput: {
-        flex: 1,
-        color: COLORS.white,
-        fontSize: 18,
-        fontWeight: "600",
-    },
+    currencySymbol: { color: colors.grey, fontSize: 20, marginRight: 8, fontWeight: "600" },
+    priceInput: { flex: 1, color: colors.text, fontSize: 18, fontWeight: "600" },
     switchRow: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        backgroundColor: COLORS.surface,
-        borderRadius: 12,
-        padding: 16,
-        borderWidth: 1,
-        borderColor: COLORS.surfaceLight,
+        flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+        backgroundColor: colors.inputBg, borderRadius: 12, padding: 16,
+        borderWidth: 1, borderColor: colors.border,
     },
-    switchHint: {
-        color: COLORS.grey,
-        fontSize: 13,
-        marginTop: 2,
-    },
+    switchHint: { color: colors.grey, fontSize: 13, marginTop: 2 },
     navigation: {
-        flexDirection: "row",
-        padding: 20,
-        borderTopWidth: 1,
-        borderTopColor: COLORS.surfaceLight,
-        marginBottom: Platform.OS === "ios" ? 20 : 0,
-        alignItems: "center",
+        flexDirection: "row", padding: 20, borderTopWidth: 1,
+        borderTopColor: colors.border,
+        marginBottom: Platform.OS === "ios" ? 20 : 0, alignItems: "center",
     },
-    backButton: {
-        paddingVertical: 12,
-        paddingHorizontal: 8,
-    },
-    backButtonText: {
-        color: COLORS.grey,
-        fontSize: 16,
-        fontWeight: "600",
-    },
-    spacer: {
-        flex: 1,
-    },
+    backButton: { paddingVertical: 12, paddingHorizontal: 8 },
+    backButtonText: { color: colors.grey, fontSize: 16, fontWeight: "600" },
+    spacer: { flex: 1 },
     nextButton: {
-        backgroundColor: COLORS.primary,
-        paddingVertical: 14,
-        paddingHorizontal: 24,
-        borderRadius: 12,
-        flexDirection: "row",
-        alignItems: "center",
-        shadowColor: COLORS.primary,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 4,
+        backgroundColor: colors.primary, paddingVertical: 14, paddingHorizontal: 28,
+        borderRadius: 999, flexDirection: "row", alignItems: "center",
+        shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3, shadowRadius: 16, elevation: 4,
     },
-    nextButtonText: {
-        color: COLORS.white,
-        fontSize: 16,
-        fontWeight: "700",
-    },
+    nextButtonText: { color: "#000", fontSize: 14, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.5 },
     createButton: {
-        backgroundColor: "#4CAF50",
-        paddingVertical: 14,
-        paddingHorizontal: 24,
-        borderRadius: 12,
-        flexDirection: "row",
-        alignItems: "center",
-        shadowColor: "#4CAF50",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 4,
+        backgroundColor: colors.primary, paddingVertical: 14, paddingHorizontal: 28,
+        borderRadius: 999, flexDirection: "row", alignItems: "center",
+        shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3, shadowRadius: 16, elevation: 4,
     },
-    createButtonText: {
-        color: COLORS.white,
-        fontSize: 16,
-        fontWeight: "700",
-    },
-    disabledButton: {
-        opacity: 0.4,
-        shadowOpacity: 0,
-    },
-    modalBackdrop: {
-        flex: 1,
-        backgroundColor: "rgba(0,0,0,0.7)",
-        justifyContent: "center",
-        padding: 20,
-    },
+    createButtonText: { color: "#000", fontSize: 14, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.5 },
+    disabledButton: { opacity: 0.4, shadowOpacity: 0 },
+    modalBackdrop: { flex: 1, backgroundColor: colors.overlay, justifyContent: "center", padding: 20 },
     modalCard: {
-        backgroundColor: COLORS.surface,
-        borderRadius: 20,
-        padding: 24,
-        maxHeight: "80%",
-        borderWidth: 1,
-        borderColor: COLORS.surfaceLight,
+        backgroundColor: colors.surface, borderRadius: 20, padding: 24,
+        maxHeight: "80%", borderWidth: 1, borderColor: colors.border,
     },
-    modalTitle: {
-        color: COLORS.white,
-        fontSize: 20,
-        fontWeight: "700",
-        marginBottom: 20,
-        textAlign: "center",
-    },
+    modalTitle: { color: colors.text, fontSize: 20, fontWeight: "700", marginBottom: 20, textAlign: "center" },
     optionItem: {
-        flexDirection: "row",
-        alignItems: "center",
-        paddingVertical: 14,
-        gap: 12,
-        borderBottomWidth: 1,
-        borderBottomColor: COLORS.surfaceLight,
+        flexDirection: "row", alignItems: "center", paddingVertical: 14,
+        gap: 12, borderBottomWidth: 1, borderBottomColor: colors.border,
     },
-    optionText: {
-        color: COLORS.white,
-        fontSize: 16,
-        flex: 1,
-    },
-    optionTextActive: {
-        color: COLORS.primary,
-        fontWeight: "600",
-    },
-    modalCancel: {
-        marginTop: 16,
-        alignItems: "center",
-        paddingVertical: 12,
-    },
-    cancelText: {
-        color: COLORS.primary,
-        fontSize: 16,
-        fontWeight: "700",
-    },
-    emptyContainer: {
-        alignItems: "center",
-        paddingVertical: 40,
-    },
-    emptyText: {
-        color: COLORS.grey,
-        textAlign: "center",
-        marginTop: 12,
-        fontSize: 16,
-        fontWeight: "600",
-    },
-    emptySubtext: {
-        color: COLORS.grey,
-        textAlign: "center",
-        marginTop: 4,
-        fontSize: 14,
-    },
-    imageSection: {
-        marginBottom: 24,
-        alignItems: "center",
-    },
+    optionText: { color: colors.text, fontSize: 16, flex: 1 },
+    optionTextActive: { color: colors.primary, fontWeight: "600" },
+    modalCancel: { marginTop: 16, alignItems: "center", paddingVertical: 12 },
+    cancelText: { color: colors.primary, fontSize: 16, fontWeight: "700" },
+    emptyContainer: { alignItems: "center", paddingVertical: 40 },
+    emptyText: { color: colors.grey, textAlign: "center", marginTop: 12, fontSize: 16, fontWeight: "600" },
+    emptySubtext: { color: colors.grey, textAlign: "center", marginTop: 4, fontSize: 14 },
+    imageSection: { marginBottom: 24, alignItems: "center" },
     imagePreview: {
-        width: 120,
-        height: 120,
-        borderRadius: 16,
-        backgroundColor: COLORS.surface,
-        borderWidth: 1,
-        borderColor: COLORS.surfaceLight,
-        overflow: "hidden",
-        justifyContent: "center",
-        alignItems: "center",
-        marginBottom: 12,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
-        shadowRadius: 8,
-        elevation: 4,
+        width: 120, height: 120, borderRadius: 16, backgroundColor: colors.surface,
+        borderWidth: 1, borderColor: colors.border, overflow: "hidden",
+        justifyContent: "center", alignItems: "center", marginBottom: 12,
+        shadowColor: "#000", shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2, shadowRadius: 8, elevation: 4,
     },
-    image: {
-        width: "100%",
-        height: "100%",
-    },
-    imagePlaceholder: {
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 8,
-    },
-    placeholderText: {
-        color: COLORS.grey,
-        fontSize: 12,
-        fontWeight: "500",
-    },
+    image: { width: "100%", height: "100%" },
+    imagePlaceholder: { alignItems: "center", justifyContent: "center", gap: 8 },
+    placeholderText: { color: colors.grey, fontSize: 12, fontWeight: "500" },
     editIconContainer: {
-        position: "absolute",
-        bottom: 8,
-        right: 8,
-        backgroundColor: COLORS.primary,
-        width: 24,
-        height: 24,
-        borderRadius: 12,
-        justifyContent: "center",
-        alignItems: "center",
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.2,
-        shadowRadius: 4,
+        position: "absolute", bottom: 8, right: 8, backgroundColor: colors.primary,
+        width: 24, height: 24, borderRadius: 12, justifyContent: "center", alignItems: "center",
+        shadowColor: "#000", shadowOffset: { width: 0, height: 2 },
+        shadowOpacity: 0.2, shadowRadius: 4,
     },
-    imageHint: {
-        color: COLORS.grey,
-        fontSize: 13,
-        textAlign: "center",
-        alignSelf: "stretch",
-    },
+    imageHint: { color: colors.grey, fontSize: 13, textAlign: "center", alignSelf: "stretch" },
 });

@@ -1,5 +1,5 @@
 import { ItemWithProduct } from "@/api/items";
-import { COLORS } from "@/constants/theme";
+import { useColors, type ThemeColors } from "@/constants/theme";
 import { Link } from "expo-router";
 import React from "react";
 import { Image, Pressable, StyleSheet, Text, View } from "react-native";
@@ -13,12 +13,13 @@ type Props = {
 };
 
 export default function ShowcaseListItem({ item, onPress, style }: Props) {
-  // Prefer the joined product data if available
+  const colors = useColors();
+  const styles = getStyles(colors);
+
   const product = item.products;
   const title = item.custom_title || product?.searchableTitle || "Unknown Item";
   const brand = item.custom_brand || product?.searchableBrand;
 
-  // Data is already parsed by the API layer
   const productData = product?.data || {};
 
   const imageUrl =
@@ -92,7 +93,6 @@ export default function ShowcaseListItem({ item, onPress, style }: Props) {
     );
   }
 
-  // If no onPress, wrap in Link (optional fallback, though usually we pass onPress)
   return (
     <Link href={`/(tabs)/showcase/${item.showcase_id}` as any} asChild>
       <Pressable style={[styles.container, style]}>{content}</Pressable>
@@ -100,19 +100,18 @@ export default function ShowcaseListItem({ item, onPress, style }: Props) {
   );
 }
 
-const styles = StyleSheet.create({
+const getStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {
     flex: 1,
     margin: 6,
-    // maxWidth removed to allow parent to control width (e.g. via numColumns or Carousel)
   },
   card: {
     flex: 1,
-    backgroundColor: COLORS.surface || "#1E1E1E",
+    backgroundColor: colors.surface,
     borderRadius: 12,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: "#333",
+    borderColor: colors.border,
   },
   image: {
     width: "100%",
@@ -123,25 +122,25 @@ const styles = StyleSheet.create({
     height: 140,
     alignItems: "center",
     justifyContent: "center",
-    backgroundColor: "#2A2A2A",
+    backgroundColor: colors.surfaceLight,
   },
   info: {
     padding: 10,
   },
   title: {
-    color: COLORS.white || "#FFF",
+    color: colors.text,
     fontSize: 14,
     fontWeight: "600",
     marginBottom: 4,
   },
   description: {
-    color: COLORS.textDim || "#888",
+    color: colors.textDim,
     fontSize: 11,
     marginBottom: 6,
     lineHeight: 14,
   },
   brand: {
-    color: COLORS.primary || "#A855F7",
+    color: colors.primary,
     fontSize: 11,
     fontWeight: "500",
     marginBottom: 2,
@@ -153,7 +152,7 @@ const styles = StyleSheet.create({
     marginTop: 4,
   },
   price: {
-    color: COLORS.white || "#FFF",
+    color: colors.text,
     fontSize: 13,
     fontWeight: "bold",
   },
@@ -169,7 +168,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
   },
   condition: {
-    color: "#666",
+    color: colors.textDim,
     fontSize: 10,
     marginTop: 6,
     fontStyle: "italic",

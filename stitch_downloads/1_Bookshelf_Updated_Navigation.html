@@ -1,0 +1,317 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>Showcase - Obsidian Archive</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+      tailwind.config = {
+        darkMode: "class",
+        theme: {
+          extend: {
+            colors: {
+              "secondary-dim": "#cf8bf0",
+              "on-error": "#490013",
+              "tertiary-dim": "#f3778c",
+              "primary-container": "#be87ff",
+              "tertiary-fixed-dim": "#fa7c91",
+              "on-background": "#ffffff",
+              "on-primary-container": "#340064",
+              "secondary-fixed-dim": "#e7afff",
+              "secondary": "#de98ff",
+              "primary-dim": "#bc83ff",
+              "outline-variant": "#484847",
+              "on-surface": "#ffffff",
+              "on-tertiary-fixed": "#39000f",
+              "tertiary-container": "#fd7e93",
+              "inverse-on-surface": "#565555",
+              "secondary-container": "#682888",
+              "on-surface-variant": "#adaaaa",
+              "primary": "#c899ff",
+              "on-primary-fixed-variant": "#41007a",
+              "surface-container-high": "#20201f",
+              "error-container": "#a70138",
+              "on-primary-fixed": "#000000",
+              "primary-fixed-dim": "#b374ff",
+              "on-secondary": "#510d72",
+              "surface-container-low": "#131313",
+              "outline": "#767575",
+              "on-tertiary-fixed-variant": "#71122b",
+              "on-secondary-container": "#edc1ff",
+              "on-primary": "#44007f",
+              "inverse-surface": "#fcf9f8",
+              "primary-fixed": "#be87ff",
+              "on-secondary-fixed": "#530f74",
+              "on-secondary-fixed-variant": "#723393",
+              "surface": "#0e0e0e",
+              "secondary-fixed": "#eec2ff",
+              "surface-bright": "#2c2c2c",
+              "on-tertiary-container": "#56001b",
+              "surface-container-highest": "#262626",
+              "surface-variant": "#262626",
+              "surface-container": "#1a1a1a",
+              "inverse-primary": "#7c39c7",
+              "tertiary-fixed": "#ff90a0",
+              "tertiary": "#ff94a4",
+              "surface-dim": "#0e0e0e",
+              "background": "#0e0e0e",
+              "error-dim": "#d73357",
+              "on-error-container": "#ffb2b9",
+              "error": "#ff6e84",
+              "surface-tint": "#c899ff",
+              "surface-container-lowest": "#000000",
+              "on-tertiary": "#680925"
+            },
+            fontFamily: {
+              "headline": ["Manrope"],
+              "body": ["Inter"],
+              "label": ["Inter"]
+            },
+            borderRadius: {"DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px"},
+          },
+        },
+      }
+    </script>
+<style>
+      .shelf-shadow {
+        background: linear-gradient(to bottom, transparent 0%, rgba(0,0,0,0.8) 100%);
+      }
+      .glass-reflection {
+        background: linear-gradient(135deg, rgba(255,255,255,0.15) 0%, transparent 40%, rgba(255,255,255,0.08) 50%, transparent 60%, rgba(255,255,255,0.12) 100%);
+        box-shadow: inset 0 0 20px rgba(255,255,255,0.05);
+      }
+      .obsidian-texture {
+        background-image: radial-gradient(circle at 50% 50%, #1a1a1a 0%, #0e0e0e 100%);
+      }
+      .wood-grain {
+        background-color: #1a0f0a;
+        background-image: 
+          linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.03) 1%, transparent 2%, rgba(255,255,255,0.01) 3%, transparent 5%, rgba(0,0,0,0.2) 10%, transparent 15%, rgba(255,255,255,0.02) 20%, transparent 25%),
+          repeating-linear-gradient(45deg, rgba(0,0,0,0.2) 0px, rgba(0,0,0,0.2) 1px, transparent 1px, transparent 12px),
+          repeating-linear-gradient(-45deg, rgba(0,0,0,0.1) 0px, rgba(0,0,0,0.1) 1px, transparent 1px, transparent 10px);
+        box-shadow: 
+          inset 0 2px 2px rgba(255,255,255,0.15), 
+          inset 0 -4px 8px rgba(0,0,0,0.7),
+          0 10px 30px rgba(0,0,0,0.8);
+      }
+      .mahogany-sheen {
+        background: linear-gradient(to bottom, 
+          #4a211a 0%, 
+          #2d140f 25%, 
+          #120805 100%
+        );
+        position: relative;
+      }
+      .mahogany-sheen::after {
+        content: '';
+        position: absolute;
+        top: 0; left: 0; right: 0; bottom: 0;
+        background: linear-gradient(110deg, transparent 35%, rgba(255,255,255,0.06) 45%, rgba(255,255,255,0.1) 50%, rgba(255,255,255,0.06) 55%, transparent 65%);
+        pointer-events: none;
+      }
+      .under-lighting {
+        background: radial-gradient(circle at 50% 120%, rgba(200,153,255,0.25) 0%, transparent 70%);
+      }
+      .figure-shadow {
+        filter: drop-shadow(0 15px 15px rgba(0,0,0,0.8));
+      }
+      .object-base-shadow {
+        background: radial-gradient(ellipse at center, rgba(0,0,0,0.6) 0%, transparent 80%);
+      }
+      .view-toggle-container {
+        background: rgba(26, 26, 26, 0.6);
+        border: 1px solid rgba(255, 255, 255, 0.05);
+      }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+</head>
+<body class="bg-background text-on-background font-body select-none">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-[#0e0e0e]/90 backdrop-blur-xl flex items-center justify-between px-6 py-3 border-b border-white/5">
+<div class="flex items-center gap-4">
+<span class="material-symbols-outlined text-white/70 active:scale-95 duration-200">menu</span>
+<h1 class="text-xl font-bold tracking-tighter text-white font-headline">Obsidian Archive</h1>
+</div>
+<div class="flex items-center gap-3">
+<button class="flex items-center justify-center w-10 h-10 rounded-full hover:bg-white/5 transition-colors">
+<span class="material-symbols-outlined text-white/70">search</span>
+</button>
+<!-- Filter Integrated in Header -->
+<button class="flex items-center gap-2 bg-[#1a1a1a] hover:bg-[#262626] border border-white/10 px-3 py-1.5 rounded-full transition-all active:scale-95 group">
+<span class="material-symbols-outlined text-white/80 text-lg group-hover:text-primary transition-colors">tune</span>
+<span class="text-[10px] font-bold text-white tracking-widest uppercase">Filter</span>
+</button>
+</div>
+</header>
+<main class="pt-20 pb-32 obsidian-texture min-h-screen">
+<!-- View Toggle Bar from IMAGE_37 -->
+<div class="px-6 mb-10 mt-4">
+<div class="view-toggle-container p-1 rounded-full flex items-center justify-between">
+<!-- Carousel View -->
+<button class="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-full text-white/40 hover:text-white/60 transition-colors">
+<span class="material-symbols-outlined text-lg">filter_none</span>
+<span class="text-[10px] font-bold uppercase tracking-[0.2em] font-headline">Carousel</span>
+</button>
+<!-- Bookshelf View (Selected) -->
+<button class="flex-[1.2] flex items-center justify-center gap-2 py-3 px-4 bg-[#c899ff] rounded-full text-black shadow-[0_4px_12px_rgba(200,153,255,0.3)]">
+<span class="material-symbols-outlined text-lg" style="font-variation-settings: 'FILL' 1;">grid_view</span>
+<span class="text-[10px] font-bold uppercase tracking-[0.2em] font-headline">Bookshelf</span>
+</button>
+<!-- List View -->
+<button class="flex-1 flex items-center justify-center gap-2 py-3 px-4 rounded-full text-white/40 hover:text-white/60 transition-colors">
+<span class="material-symbols-outlined text-lg">format_list_bulleted</span>
+<span class="text-[10px] font-bold uppercase tracking-[0.2em] font-headline">List</span>
+</button>
+</div>
+</div>
+<!-- Shelf System -->
+<div class="flex flex-col gap-16">
+<!-- Shelf 1: Limited Edition Books -->
+<section class="relative">
+<div class="px-6 flex justify-between items-end mb-4">
+<h3 class="font-headline font-bold text-lg text-primary uppercase tracking-widest">Rare Manuscripts</h3>
+<span class="text-[10px] text-white/40 uppercase tracking-tighter">Shelf A-1</span>
+</div>
+<div class="flex overflow-x-auto gap-6 px-6 pb-4 no-scrollbar items-end">
+<!-- Book 1 -->
+<div class="flex-none w-32 relative group">
+<div class="absolute -top-2 -right-1 z-10 bg-primary text-on-primary-fixed text-[10px] font-bold px-2 py-0.5 rounded-full shadow-lg shadow-primary/20">RARE</div>
+<div class="h-48 w-full bg-surface-container-high rounded-sm shadow-2xl transition-transform group-hover:-translate-y-2 border-l-4 border-primary/30 relative overflow-hidden">
+<img class="w-full h-full object-cover rounded-sm opacity-80 brightness-75 group-hover:brightness-100 transition-all" data-alt="Dark aesthetic book cover with gold lettering" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDe7Ye2FkIrlLrDugV1GVk3MafONUjUA0oeiAe2A4NhAwAtFnqyqfkEqzvNGviIN0mOPltuEnsYt6pv3vWifFS6JOtFx9si3itwR1Y-h0fkkvkU_olMVDQsyPVMj5PbsYylT8JasS39Ts9_tz8zIv_VVmVBwakSlIxx9XruI2cT3Wsq3jxm_0QL822NZGnn2u7BlnCsLpsJeuVWLZQKeH-sywVmEYZiGiuqFDxbKApGEJq2UdsFnWOXS0yzkbqSJbHNU-FJfSyYx12U"/>
+</div>
+<p class="mt-3 text-xs font-medium text-white/80 line-clamp-1">The Shadow Weaver</p>
+</div>
+<!-- Book 2 -->
+<div class="flex-none w-36 relative group">
+<div class="absolute -top-2 -right-1 z-10 bg-white/10 backdrop-blur-md text-white text-[10px] font-bold px-2 py-0.5 rounded-full border border-white/20">MINT</div>
+<div class="h-52 w-full bg-surface-container-high rounded-sm shadow-2xl transition-transform group-hover:-translate-y-2 border-l-4 border-on-surface-variant/30 relative overflow-hidden">
+<img class="w-full h-full object-cover rounded-sm opacity-80 brightness-50 group-hover:brightness-90 transition-all" data-alt="Ancient weathered leather book spine" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBZ_SUTQn8zxjO3uDXMpxKweaOor46es_KJeMqn1FuQmZDNoezpWuIG1FJ62N1VFR-KzcdFBV6jbmuKzbMnKBtRW-pI2mx_pxAoA9rgSqwooPfMlLkmp9prFRAVC7XSR2_2OKi6VV7g4R53W5dFNezPFJ8bsrcC6NlUk0HH2zvYDClY6jyLHqoMRHQvkU98b9etp7ir_ju9_5ocFASGafpobRL4qZbceAFZOZaAyKU_WhTaprpk-h_K4nbzQG0fWtym2k2uZQP64QPu"/>
+</div>
+<p class="mt-3 text-xs font-medium text-white/80 line-clamp-1">Obsidian Chronicles</p>
+</div>
+<!-- Book 3 -->
+<div class="flex-none w-32 relative group">
+<div class="h-44 w-full bg-surface-container-high rounded-sm shadow-2xl transition-transform group-hover:-translate-y-2 border-l-4 border-primary/50 relative overflow-hidden">
+<img class="w-full h-full object-cover rounded-sm opacity-80 brightness-75 group-hover:brightness-100 transition-all" data-alt="Minimalist purple book cover design" src="https://lh3.googleusercontent.com/aida-public/AB6AXuB54ptXqDRYGQy0Jg6kw_Sr4euPVM1_2npkqQNJCkklI-TZsUv2t0t4iDce_vI_AzxY4sywB3x4FJ5DIfwIFnKK1vth4NW6bDZe95Ueb0a5tvvnnCuFKuDZxz72Tggm0myTrAwQuFUvDB3RVQ_TNcEDW-S1hmfhoHk1mJXhHDtHJobxnN68BNvRdDRC58moUVhqBdsVILT1Mzz9sISHAIYFVLcxuDEg-ldiwTp66cpSpPGBbEjp1QnSLFAl1_oTBRZJb2W5ncmxJgip"/>
+</div>
+<p class="mt-3 text-xs font-medium text-white/80 line-clamp-1">Void Geometry</p>
+</div>
+</div>
+<!-- Enhanced Mahogany Shelf -->
+<div class="mx-4 h-5 wood-grain mahogany-sheen rounded-sm relative">
+<div class="absolute inset-0 flex justify-around px-8 pointer-events-none">
+<div class="w-32 h-full object-base-shadow"></div>
+<div class="w-36 h-full object-base-shadow"></div>
+<div class="w-32 h-full object-base-shadow"></div>
+</div>
+</div>
+</section>
+<!-- Shelf 2: Figures in Glass -->
+<section class="relative">
+<div class="px-6 flex justify-between items-end mb-4">
+<h3 class="font-headline font-bold text-lg text-secondary uppercase tracking-widest">Vault Artifacts</h3>
+<span class="text-[10px] text-white/40 uppercase tracking-tighter">Shelf B-4</span>
+</div>
+<div class="flex overflow-x-auto gap-8 px-6 pb-6 no-scrollbar">
+<!-- Figure 1 -->
+<div class="flex-none w-44 relative group">
+<div class="absolute -top-3 left-4 z-30 bg-secondary-container text-on-secondary-container text-[9px] tracking-widest font-bold px-3 py-1 rounded-full border border-secondary/30">LIMITED 1/50</div>
+<div class="aspect-[3/4] w-full bg-[#1a1a1a] rounded-xl border border-white/10 relative overflow-hidden shadow-2xl transition-transform group-hover:scale-[1.02] duration-500">
+<div class="absolute inset-0 under-lighting z-10"></div>
+<div class="absolute inset-0 glass-reflection z-20 pointer-events-none transition-opacity group-hover:opacity-80"></div>
+<div class="absolute inset-0 p-6 flex items-center justify-center z-15">
+<img class="w-full h-full object-contain figure-shadow transition-all duration-700 group-hover:scale-110 group-hover:-translate-y-2" data-alt="Detailed metallic robotic figurine" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDPhvtgxUnebIkkcTJAOnsaWvHInwTbkjv_pIr78PVNsieTAAPpqvkSQzskfa1p2iRNG9s0qbYDg-Ijq-750AnCTxspJcGJadnoFlOKwAumuGd_ld7gPNQhWoTE8hWyQZ_069CHK-4OfMNB9SficEQur1l_5lvm8TL-biHW007HJ1HzoTxM2z0ddqt695WuSXhYQ4OramtxD8nYWvX7MMixk-HS7vfd1qJCsc2ZhjdVwWLcEQSxdj6Gne8aswRHbdKhHNYN2TAowi55"/>
+</div>
+</div>
+<div class="mt-4 px-2">
+<p class="text-xs font-bold text-white uppercase tracking-tight">Cyborg-01 Prime</p>
+<p class="text-[10px] text-on-surface-variant">Authenticated Asset</p>
+</div>
+</div>
+<!-- Figure 2 -->
+<div class="flex-none w-44 relative group">
+<div class="aspect-[3/4] w-full bg-[#1a1a1a] rounded-xl border border-white/10 relative overflow-hidden shadow-2xl transition-transform group-hover:scale-[1.02] duration-500">
+<div class="absolute inset-0 under-lighting z-10"></div>
+<div class="absolute inset-0 glass-reflection z-20 pointer-events-none transition-opacity group-hover:opacity-80"></div>
+<div class="absolute inset-0 p-6 flex items-center justify-center z-15">
+<img class="w-full h-full object-contain figure-shadow transition-all duration-700 group-hover:scale-110 group-hover:-translate-y-2" data-alt="Abstract translucent glass sculpture" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBSJIS3gB2mG8b6qAKnm5mcqyYkuNoAzl1hzpAMEZvLisTXbA-UALHh0kC44iPmv3cDFNikU_pw_-9kqalWojMYhUc7C56Mx70D7Kpy0LcymVDBOLpckI9Dn5Z6l9z3GQVijUfEvrJ-Uk6owhScY9IwnEPOnM9DWfqH5qwspZhyhYHaEggCw7gWWcMkau5ybssu2VKb5n5zSSPIv3Z1XGf8g0CaJEDPQ_8QEEzjw56wrBWhazkAqML7ZSrt6AUHYJXmJQBGeeHwHl_N"/>
+</div>
+</div>
+<div class="mt-4 px-2">
+<p class="text-xs font-bold text-white uppercase tracking-tight">Neon Spectre</p>
+<p class="text-[10px] text-on-surface-variant">Exotic Tier</p>
+</div>
+</div>
+</div>
+<!-- Enhanced Mahogany Shelf Visual Element -->
+<div class="mx-4 h-7 wood-grain mahogany-sheen rounded-lg relative overflow-hidden border-t border-white/20">
+<div class="absolute inset-0 bg-white/5 w-1/3 blur-2xl"></div>
+<div class="absolute inset-0 flex justify-around px-12 pointer-events-none">
+<div class="w-44 h-full object-base-shadow opacity-60"></div>
+<div class="w-44 h-full object-base-shadow opacity-60"></div>
+</div>
+</div>
+</section>
+<!-- Shelf 3: Compact Items -->
+<section class="relative px-6">
+<div class="flex justify-between items-end mb-6">
+<h3 class="font-headline font-bold text-lg text-white/90 uppercase tracking-widest">Small Ornaments</h3>
+</div>
+<div class="grid grid-cols-2 gap-4">
+<div class="bg-surface-container-high rounded-xl p-4 border border-white/5 flex flex-col items-center group">
+<div class="w-full aspect-square relative mb-3 overflow-hidden rounded-lg">
+<div class="absolute inset-0 under-lighting opacity-50 z-10"></div>
+<div class="absolute inset-0 glass-reflection rounded-lg z-20"></div>
+<img class="w-full h-full object-cover rounded-lg brightness-75 group-hover:brightness-100 group-hover:scale-105 transition-all duration-500 z-15" data-alt="Luxury minimalist watch display" src="https://lh3.googleusercontent.com/aida-public/AB6AXuC2rIzZQqvf7VqhAd-r1uKfhgmVEMdKBOQ7Ed3NEyzLrKeedlYEPy4cjidOucOh0kysGZk268j88yKhz8WTfHAwW_WrDcl10XmE8z7ZGR72vSqgtjRsbH0SA2WrtfjKwI2dcoPJr3SkQ4jh9dEOH-FvBWOit7P0u0hNSX9yN_P_0xyILIEg2NKg-ZCpbe-zqrQebdTasWFaHjd_KfH-Q37tXFVmFVn_lirx6GrYJK7HmzR_4fVW4VP8QL9qHuNd4kfR5KClRWfhhW-N"/>
+</div>
+<span class="text-[9px] font-bold text-primary mb-1">CHRONO-SERIES</span>
+<p class="text-xs text-white font-medium">Aeon Clock</p>
+</div>
+<div class="bg-surface-container-high rounded-xl p-4 border border-white/5 flex flex-col items-center group">
+<div class="w-full aspect-square relative mb-3 overflow-hidden rounded-lg">
+<div class="absolute inset-0 under-lighting opacity-50 z-10"></div>
+<div class="absolute inset-0 glass-reflection rounded-lg z-20"></div>
+<img class="w-full h-full object-cover rounded-lg brightness-75 group-hover:brightness-100 group-hover:scale-105 transition-all duration-500 z-15" data-alt="High-end studio headphones in dark room" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDpW5gqYFISpnNU106WEUlmQb2telkbxRtHJk1OHxvI4DvrzzUiPAPATkM8zvSKuC9yjdqCKBAaUgCmb--6b0Kd5BW1t44a1XPq5axvOMY_0EpnMfIiV42FK5RBTP7wTpF5VWpCowD8D1ggwJpUp1MIFLo80L6ERc8cAU3kFN8H6xcv6VmkwrmLB_b2mnZqLZ0lDSdlr9JYr6mPZ3oR2yfoYC9aQA9cBBq1fg67MuLYuart2F6ygPA0UR8JKsUiJQ51XFriW05TnBVr"/>
+</div>
+<span class="text-[9px] font-bold text-secondary mb-1">AUDIO-LINK</span>
+<p class="text-xs text-white font-medium">Void Buds Pro</p>
+</div>
+</div>
+</section>
+</div>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 w-full z-50 rounded-t-[1.5rem] bg-[#131313]/80 backdrop-blur-2xl border-t border-white/5 shadow-[0_-12px_32px_rgba(0,0,0,0.6)] flex justify-around items-center px-4 pb-6 pt-2">
+<div class="flex items-center justify-center text-white/40 p-3 hover:text-white transition-all active:scale-90 duration-150">
+<span class="material-symbols-outlined">home</span>
+</div>
+<div class="flex items-center justify-center text-white/40 p-3 hover:text-white transition-all active:scale-90 duration-150">
+<span class="material-symbols-outlined">explore</span>
+</div>
+<div class="flex items-center justify-center bg-gradient-to-br from-[#c899ff] to-[#be87ff] text-black rounded-full p-3 mb-2 scale-110 shadow-[0_0_20px_rgba(200,153,255,0.4)] active:scale-90 duration-150">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">add_circle</span>
+</div>
+<div class="flex items-center justify-center text-[#c899ff] p-3 hover:text-white transition-all active:scale-90 duration-150">
+<span class="material-symbols-outlined" style="font-variation-settings: 'FILL' 1;">library_books</span>
+</div>
+<div class="flex items-center justify-center text-white/40 p-3 hover:text-white transition-all active:scale-90 duration-150">
+<span class="material-symbols-outlined">person</span>
+</div>
+</nav>
+<style>
+        .no-scrollbar::-webkit-scrollbar {
+            display: none;
+        }
+        .no-scrollbar {
+            -ms-overflow-style: none;
+            scrollbar-width: none;
+        }
+    </style>
+</body></html>

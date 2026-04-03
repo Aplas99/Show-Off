@@ -1,5 +1,5 @@
 import { ITEM_CONDITIONS, ITEM_CONDITION_LABELS, ItemCondition } from "@/constants/itemCondition";
-import { COLORS } from "@/constants/theme";
+import { useColors, type ThemeColors } from "@/constants/theme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { validateCreateItem } from "@/lib/createItemValidation";
 import { Ionicons } from "@expo/vector-icons";
@@ -65,6 +65,8 @@ export default function CreateItemWizard({
 }: Props) {
     const router = useRouter();
     const haptics = useHaptics();
+    const colors = useColors();
+    const styles = getStyles(colors);
 
     const [currentStep, setCurrentStep] = useState<Step>(1);
     const [successModalOpen, setSuccessModalOpen] = useState(false);
@@ -82,11 +84,9 @@ export default function CreateItemWizard({
         imageUri: null,
     });
 
-    // Entry animation values
     const slideAnim = useSharedValue(0);
     const contentOpacity = useSharedValue(1);
 
-    // Handle initial barcode
     useEffect(() => {
         if (initialBarcode && initialBarcode !== itemData.barcode) {
             setItemData((prev) => ({ ...prev, barcode: initialBarcode }));
@@ -94,7 +94,6 @@ export default function CreateItemWizard({
         // eslint-disable-next-line react-hooks/exhaustive-deps
     }, [initialBarcode]);
 
-    // Handle initial product
     useEffect(() => {
         if (initialProductData && visible) {
             setItemData((prev) => ({
@@ -106,18 +105,15 @@ export default function CreateItemWizard({
         }
     }, [initialProductData, visible]);
 
-    // Animate on step change
     useEffect(() => {
         slideAnim.value = 0;
         contentOpacity.value = 1;
     }, [currentStep, slideAnim, contentOpacity]);
 
-    // API hooks
     const createItemWithProduct = useCreateItemWithProductLookup();
     const linkToShowcases = useLinkItemToShowcases();
     const { data: showcases, isLoading: loadingShowcases } = useGetVisibleShowcases();
 
-    // Step validation
     const { isValidBarcode, barcodeType } = useMemo(() => {
         const sanitized = itemData.barcode.replace(/[\s-]/g, "").trim();
         if (!sanitized) return { isValidBarcode: false, barcodeType: "" };
@@ -140,12 +136,8 @@ export default function CreateItemWizard({
     const canCreateItem = canProceedToStep3;
 
     const animateStepTransition = useCallback((direction: "next" | "back") => {
-        // Fade out
         contentOpacity.value = withTiming(0, { duration: 150 }, () => {
-            // Update step here after fade out
             slideAnim.value = direction === "next" ? 30 : -30;
-
-            // Fade in
             contentOpacity.value = withTiming(1, { duration: 200 });
             slideAnim.value = withSpring(0, { damping: 20, stiffness: 200 });
         });
@@ -155,9 +147,7 @@ export default function CreateItemWizard({
         if (currentStep < 3) {
             await haptics.medium();
             animateStepTransition("next");
-            setTimeout(() => {
-                setCurrentStep((prev) => (prev + 1) as Step);
-            }, 150);
+            setTimeout(() => { setCurrentStep((prev) => (prev + 1) as Step); }, 150);
         }
     };
 
@@ -165,9 +155,7 @@ export default function CreateItemWizard({
         if (currentStep > 1) {
             await haptics.light();
             animateStepTransition("back");
-            setTimeout(() => {
-                setCurrentStep((prev) => (prev - 1) as Step);
-            }, 150);
+            setTimeout(() => { setCurrentStep((prev) => (prev - 1) as Step); }, 150);
         }
     };
 
@@ -294,18 +282,13 @@ export default function CreateItemWizard({
                             onPress={handleClose}
                             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
                         >
-                            <Ionicons name="close" size={24} color={COLORS.white} />
+                            <Ionicons name="close" size={24} color={colors.text} />
                         </TouchableOpacity>
                         <View style={{ alignItems: "center" }}>
                             <Text style={styles.title}>Create Item</Text>
                             {activeTitle ? (
                                 <Text
-                                    style={{
-                                        color: COLORS.grey,
-                                        fontSize: 12,
-                                        marginTop: 4,
-                                        maxWidth: 200,
-                                    }}
+                                    style={{ color: colors.grey, fontSize: 12, marginTop: 4, maxWidth: 200 }}
                                     numberOfLines={1}
                                 >
                                     {activeTitle}
@@ -316,7 +299,7 @@ export default function CreateItemWizard({
                     </View>
 
                     {/* Progress Indicator */}
-                    <ProgressIndicator currentStep={currentStep} />
+                    <ProgressIndicator currentStep={currentStep} colors={colors} />
 
                     {/* Content */}
                     <Animated.View style={[styles.contentContainer, contentStyle]}>
@@ -336,6 +319,7 @@ export default function CreateItemWizard({
                                     onBarcodeScanned={handleBarcodeScanned}
                                     isValidBarcode={isValidBarcode}
                                     barcodeType={barcodeType}
+                                    colors={colors}
                                 />
                             )}
 
@@ -350,6 +334,7 @@ export default function CreateItemWizard({
                                     haptics={haptics}
                                     imageUri={itemData.imageUri}
                                     onImageChange={(uri) => setItemData(prev => ({ ...prev, imageUri: uri }))}
+                                    colors={colors}
                                 />
                             )}
 
@@ -364,6 +349,7 @@ export default function CreateItemWizard({
                                     showcases={showcases || []}
                                     loadingShowcases={loadingShowcases}
                                     haptics={haptics}
+                                    colors={colors}
                                 />
                             )}
                         </KeyboardAwareScrollView>
@@ -372,11 +358,7 @@ export default function CreateItemWizard({
                     {/* Navigation */}
                     <View style={styles.navigation}>
                         {currentStep > 1 && (
-                            <TouchableOpacity
-                                style={styles.backButton}
-                                onPress={prevStep}
-                                activeOpacity={0.7}
-                            >
+                            <TouchableOpacity style={styles.backButton} onPress={prevStep} activeOpacity={0.7}>
                                 <Text style={styles.backButtonText}>Back</Text>
                             </TouchableOpacity>
                         )}
@@ -400,7 +382,7 @@ export default function CreateItemWizard({
                                 activeOpacity={0.8}
                             >
                                 <Text style={styles.nextButtonText}>Next</Text>
-                                <Ionicons name="arrow-forward" size={18} color={COLORS.white} style={{ marginLeft: 4 }} />
+                                <Ionicons name="arrow-forward" size={18} color="#FFF" style={{ marginLeft: 4 }} />
                             </TouchableOpacity>
                         ) : (
                             <TouchableOpacity
@@ -414,7 +396,7 @@ export default function CreateItemWizard({
                                 disabled={!canCreateItem || generationModalOpen}
                                 activeOpacity={0.8}
                             >
-                                <Ionicons name="checkmark" size={18} color={COLORS.white} style={{ marginRight: 4 }} />
+                                <Ionicons name="checkmark" size={18} color="#FFF" style={{ marginRight: 4 }} />
                                 <Text style={styles.createButtonText}>Create Item</Text>
                             </TouchableOpacity>
                         )}
@@ -440,31 +422,20 @@ export default function CreateItemWizard({
     );
 }
 
-// Progress Indicator Component
-function ProgressIndicator({ currentStep }: { currentStep: Step }) {
+// Progress Indicator
+function ProgressIndicator({ currentStep, colors }: { currentStep: Step; colors: ThemeColors }) {
+    const styles = getStyles(colors);
     return (
         <View style={styles.progressContainer}>
             {[1, 2, 3].map((step) => (
-                <StepDot
-                    key={step}
-                    step={step}
-                    isActive={currentStep === step}
-                    isCompleted={currentStep > step}
-                />
+                <StepDot key={step} step={step} isActive={currentStep === step} isCompleted={currentStep > step} colors={colors} />
             ))}
         </View>
     );
 }
 
-function StepDot({
-    step,
-    isActive,
-    isCompleted
-}: {
-    step: number;
-    isActive: boolean;
-    isCompleted: boolean;
-}) {
+function StepDot({ step, isActive, isCompleted, colors }: { step: number; isActive: boolean; isCompleted: boolean; colors: ThemeColors }) {
+    const styles = getStyles(colors);
     const scale = useSharedValue(isActive ? 1.2 : 1);
     const opacity = useSharedValue(isActive || isCompleted ? 1 : 0.4);
     const checkScale = useSharedValue(isCompleted ? 1 : 0);
@@ -506,73 +477,50 @@ function StepDot({
             >
                 {isCompleted && (
                     <Animated.View style={checkStyle}>
-                        <Ionicons name="checkmark" size={12} color={COLORS.white} />
+                        <Ionicons name="checkmark" size={12} color="#FFF" />
                     </Animated.View>
                 )}
                 {!isCompleted && (
-                    <Text style={[
-                        styles.progressNumber,
-                        isActive && styles.progressNumberActive
-                    ]}>
+                    <Text style={[styles.progressNumber, isActive && styles.progressNumberActive]}>
                         {step}
                     </Text>
                 )}
             </Animated.View>
-            <Text
-                style={[
-                    styles.progressLabel,
-                    (isActive || isCompleted) && styles.progressLabelActive,
-                ]}
-            >
+            <Text style={[styles.progressLabel, (isActive || isCompleted) && styles.progressLabelActive]}>
                 {step === 1 ? "Scan" : step === 2 ? "Details" : "Pricing"}
             </Text>
         </View>
     );
 }
 
-// Step Components
+// Step 1: Scan Code
 function Step1ScanCode({
-    barcode,
-    onBarcodeChange,
-    onBarcodeScanned,
-    isValidBarcode,
-    barcodeType,
+    barcode, onBarcodeChange, onBarcodeScanned, isValidBarcode, barcodeType, colors,
 }: {
-    barcode: string;
-    onBarcodeChange: (val: string) => void;
-    onBarcodeScanned: (val: string) => void;
-    isValidBarcode: boolean;
-    barcodeType: string;
+    barcode: string; onBarcodeChange: (val: string) => void; onBarcodeScanned: (val: string) => void;
+    isValidBarcode: boolean; barcodeType: string; colors: ThemeColors;
 }) {
+    const styles = getStyles(colors);
     const [scannerOpen, setScannerOpen] = useState(false);
 
     return (
         <View style={styles.stepContent}>
             <Text style={styles.stepTitle}>Item Identification</Text>
-            <Text style={styles.stepDescription}>
-                Scan a barcode or enter the product code
-            </Text>
+            <Text style={styles.stepDescription}>Scan a barcode or enter the product code</Text>
 
             <View style={styles.inputContainer}>
                 <TextInput
-                    style={[
-                        styles.barcodeInput,
-                        isValidBarcode && styles.barcodeInputValid
-                    ]}
+                    style={[styles.barcodeInput, isValidBarcode && styles.barcodeInputValid]}
                     placeholder="Enter barcode or scan"
-                    placeholderTextColor={COLORS.grey}
+                    placeholderTextColor={colors.grey}
                     value={barcode}
                     onChangeText={onBarcodeChange}
                     autoCapitalize="none"
                     autoCorrect={false}
                     keyboardType="numeric"
                 />
-                <TouchableOpacity
-                    style={styles.scanButton}
-                    onPress={() => setScannerOpen(true)}
-                    activeOpacity={0.7}
-                >
-                    <Ionicons name="camera" size={20} color={COLORS.white} />
+                <TouchableOpacity style={styles.scanButton} onPress={() => setScannerOpen(true)} activeOpacity={0.7}>
+                    <Ionicons name="camera" size={20} color="#FFF" />
                 </TouchableOpacity>
             </View>
 
@@ -582,14 +530,9 @@ function Step1ScanCode({
                         <Ionicons
                             name={isValidBarcode ? "checkmark-circle" : "information-circle"}
                             size={18}
-                            color={isValidBarcode ? "#4CAF50" : COLORS.grey}
+                            color={isValidBarcode ? "#4CAF50" : colors.grey}
                         />
-                        <Text
-                            style={[
-                                styles.barcodeStatus,
-                                isValidBarcode && styles.validBarcode,
-                            ]}
-                        >
+                        <Text style={[styles.barcodeStatus, isValidBarcode && styles.validBarcode]}>
                             {isValidBarcode ? barcodeType : "Enter a valid barcode"}
                         </Text>
                     </View>
@@ -599,73 +542,40 @@ function Step1ScanCode({
             <BarcodeScannerModal
                 visible={scannerOpen}
                 onClose={() => setScannerOpen(false)}
-                onBarcodeScanned={(code) => {
-                    onBarcodeScanned(code);
-                    setScannerOpen(false);
-                }}
+                onBarcodeScanned={(code) => { onBarcodeScanned(code); setScannerOpen(false); }}
             />
         </View>
     );
 }
 
+// Step 2: Details
 function Step2Details({
-    productData,
-    barcode,
-    condition,
-    description,
-    onConditionChange,
-    onDescriptionChange,
-    haptics,
-    imageUri,
-    onImageChange,
+    productData, barcode, condition, description, onConditionChange, onDescriptionChange, haptics, imageUri, onImageChange, colors,
 }: {
-    productData?: Product | null;
-    barcode: string;
-    condition: ItemCondition | "";
-    description: string;
-    onConditionChange: (val: ItemCondition | "") => void;
-    onDescriptionChange: (val: string) => void;
-    haptics: ReturnType<typeof useHaptics>;
-    imageUri: string | null;
-    onImageChange: (uri: string | null) => void;
+    productData?: Product | null; barcode: string; condition: ItemCondition | ""; description: string;
+    onConditionChange: (val: ItemCondition | "") => void; onDescriptionChange: (val: string) => void;
+    haptics: ReturnType<typeof useHaptics>; imageUri: string | null; onImageChange: (uri: string | null) => void;
+    colors: ThemeColors;
 }) {
+    const styles = getStyles(colors);
     const [conditionModalOpen, setConditionModalOpen] = useState(false);
 
     const handlePickImage = async () => {
         const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ['images'],
-            allowsEditing: true,
-            aspect: [1, 1], // Square aspect ratio typically good for items
-            quality: 0.8,
-            base64: false,
+            mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.8, base64: false,
         });
-
         if (!result.canceled && result.assets[0]) {
             const asset = result.assets[0];
-            const MAX_SIZE = 5 * 1024 * 1024; // 5MB
-
-            if (asset.fileSize && asset.fileSize > MAX_SIZE) {
+            if (asset.fileSize && asset.fileSize > 5 * 1024 * 1024) {
                 alert("Image too large. Please select an image smaller than 5MB.");
                 return;
             }
-
             await haptics.selection();
             onImageChange(asset.uri);
         }
     };
 
     const displayImage = imageUri || (productData?.images && productData.images.length > 0 ? productData.images[0] : null);
-
-    const handleOpenCondition = async () => {
-        await haptics.light();
-        setConditionModalOpen(true);
-    };
-
-    const handleSelectCondition = async (item: ItemCondition) => {
-        await haptics.selection();
-        onConditionChange(item);
-        setConditionModalOpen(false);
-    };
 
     return (
         <View style={styles.stepContent}>
@@ -679,26 +589,17 @@ function Step2Details({
             )}
 
             <View style={styles.imageSection}>
-                <TouchableOpacity
-                    style={styles.imagePreview}
-                    onPress={handlePickImage}
-                    activeOpacity={0.8}
-                >
+                <TouchableOpacity style={styles.imagePreview} onPress={handlePickImage} activeOpacity={0.8}>
                     {displayImage ? (
-                        <Image
-                            source={{ uri: displayImage }}
-                            style={styles.image}
-                            contentFit="cover"
-                            transition={200}
-                        />
+                        <Image source={{ uri: displayImage }} style={styles.image} contentFit="cover" transition={200} />
                     ) : (
                         <View style={styles.imagePlaceholder}>
-                            <Ionicons name="camera-outline" size={32} color={COLORS.grey} />
+                            <Ionicons name="camera-outline" size={32} color={colors.grey} />
                             <Text style={styles.placeholderText}>Add Photo</Text>
                         </View>
                     )}
                     <View style={styles.editIconContainer}>
-                        <Ionicons name="pencil" size={12} color={COLORS.white} />
+                        <Ionicons name="pencil" size={12} color="#FFF" />
                     </View>
                 </TouchableOpacity>
                 <Text style={styles.imageHint}>
@@ -709,20 +610,14 @@ function Step2Details({
             <View style={styles.fieldContainer}>
                 <Text style={styles.fieldLabel}>Condition *</Text>
                 <TouchableOpacity
-                    style={[
-                        styles.selectorButton,
-                        condition && styles.selectorButtonActive
-                    ]}
-                    onPress={handleOpenCondition}
+                    style={[styles.selectorButton, condition && styles.selectorButtonActive]}
+                    onPress={async () => { await haptics.light(); setConditionModalOpen(true); }}
                     activeOpacity={0.7}
                 >
-                    <Text style={[
-                        styles.selectorText,
-                        !condition && styles.selectorTextPlaceholder
-                    ]}>
+                    <Text style={[styles.selectorText, !condition && styles.selectorTextPlaceholder]}>
                         {condition ? ITEM_CONDITION_LABELS[condition] : "Select Condition"}
                     </Text>
-                    <Ionicons name="chevron-down" size={18} color={condition ? COLORS.primary : COLORS.grey} />
+                    <Ionicons name="chevron-down" size={18} color={condition ? colors.primary : colors.grey} />
                 </TouchableOpacity>
             </View>
 
@@ -731,7 +626,7 @@ function Step2Details({
                 <TextInput
                     style={styles.descriptionInput}
                     placeholder="Notes about this specific copy..."
-                    placeholderTextColor={COLORS.grey}
+                    placeholderTextColor={colors.grey}
                     value={description}
                     onChangeText={onDescriptionChange}
                     multiline
@@ -739,12 +634,7 @@ function Step2Details({
                 />
             </View>
 
-            <Modal
-                visible={conditionModalOpen}
-                transparent
-                animationType="fade"
-                onRequestClose={() => setConditionModalOpen(false)}
-            >
+            <Modal visible={conditionModalOpen} transparent animationType="fade" onRequestClose={() => setConditionModalOpen(false)}>
                 <View style={styles.modalBackdrop}>
                     <View style={styles.modalCard}>
                         <Text style={styles.modalTitle}>Select Condition</Text>
@@ -754,33 +644,22 @@ function Step2Details({
                             renderItem={({ item }) => (
                                 <TouchableOpacity
                                     style={styles.optionItem}
-                                    onPress={() => handleSelectCondition(item)}
+                                    onPress={async () => { await haptics.selection(); onConditionChange(item); setConditionModalOpen(false); }}
                                     activeOpacity={0.7}
                                 >
                                     <Ionicons
-                                        name={
-                                            condition === item
-                                                ? "radio-button-on"
-                                                : "radio-button-off"
-                                        }
+                                        name={condition === item ? "radio-button-on" : "radio-button-off"}
                                         size={20}
-                                        color={condition === item ? COLORS.primary : COLORS.grey}
+                                        color={condition === item ? colors.primary : colors.grey}
                                     />
-                                    <Text style={[
-                                        styles.optionText,
-                                        condition === item && styles.optionTextActive
-                                    ]}>
+                                    <Text style={[styles.optionText, condition === item && styles.optionTextActive]}>
                                         {ITEM_CONDITION_LABELS[item]}
                                     </Text>
                                 </TouchableOpacity>
                             )}
                             showsVerticalScrollIndicator={false}
                         />
-                        <TouchableOpacity
-                            style={styles.modalCancel}
-                            onPress={() => setConditionModalOpen(false)}
-                            activeOpacity={0.7}
-                        >
+                        <TouchableOpacity style={styles.modalCancel} onPress={() => setConditionModalOpen(false)} activeOpacity={0.7}>
                             <Text style={styles.cancelText}>Cancel</Text>
                         </TouchableOpacity>
                     </View>
@@ -790,40 +669,17 @@ function Step2Details({
     );
 }
 
+// Step 3: Pricing & Visibility
 function Step3PricingVisibility({
-    price,
-    forSale,
-    selectedShowcaseIds,
-    onPriceChange,
-    onForSaleChange,
-    onToggleShowcase,
-    showcases,
-    loadingShowcases,
-    haptics,
+    price, forSale, selectedShowcaseIds, onPriceChange, onForSaleChange, onToggleShowcase, showcases, loadingShowcases, haptics, colors,
 }: {
-    price: string;
-    forSale: boolean;
-    selectedShowcaseIds: string[];
-    onPriceChange: (val: string) => void;
-    onForSaleChange: (val: boolean) => void;
-    onToggleShowcase: (id: string) => void;
-    showcases: ShowcaseRow[];
-    loadingShowcases: boolean;
-    haptics: ReturnType<typeof useHaptics>;
+    price: string; forSale: boolean; selectedShowcaseIds: string[];
+    onPriceChange: (val: string) => void; onForSaleChange: (val: boolean) => void;
+    onToggleShowcase: (id: string) => void; showcases: ShowcaseRow[]; loadingShowcases: boolean;
+    haptics: ReturnType<typeof useHaptics>; colors: ThemeColors;
 }) {
+    const styles = getStyles(colors);
     const [showcaseModalOpen, setShowcaseModalOpen] = useState(false);
-
-    const handleOpenShowcase = async () => {
-        await haptics.light();
-        setShowcaseModalOpen(true);
-    };
-
-    const handleToggle = async (id: string) => {
-        await haptics.selection();
-        onToggleShowcase(id);
-    };
-
-    const switchTrackColor = { false: COLORS.slate, true: COLORS.primary };
 
     return (
         <View style={styles.stepContent}>
@@ -836,7 +692,7 @@ function Step3PricingVisibility({
                     <TextInput
                         style={styles.priceInput}
                         placeholder="0.00"
-                        placeholderTextColor={COLORS.grey}
+                        placeholderTextColor={colors.grey}
                         value={price}
                         onChangeText={onPriceChange}
                         keyboardType="decimal-pad"
@@ -853,8 +709,8 @@ function Step3PricingVisibility({
                     <Switch
                         value={forSale}
                         onValueChange={onForSaleChange}
-                        trackColor={switchTrackColor}
-                        thumbColor={COLORS.white}
+                        trackColor={{ false: colors.slate, true: colors.primary }}
+                        thumbColor={forSale ? "#FFF" : colors.grey}
                     />
                 </View>
             </View>
@@ -862,41 +718,20 @@ function Step3PricingVisibility({
             <View style={styles.fieldContainer}>
                 <Text style={styles.fieldLabel}>Add to Showcase(s)</Text>
                 <TouchableOpacity
-                    style={[
-                        styles.selectorButton,
-                        selectedShowcaseIds.length > 0 && styles.selectorButtonActive
-                    ]}
-                    onPress={handleOpenShowcase}
+                    style={[styles.selectorButton, selectedShowcaseIds.length > 0 && styles.selectorButtonActive]}
+                    onPress={async () => { await haptics.light(); setShowcaseModalOpen(true); }}
                     disabled={loadingShowcases}
                     activeOpacity={0.7}
                 >
-                    <Ionicons
-                        name="albums-outline"
-                        size={18}
-                        color={selectedShowcaseIds.length > 0 ? COLORS.primary : COLORS.grey}
-                    />
-                    <Text style={[
-                        styles.selectorText,
-                        selectedShowcaseIds.length === 0 && styles.selectorTextPlaceholder
-                    ]}>
-                        {selectedShowcaseIds.length === 0
-                            ? "Select showcase(s)"
-                            : `${selectedShowcaseIds.length} selected`}
+                    <Ionicons name="albums-outline" size={18} color={selectedShowcaseIds.length > 0 ? colors.primary : colors.grey} />
+                    <Text style={[styles.selectorText, selectedShowcaseIds.length === 0 && styles.selectorTextPlaceholder]}>
+                        {selectedShowcaseIds.length === 0 ? "Select showcase(s)" : `${selectedShowcaseIds.length} selected`}
                     </Text>
-                    <Ionicons
-                        name="chevron-forward"
-                        size={18}
-                        color={selectedShowcaseIds.length > 0 ? COLORS.primary : COLORS.grey}
-                    />
+                    <Ionicons name="chevron-forward" size={18} color={selectedShowcaseIds.length > 0 ? colors.primary : colors.grey} />
                 </TouchableOpacity>
             </View>
 
-            <Modal
-                visible={showcaseModalOpen}
-                transparent
-                animationType="fade"
-                onRequestClose={() => setShowcaseModalOpen(false)}
-            >
+            <Modal visible={showcaseModalOpen} transparent animationType="fade" onRequestClose={() => setShowcaseModalOpen(false)}>
                 <View style={styles.modalBackdrop}>
                     <View style={styles.modalCard}>
                         <Text style={styles.modalTitle}>Choose Showcase(s)</Text>
@@ -909,35 +744,24 @@ function Step3PricingVisibility({
                                 return (
                                     <TouchableOpacity
                                         style={styles.optionItem}
-                                        onPress={() => handleToggle(item.id)}
+                                        onPress={async () => { await haptics.selection(); onToggleShowcase(item.id); }}
                                         activeOpacity={0.7}
                                     >
-                                        <Ionicons
-                                            name={checked ? "checkbox" : "square-outline"}
-                                            size={20}
-                                            color={checked ? COLORS.primary : COLORS.grey}
-                                        />
-                                        <Text style={[
-                                            styles.optionText,
-                                            checked && styles.optionTextActive
-                                        ]}>{label}</Text>
+                                        <Ionicons name={checked ? "checkbox" : "square-outline"} size={20} color={checked ? colors.primary : colors.grey} />
+                                        <Text style={[styles.optionText, checked && styles.optionTextActive]}>{label}</Text>
                                     </TouchableOpacity>
                                 );
                             }}
                             ListEmptyComponent={
                                 <View style={styles.emptyContainer}>
-                                    <Ionicons name="albums-outline" size={40} color={COLORS.grey} />
+                                    <Ionicons name="albums-outline" size={40} color={colors.grey} />
                                     <Text style={styles.emptyText}>No showcases found</Text>
                                     <Text style={styles.emptySubtext}>Create a showcase first</Text>
                                 </View>
                             }
                             showsVerticalScrollIndicator={false}
                         />
-                        <TouchableOpacity
-                            style={styles.modalCancel}
-                            onPress={() => setShowcaseModalOpen(false)}
-                            activeOpacity={0.7}
-                        >
+                        <TouchableOpacity style={styles.modalCancel} onPress={() => setShowcaseModalOpen(false)} activeOpacity={0.7}>
                             <Text style={styles.cancelText}>Done</Text>
                         </TouchableOpacity>
                     </View>
@@ -947,424 +771,138 @@ function Step3PricingVisibility({
     );
 }
 
-const styles = StyleSheet.create({
-    backdrop: {
-        flex: 1,
-        backgroundColor: COLORS.background,
-    },
-    modal: {
-        flex: 1,
-        backgroundColor: COLORS.background,
-    },
+const getStyles = (colors: ThemeColors) => StyleSheet.create({
+    backdrop: { flex: 1, backgroundColor: colors.background },
+    modal: { flex: 1, backgroundColor: colors.background },
     header: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        padding: 16,
-        paddingTop: Platform.OS === "ios" ? 60 : 16,
-        borderBottomWidth: 1,
-        borderBottomColor: COLORS.surfaceLight,
+        flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+        padding: 16, paddingTop: Platform.OS === "ios" ? 60 : 16,
+        borderBottomWidth: 1, borderBottomColor: colors.border,
     },
-    title: {
-        color: COLORS.white,
-        fontSize: 18,
-        fontWeight: "700",
-    },
-    contentContainer: {
-        flex: 1,
-    },
-    content: {
-        flex: 1,
-        padding: 20,
-    },
+    title: { color: colors.text, fontSize: 18, fontWeight: "700" },
+    contentContainer: { flex: 1 },
+    content: { flex: 1, padding: 20 },
     progressContainer: {
-        flexDirection: "row",
-        justifyContent: "center",
-        paddingVertical: 20,
-        borderBottomWidth: 1,
-        borderBottomColor: COLORS.surfaceLight,
-        gap: 40,
+        flexDirection: "row", justifyContent: "center", paddingVertical: 20,
+        borderBottomWidth: 1, borderBottomColor: colors.border, gap: 40,
     },
-    progressStep: {
-        alignItems: "center",
-    },
+    progressStep: { alignItems: "center" },
     progressDot: {
-        width: 32,
-        height: 32,
-        borderRadius: 16,
-        backgroundColor: COLORS.surfaceLight,
-        marginBottom: 8,
-        justifyContent: "center",
-        alignItems: "center",
-        borderWidth: 2,
-        borderColor: COLORS.surfaceLight,
+        width: 32, height: 32, borderRadius: 16, backgroundColor: colors.surfaceLight,
+        marginBottom: 8, justifyContent: "center", alignItems: "center",
+        borderWidth: 2, borderColor: colors.surfaceLight,
     },
-    progressDotActive: {
-        backgroundColor: COLORS.primary,
-        borderColor: COLORS.primary,
-    },
-    progressDotCompleted: {
-        backgroundColor: "#4CAF50",
-        borderColor: "#4CAF50",
-    },
-    progressNumber: {
-        color: COLORS.grey,
-        fontSize: 14,
-        fontWeight: "700",
-    },
-    progressNumberActive: {
-        color: COLORS.white,
-    },
-    progressLabel: {
-        color: COLORS.grey,
-        fontSize: 12,
-        fontWeight: "500",
-    },
-    progressLabelActive: {
-        color: COLORS.white,
-        fontWeight: "600",
-    },
-    stepContent: {
-        flex: 1,
-    },
-    stepTitle: {
-        color: COLORS.white,
-        fontSize: 24,
-        fontWeight: "700",
-        marginBottom: 8,
-    },
-    stepDescription: {
-        color: COLORS.grey,
-        fontSize: 15,
-        marginBottom: 24,
-        lineHeight: 22,
-    },
-    inputContainer: {
-        flexDirection: "row",
-        gap: 12,
-        marginBottom: 12,
-    },
+    progressDotActive: { backgroundColor: colors.primary, borderColor: colors.primary },
+    progressDotCompleted: { backgroundColor: "#4CAF50", borderColor: "#4CAF50" },
+    progressNumber: { color: colors.grey, fontSize: 14, fontWeight: "700" },
+    progressNumberActive: { color: "#FFF" },
+    progressLabel: { color: colors.grey, fontSize: 12, fontWeight: "500" },
+    progressLabelActive: { color: colors.text, fontWeight: "600" },
+    stepContent: { flex: 1 },
+    stepTitle: { color: colors.text, fontSize: 24, fontWeight: "700", marginBottom: 8 },
+    stepDescription: { color: colors.grey, fontSize: 15, marginBottom: 24, lineHeight: 22 },
+    inputContainer: { flexDirection: "row", gap: 12, marginBottom: 12 },
     barcodeInput: {
-        flex: 1,
-        height: 56,
-        backgroundColor: COLORS.surface,
-        borderRadius: 12,
-        paddingHorizontal: 16,
-        color: COLORS.white,
-        borderWidth: 1,
-        borderColor: COLORS.surfaceLight,
-        fontSize: 16,
+        flex: 1, height: 56, backgroundColor: colors.inputBg, borderRadius: 12,
+        paddingHorizontal: 16, color: colors.text, borderWidth: 1, borderColor: colors.border, fontSize: 16,
     },
-    barcodeInputValid: {
-        borderColor: "#4CAF50",
-    },
+    barcodeInputValid: { borderColor: "#4CAF50" },
     scanButton: {
-        width: 56,
-        height: 56,
-        backgroundColor: COLORS.primary,
-        borderRadius: 12,
-        justifyContent: "center",
-        alignItems: "center",
-        shadowColor: COLORS.primary,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 4,
+        width: 56, height: 56, backgroundColor: colors.primary, borderRadius: 12,
+        justifyContent: "center", alignItems: "center",
+        shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3, shadowRadius: 8, elevation: 4,
     },
-    barcodeInfo: {
-        marginBottom: 24,
-    },
-    barcodeStatusRow: {
-        flexDirection: "row",
-        alignItems: "center",
-        gap: 8,
-    },
-    barcodeStatus: {
-        fontSize: 14,
-        color: COLORS.grey,
-        fontWeight: "500",
-    },
-    validBarcode: {
-        color: "#4CAF50",
-    },
+    barcodeInfo: { marginBottom: 24 },
+    barcodeStatusRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+    barcodeStatus: { fontSize: 14, color: colors.grey, fontWeight: "500" },
+    validBarcode: { color: "#4CAF50" },
     navigation: {
-        flexDirection: "row",
-        padding: 20,
-        borderTopWidth: 1,
-        borderTopColor: COLORS.surfaceLight,
-        marginBottom: Platform.OS === "ios" ? 20 : 0,
-        alignItems: "center",
+        flexDirection: "row", padding: 20, borderTopWidth: 1, borderTopColor: colors.border,
+        marginBottom: Platform.OS === "ios" ? 20 : 0, alignItems: "center",
     },
-    backButton: {
-        paddingVertical: 12,
-        paddingHorizontal: 8,
-    },
-    backButtonText: {
-        color: COLORS.grey,
-        fontSize: 16,
-        fontWeight: "600",
-    },
-    spacer: {
-        flex: 1,
-    },
+    backButton: { paddingVertical: 12, paddingHorizontal: 8 },
+    backButtonText: { color: colors.grey, fontSize: 16, fontWeight: "600" },
+    spacer: { flex: 1 },
     nextButton: {
-        backgroundColor: COLORS.primary,
-        paddingVertical: 14,
-        paddingHorizontal: 24,
-        borderRadius: 12,
-        flexDirection: "row",
-        alignItems: "center",
-        shadowColor: COLORS.primary,
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 4,
+        backgroundColor: colors.primary, paddingVertical: 14, paddingHorizontal: 28,
+        borderRadius: 999, flexDirection: "row", alignItems: "center",
+        shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3, shadowRadius: 16, elevation: 4,
     },
-    nextButtonText: {
-        color: COLORS.white,
-        fontSize: 16,
-        fontWeight: "700",
-    },
+    nextButtonText: { color: "#000", fontSize: 14, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.5 },
     createButton: {
-        backgroundColor: "#4CAF50",
-        paddingVertical: 14,
-        paddingHorizontal: 24,
-        borderRadius: 12,
-        flexDirection: "row",
-        alignItems: "center",
-        shadowColor: "#4CAF50",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.3,
-        shadowRadius: 8,
-        elevation: 4,
+        backgroundColor: colors.primary, paddingVertical: 14, paddingHorizontal: 28,
+        borderRadius: 999, flexDirection: "row", alignItems: "center",
+        shadowColor: colors.primary, shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.3, shadowRadius: 16, elevation: 4,
     },
-    createButtonText: {
-        color: COLORS.white,
-        fontSize: 16,
-        fontWeight: "700",
-    },
-    disabledButton: {
-        opacity: 0.4,
-        shadowOpacity: 0,
-    },
-    fieldContainer: {
-        marginBottom: 24,
-    },
-    fieldLabel: {
-        color: COLORS.white,
-        fontSize: 15,
-        fontWeight: "600",
-        marginBottom: 10,
-    },
+    createButtonText: { color: "#000", fontSize: 14, fontWeight: "800", textTransform: "uppercase", letterSpacing: 0.5 },
+    disabledButton: { opacity: 0.4, shadowOpacity: 0 },
+    fieldContainer: { marginBottom: 24 },
+    fieldLabel: { color: colors.text, fontSize: 15, fontWeight: "600", marginBottom: 10 },
     selectorButton: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        height: 56,
-        backgroundColor: COLORS.surface,
-        borderRadius: 12,
-        paddingHorizontal: 16,
-        borderWidth: 1,
-        borderColor: COLORS.surfaceLight,
+        flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+        height: 56, backgroundColor: colors.inputBg, borderRadius: 12,
+        paddingHorizontal: 16, borderWidth: 1, borderColor: colors.border,
     },
-    selectorButtonActive: {
-        borderColor: COLORS.primary,
-    },
-    selectorText: {
-        color: COLORS.white,
-        fontSize: 16,
-        fontWeight: "500",
-    },
-    selectorTextPlaceholder: {
-        color: COLORS.grey,
-        fontWeight: "400",
-    },
+    selectorButtonActive: { borderColor: colors.primary },
+    selectorText: { color: colors.text, fontSize: 16, fontWeight: "500" },
+    selectorTextPlaceholder: { color: colors.grey, fontWeight: "400" },
     descriptionInput: {
-        backgroundColor: COLORS.surface,
-        borderRadius: 12,
-        padding: 16,
-        color: COLORS.white,
-        borderWidth: 1,
-        borderColor: COLORS.surfaceLight,
-        minHeight: 120,
-        textAlignVertical: "top",
-        fontSize: 15,
+        backgroundColor: colors.inputBg, borderRadius: 12, padding: 16, color: colors.text,
+        borderWidth: 1, borderColor: colors.border, minHeight: 120, textAlignVertical: "top", fontSize: 15,
     },
     productSummary: {
-        backgroundColor: COLORS.surface,
-        padding: 16,
-        borderRadius: 12,
-        marginBottom: 24,
-        borderWidth: 1,
-        borderColor: COLORS.surfaceLight,
+        backgroundColor: colors.surface, padding: 16, borderRadius: 12, marginBottom: 24,
+        borderWidth: 1, borderColor: colors.border,
     },
-    productTitle: {
-        color: COLORS.white,
-        fontSize: 17,
-        fontWeight: "600",
-        marginBottom: 4,
-    },
-    productBrand: {
-        color: COLORS.primary,
-        fontSize: 14,
-        fontWeight: "500",
-    },
+    productTitle: { color: colors.text, fontSize: 17, fontWeight: "600", marginBottom: 4 },
+    productBrand: { color: colors.primary, fontSize: 14, fontWeight: "500" },
     priceInputContainer: {
-        flexDirection: "row",
-        alignItems: "center",
-        backgroundColor: COLORS.surface,
-        borderRadius: 12,
-        borderWidth: 1,
-        borderColor: COLORS.surfaceLight,
-        paddingHorizontal: 16,
-        height: 56,
+        flexDirection: "row", alignItems: "center", backgroundColor: colors.inputBg,
+        borderRadius: 12, borderWidth: 1, borderColor: colors.border, paddingHorizontal: 16, height: 56,
     },
-    currencySymbol: {
-        color: COLORS.grey,
-        fontSize: 20,
-        marginRight: 8,
-        fontWeight: "600",
-    },
-    priceInput: {
-        flex: 1,
-        color: COLORS.white,
-        fontSize: 18,
-        fontWeight: "600",
-    },
+    currencySymbol: { color: colors.grey, fontSize: 20, marginRight: 8, fontWeight: "600" },
+    priceInput: { flex: 1, color: colors.text, fontSize: 18, fontWeight: "600" },
     switchRow: {
-        flexDirection: "row",
-        justifyContent: "space-between",
-        alignItems: "center",
-        backgroundColor: COLORS.surface,
-        borderRadius: 12,
-        padding: 16,
-        borderWidth: 1,
-        borderColor: COLORS.surfaceLight,
+        flexDirection: "row", justifyContent: "space-between", alignItems: "center",
+        backgroundColor: colors.inputBg, borderRadius: 12, padding: 16,
+        borderWidth: 1, borderColor: colors.border,
     },
-    switchHint: {
-        color: COLORS.grey,
-        fontSize: 13,
-        marginTop: 2,
-    },
-    modalBackdrop: {
-        flex: 1,
-        backgroundColor: "rgba(0,0,0,0.7)",
-        justifyContent: "center",
-        padding: 20,
-    },
+    switchHint: { color: colors.grey, fontSize: 13, marginTop: 2 },
+    modalBackdrop: { flex: 1, backgroundColor: colors.overlay, justifyContent: "center", padding: 20 },
     modalCard: {
-        backgroundColor: COLORS.surface,
-        borderRadius: 20,
-        padding: 24,
-        maxHeight: "80%",
-        borderWidth: 1,
-        borderColor: COLORS.surfaceLight,
+        backgroundColor: colors.surface, borderRadius: 20, padding: 24, maxHeight: "80%",
+        borderWidth: 1, borderColor: colors.border,
     },
-    modalTitle: {
-        color: COLORS.white,
-        fontSize: 20,
-        fontWeight: "700",
-        marginBottom: 20,
-        textAlign: "center",
-    },
+    modalTitle: { color: colors.text, fontSize: 20, fontWeight: "700", marginBottom: 20, textAlign: "center" },
     optionItem: {
-        flexDirection: "row",
-        alignItems: "center",
-        paddingVertical: 14,
-        gap: 12,
-        borderBottomWidth: 1,
-        borderBottomColor: COLORS.surfaceLight,
+        flexDirection: "row", alignItems: "center", paddingVertical: 14, gap: 12,
+        borderBottomWidth: 1, borderBottomColor: colors.border,
     },
-    optionText: {
-        color: COLORS.white,
-        fontSize: 16,
-        flex: 1,
-    },
-    optionTextActive: {
-        color: COLORS.primary,
-        fontWeight: "600",
-    },
-    modalCancel: {
-        marginTop: 16,
-        alignItems: "center",
-        paddingVertical: 12,
-    },
-    cancelText: {
-        color: COLORS.primary,
-        fontSize: 16,
-        fontWeight: "700",
-    },
-    emptyContainer: {
-        alignItems: "center",
-        paddingVertical: 40,
-    },
-    emptyText: {
-        color: COLORS.grey,
-        textAlign: "center",
-        marginTop: 12,
-        fontSize: 16,
-        fontWeight: "600",
-    },
-    emptySubtext: {
-        color: COLORS.grey,
-        textAlign: "center",
-        marginTop: 4,
-        fontSize: 14,
-    },
-    imageSection: {
-        marginBottom: 24,
-        alignItems: "center",
-    },
+    optionText: { color: colors.text, fontSize: 16, flex: 1 },
+    optionTextActive: { color: colors.primary, fontWeight: "600" },
+    modalCancel: { marginTop: 16, alignItems: "center", paddingVertical: 12 },
+    cancelText: { color: colors.primary, fontSize: 16, fontWeight: "700" },
+    emptyContainer: { alignItems: "center", paddingVertical: 40 },
+    emptyText: { color: colors.grey, textAlign: "center", marginTop: 12, fontSize: 16, fontWeight: "600" },
+    emptySubtext: { color: colors.grey, textAlign: "center", marginTop: 4, fontSize: 14 },
+    imageSection: { marginBottom: 24, alignItems: "center" },
     imagePreview: {
-        width: 120,
-        height: 120,
-        borderRadius: 16,
-        backgroundColor: COLORS.surface,
-        borderWidth: 1,
-        borderColor: COLORS.surfaceLight,
-        overflow: "hidden",
-        justifyContent: "center",
-        alignItems: "center",
-        marginBottom: 12,
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.2,
-        shadowRadius: 8,
-        elevation: 4,
+        width: 120, height: 120, borderRadius: 16, backgroundColor: colors.surface,
+        borderWidth: 1, borderColor: colors.border, overflow: "hidden",
+        justifyContent: "center", alignItems: "center", marginBottom: 12,
+        shadowColor: "#000", shadowOffset: { width: 0, height: 4 },
+        shadowOpacity: 0.2, shadowRadius: 8, elevation: 4,
     },
-    image: {
-        width: "100%",
-        height: "100%",
-    },
-    imagePlaceholder: {
-        alignItems: "center",
-        justifyContent: "center",
-        gap: 8,
-    },
-    placeholderText: {
-        color: COLORS.grey,
-        fontSize: 12,
-        fontWeight: "500",
-    },
+    image: { width: "100%", height: "100%" },
+    imagePlaceholder: { alignItems: "center", justifyContent: "center", gap: 8 },
+    placeholderText: { color: colors.grey, fontSize: 12, fontWeight: "500" },
     editIconContainer: {
-        position: "absolute",
-        bottom: 8,
-        right: 8,
-        backgroundColor: COLORS.primary,
-        width: 24,
-        height: 24,
-        borderRadius: 12,
-        justifyContent: "center",
-        alignItems: "center",
-        shadowColor: "#000",
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.2,
-        shadowRadius: 4,
+        position: "absolute", bottom: 8, right: 8, backgroundColor: colors.primary,
+        width: 24, height: 24, borderRadius: 12, justifyContent: "center", alignItems: "center",
+        shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4,
     },
-    imageHint: {
-        color: COLORS.grey,
-        fontSize: 13,
-        textAlign: "center",
-        alignSelf: "stretch",
-    },
+    imageHint: { color: colors.grey, fontSize: 13, textAlign: "center", alignSelf: "stretch" },
 });

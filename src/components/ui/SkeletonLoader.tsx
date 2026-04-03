@@ -1,7 +1,7 @@
-import { COLORS } from "@/constants/theme";
+import { useColors } from "@/constants/theme";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect } from "react";
-import { StyleSheet, Text, View, ViewStyle, DimensionValue } from "react-native";
+import { DimensionValue, StyleSheet, Text, View, ViewStyle } from "react-native";
 import Animated, {
     Easing,
     useAnimatedStyle,
@@ -18,12 +18,6 @@ interface SkeletonLoaderProps {
     shimmerColors?: readonly [string, string, ...string[]];
 }
 
-const DEFAULT_SHIMMER_COLORS: readonly [string, string, string] = [
-    COLORS.surface,
-    COLORS.surfaceLight,
-    COLORS.surface,
-];
-
 /**
  * Animated shimmer skeleton loader with gradient sweep effect
  */
@@ -32,8 +26,15 @@ export function SkeletonLoader({
     height = 60,
     borderRadius = 12,
     style,
-    shimmerColors = DEFAULT_SHIMMER_COLORS,
+    shimmerColors,
 }: SkeletonLoaderProps) {
+    const colors = useColors();
+    const defaultShimmer: readonly [string, string, string] = [
+        colors.surface,
+        colors.surfaceLight,
+        colors.surface,
+    ];
+    const finalShimmer = shimmerColors || defaultShimmer;
     const translateX = useSharedValue(-300);
 
     useEffect(() => {
@@ -54,7 +55,7 @@ export function SkeletonLoader({
     return (
         <View
             style={[
-                styles.container,
+                { backgroundColor: colors.surface, overflow: "hidden" },
                 {
                     width,
                     height,
@@ -66,7 +67,7 @@ export function SkeletonLoader({
             <View style={[StyleSheet.absoluteFill, { overflow: "hidden" }]}>
                 <Animated.View style={[StyleSheet.absoluteFill, animatedStyle]}>
                     <LinearGradient
-                        colors={shimmerColors}
+                        colors={finalShimmer}
                         start={{ x: 0, y: 0.5 }}
                         end={{ x: 1, y: 0.5 }}
                         style={StyleSheet.absoluteFill}
@@ -112,8 +113,12 @@ interface SkeletonProductCardProps {
  * Product card style skeleton loader
  */
 export function SkeletonProductCard({ showImage = true }: SkeletonProductCardProps) {
+    const colors = useColors();
     return (
-        <View style={styles.productCard}>
+        <View style={[styles.productCard, {
+            backgroundColor: colors.surface,
+            borderColor: colors.border,
+        }]}>
             {showImage && (
                 <SkeletonLoader
                     width={50}
@@ -174,6 +179,7 @@ export function PulseLoader({
     size?: "small" | "medium" | "large";
     text?: string;
 }) {
+    const colors = useColors();
     const dot1 = useSharedValue(0.4);
     const dot2 = useSharedValue(0.4);
     const dot3 = useSharedValue(0.4);
@@ -233,7 +239,7 @@ export function PulseLoader({
                         {
                             width: dotSizes[size],
                             height: dotSizes[size],
-                            backgroundColor: COLORS.primary,
+                            backgroundColor: colors.primary,
                         },
                         animatedStyle1,
                     ]}
@@ -244,7 +250,7 @@ export function PulseLoader({
                         {
                             width: dotSizes[size],
                             height: dotSizes[size],
-                            backgroundColor: COLORS.primary,
+                            backgroundColor: colors.primary,
                         },
                         animatedStyle2,
                     ]}
@@ -255,32 +261,26 @@ export function PulseLoader({
                         {
                             width: dotSizes[size],
                             height: dotSizes[size],
-                            backgroundColor: COLORS.primary,
+                            backgroundColor: colors.primary,
                         },
                         animatedStyle3,
                     ]}
                 />
             </View>
-            {text && <Text style={styles.pulseText}>{text}</Text>}
+            {text && <Text style={[styles.pulseText, { color: colors.grey }]}>{text}</Text>}
         </View>
     );
 }
 
 const styles = StyleSheet.create({
-    container: {
-        backgroundColor: COLORS.surface,
-        overflow: "hidden",
-    },
     listContainer: {
         width: "100%",
     },
     productCard: {
         flexDirection: "row",
-        backgroundColor: COLORS.surface,
         padding: 12,
         borderRadius: 12,
         borderWidth: 1,
-        borderColor: COLORS.surfaceLight,
         alignItems: "center",
     },
     productImage: {
@@ -316,7 +316,6 @@ const styles = StyleSheet.create({
         borderRadius: 100,
     },
     pulseText: {
-        color: COLORS.grey,
         fontSize: 14,
         marginTop: 16,
         fontWeight: "500",

@@ -1,0 +1,265 @@
+<!DOCTYPE html>
+
+<html class="dark" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<title>The Digital Curator | Social Feed</title>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@700;800&amp;family=Inter:wght@400;500;600&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    colors: {
+                        "on-error-container": "#ffb2b9",
+                        "on-tertiary-fixed-variant": "#71122b",
+                        "outline": "#767575",
+                        "tertiary-fixed-dim": "#fa7c91",
+                        "surface-container-high": "#20201f",
+                        "tertiary-fixed": "#ff90a0",
+                        "primary-dim": "#bc83ff",
+                        "secondary-fixed-dim": "#e7afff",
+                        "on-background": "#ffffff",
+                        "error-container": "#a70138",
+                        "on-primary": "#44007f",
+                        "surface-container-lowest": "#000000",
+                        "on-primary-fixed-variant": "#41007a",
+                        "tertiary-dim": "#f3778c",
+                        "secondary-dim": "#cf8bf0",
+                        "on-surface": "#ffffff",
+                        "on-secondary-fixed": "#530f74",
+                        "surface-container-low": "#131313",
+                        "primary-fixed-dim": "#b374ff",
+                        "error-dim": "#d73357",
+                        "surface-tint": "#c899ff",
+                        "inverse-on-surface": "#565555",
+                        "on-error": "#490013",
+                        "on-secondary-container": "#edc1ff",
+                        "error": "#ff6e84",
+                        "inverse-surface": "#fcf9f8",
+                        "on-primary-container": "#340064",
+                        "secondary-fixed": "#eec2ff",
+                        "on-primary-fixed": "#000000",
+                        "on-secondary-fixed-variant": "#723393",
+                        "tertiary": "#ff94a4",
+                        "primary-fixed": "#be87ff",
+                        "inverse-primary": "#7c39c7",
+                        "background": "#0e0e0e",
+                        "surface-container": "#1a1a1a",
+                        "surface-bright": "#2c2c2c",
+                        "tertiary-container": "#fd7e93",
+                        "surface": "#0e0e0e",
+                        "primary": "#c899ff",
+                        "surface-variant": "#262626",
+                        "on-secondary": "#510d72",
+                        "on-surface-variant": "#adaaaa",
+                        "secondary": "#de98ff",
+                        "on-tertiary-fixed": "#39000f",
+                        "surface-dim": "#0e0e0e",
+                        "secondary-container": "#682888",
+                        "on-tertiary-container": "#56001b",
+                        "outline-variant": "#484847",
+                        "primary-container": "#be87ff",
+                        "on-tertiary": "#680925",
+                        "surface-container-highest": "#262626"
+                    },
+                    fontFamily: {
+                        "headline": ["Manrope"],
+                        "body": ["Inter"],
+                        "label": ["Inter"]
+                    },
+                    borderRadius: { "DEFAULT": "0.25rem", "lg": "0.5rem", "xl": "0.75rem", "full": "9999px" },
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+        }
+        .feed-gradient-overlay {
+            background: linear-gradient(to top, rgba(14, 14, 14, 0.9) 0%, rgba(14, 14, 14, 0) 40%);
+        }
+    </style>
+<style>
+    body {
+      min-height: max(884px, 100dvh);
+    }
+  </style>
+  </head>
+<body class="bg-background text-on-background font-body selection:bg-primary/30">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full z-50 bg-black/80 backdrop-blur-xl shadow-[0px_12px_32px_rgba(0,0,0,0.4)]">
+<div class="flex justify-between items-center px-6 h-16 w-full">
+<div class="active:scale-95 transition-transform text-[#c899ff]">
+<span class="material-symbols-outlined" data-icon="menu">menu</span>
+</div>
+<h1 class="font-['Manrope'] font-bold tracking-tight text-2xl text-white uppercase tracking-tighter">show-off</h1>
+<div class="active:scale-95 transition-transform text-white/70 hover:text-white transition-colors duration-300">
+<span class="material-symbols-outlined" data-icon="search">search</span>
+</div>
+</div>
+</header>
+<!-- Content Canvas -->
+<main class="pt-16 pb-28 max-w-2xl mx-auto px-4">
+<!-- Feed Navigation Tabs -->
+<nav class="flex justify-center items-center gap-8 py-6 mb-2">
+<button class="text-sm font-headline font-bold tracking-widest uppercase border-b-2 border-primary pb-1">For You</button>
+<button class="text-sm font-headline font-medium tracking-widest uppercase text-on-surface-variant hover:text-on-surface transition-colors">Following</button>
+</nav>
+<!-- Vertical Feed -->
+<div class="flex flex-col gap-10">
+<!-- Collector Post 1 -->
+<article class="relative group">
+<div class="flex items-center gap-3 mb-4 px-2">
+<div class="w-10 h-10 rounded-full bg-surface-container-high overflow-hidden border border-outline-variant/20">
+<img alt="" class="w-full h-full object-cover" data-alt="Close up of male user profile avatar" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCkKVTdNoPOr0j3KGBb619oEXe7elkogWO7wul7_ErHcSD2daKqbuzE9xXiJxOa9kpt_UIktPgRiQq2Krg4fvPFWS1HIgrHc6Y9tFPIwqFn0DACnVZ6MiA4CRJzkOyPDKlw0_85PLVlREBatHN4XcC7d_peGBhPVkcL6852WvMLSSYiQv-I4fnpta51KJRnl05zPD3nnkPoLQqWPu7t8kcAyL_WYJG3XE2vyUNIMIOw0SXXz4_oESmn_VSqZejo3oCMAR8wevpcmSPu"/>
+</div>
+<div>
+<p class="text-sm font-bold font-headline leading-none">alex_curates</p>
+<p class="text-[10px] text-on-surface-variant font-label tracking-wide">2 HOURS AGO</p>
+</div>
+<button class="ml-auto text-on-surface-variant active:scale-90 transition-transform">
+<span class="material-symbols-outlined" data-icon="more_vert">more_vert</span>
+</button>
+</div>
+<!-- Main Display Card -->
+<div class="relative overflow-hidden rounded-xl bg-surface-container shadow-[0_12px_32px_rgba(0,0,0,0.4)] transition-all duration-500 group-hover:shadow-[0_20px_48px_rgba(0,0,0,0.6)]">
+<img alt="" class="w-full aspect-[4/5] object-cover" data-alt="Vibrant aesthetic neon light sculpture close up" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAPkEOXE9jji3R3450EmdMvMIjS_BdNoxsvgkW5-ggoQ_ePN-z8AZYuDYNhzI3Wi_zd3M-t6n3YGD-3hujKpTMsh-bZ_cPqhbystngYVB89smrNjno46o7CjS3UQqm2UdY0-nNdBZ_sHv2UbFrLm63WOYgEBwnFQEHNAys14cXZSQU2GEHO4k9X-qK25b5ZWk_C1k4faccIigLi_jCMyox5z6jwAK6fTO-Neo-AwtrYtiwzggMvEf8qVKo_1eCs3Em8dLjt3k6kre2t"/>
+<!-- Glass Action Sidebar -->
+<div class="absolute right-4 bottom-24 flex flex-col gap-6 items-center py-4 px-2 rounded-full bg-black/30 backdrop-blur-md border border-white/10">
+<div class="flex flex-col items-center gap-1 group/action">
+<button class="text-white hover:text-error transition-colors active:scale-125 duration-200">
+<span class="material-symbols-outlined text-2xl" data-icon="favorite" style="font-variation-settings: 'FILL' 1;">favorite</span>
+</button>
+<span class="text-[10px] font-label font-bold">1.2K</span>
+</div>
+<div class="flex flex-col items-center gap-1">
+<button class="text-white hover:text-primary transition-colors active:scale-125 duration-200">
+<span class="material-symbols-outlined text-2xl" data-icon="chat_bubble">chat_bubble</span>
+</button>
+<span class="text-[10px] font-label font-bold">48</span>
+</div>
+<div class="flex flex-col items-center gap-1">
+<button class="text-white hover:text-primary transition-colors active:scale-125 duration-200">
+<span class="material-symbols-outlined text-2xl" data-icon="bookmark">bookmark</span>
+</button>
+</div>
+<div class="flex flex-col items-center gap-1">
+<button class="text-white hover:text-primary transition-colors active:scale-125 duration-200">
+<span class="material-symbols-outlined text-2xl" data-icon="share">share</span>
+</button>
+</div>
+</div>
+<div class="absolute bottom-0 left-0 w-full p-6 feed-gradient-overlay pointer-events-none">
+<h3 class="text-xl font-headline font-extrabold tracking-tight text-white mb-1">CYBER_GLOW V1</h3>
+<p class="text-sm text-white/90 font-body leading-relaxed max-w-[80%]">I LOVE WASHING MENMOUF. This neon curation finally arrived from the underground lab.</p>
+</div>
+</div>
+</article>
+<!-- Collector Post 2 (Asymmetric Variation) -->
+<article class="relative group">
+<div class="flex items-center gap-3 mb-4 px-2">
+<div class="w-10 h-10 rounded-full bg-surface-container-high overflow-hidden border border-outline-variant/20">
+<img alt="" class="w-full h-full object-cover" data-alt="Portrait of woman curator avatar" src="https://lh3.googleusercontent.com/aida-public/AB6AXuDrPAbXaL2fya8O3n4D61Acx9LEqycuI_UvBjehByMf_MtXHjoC8uxuA4q5j6ckLuIkblkzEfztTfXccc9FgfgDk1R8HtK4PBiKIHXYZ4YcaWdL-9z5xHR8ViwOoq6-MbfRzKwsP5JpDDgNAoVDYeiOLFPdsJwKydsrxLLhZPh9JMoROqyXMVyX_KZFnSMkYDiGwIjliedSWoHyOlAwA48AtjJ8CTo3HZmQMQNeaI0bHrIJpxEfC9q1ZK56Z2M0p9BgSJyTIRr5_Cwy"/>
+</div>
+<div>
+<p class="text-sm font-bold font-headline leading-none">vibe_engineer</p>
+<p class="text-[10px] text-on-surface-variant font-label tracking-wide">5 HOURS AGO</p>
+</div>
+<button class="ml-auto text-on-surface-variant active:scale-90 transition-transform">
+<span class="material-symbols-outlined" data-icon="more_vert">more_vert</span>
+</button>
+</div>
+<div class="grid grid-cols-12 gap-4">
+<div class="col-span-12 relative overflow-hidden rounded-xl bg-surface-container-low border border-white/5">
+<img alt="" class="w-full aspect-video object-cover grayscale group-hover:grayscale-0 transition-all duration-700" data-alt="Retro minimalist mechanical keyboard aesthetic" src="https://lh3.googleusercontent.com/aida-public/AB6AXuBvPrbiTirCfLAYG_Is3LPgz-xU_8C7fUzSBwnDkmk80Oa6XhwrQW_aRaBDxI1E4lNQrzpSZlXauDeziww2A-99W8VZxoU6la39mqDqnL9tuT0wk0GwFJmwsrjbzQqZZ8tt3Ls6hndB09THFRMIg4qgSOW5ivHZ25T2H2XIKZr4BewIAi28gJJp82-OmEif3GrqWinTCegDN6GKaND0aYRr1E-N2z9Dx0eXRCdoTkrNS9HF-2BJ65EOe-3mpqgtkFeYO1OXh0RPO5qK"/>
+<!-- Mini Caption Overlay -->
+<div class="absolute top-4 left-4 bg-black/60 backdrop-blur-md px-3 py-1 rounded-full border border-white/10">
+<span class="text-[10px] font-headline font-bold tracking-widest uppercase text-primary">Limited Edition</span>
+</div>
+</div>
+<div class="col-span-12 px-2 pt-2">
+<p class="text-sm text-on-surface-variant font-body leading-relaxed italic border-l-2 border-primary/30 pl-4">
+                            "Finding the perfect tactility in a world of digital noise. The 1984 Obsidian variant is a masterclass in industrial design."
+                        </p>
+<div class="flex gap-6 mt-6 border-t border-outline-variant/10 pt-4">
+<button class="flex items-center gap-2 text-on-surface-variant hover:text-error transition-colors">
+<span class="material-symbols-outlined text-xl" data-icon="favorite">favorite</span>
+<span class="text-xs font-bold">892</span>
+</button>
+<button class="flex items-center gap-2 text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-xl" data-icon="chat_bubble">chat_bubble</span>
+<span class="text-xs font-bold">12</span>
+</button>
+<button class="ml-auto text-on-surface-variant hover:text-primary transition-colors">
+<span class="material-symbols-outlined text-xl" data-icon="bookmark">bookmark</span>
+</button>
+</div>
+</div>
+</div>
+</article>
+<!-- Collector Post 3 -->
+<article class="relative group">
+<div class="flex items-center gap-3 mb-4 px-2">
+<div class="w-10 h-10 rounded-full bg-surface-container-high overflow-hidden border border-outline-variant/20">
+<img alt="" class="w-full h-full object-cover" data-alt="User avatar male portrait" src="https://lh3.googleusercontent.com/aida-public/AB6AXuCZF5II6VdPs-mYfrBEnfhYZ-8zrUBq59SRlNO6DPbellEWvTCoM19kZ_X9WsI1_CfT6dNstsL0wfpo8nDqpZU2-OdRG6HlWqmAGqt5_Zc2kvYvk2McgU5SAU5lwxlCl4EeN05tXzNymCSyYcxP_TaZFdCmT70s6xti_oYhM84pnOr2TTIKEETmK2bKzNsdK7PPy8BrKUmV0RxPfouN4q2CGjRc8hZk7bdeLtvNaWvIJMjzKv_Ashc2bih2cVPDOTXd6KveFjZO9HGT"/>
+</div>
+<div>
+<p class="text-sm font-bold font-headline leading-none">analog_ghost</p>
+<p class="text-[10px] text-on-surface-variant font-label tracking-wide">YESTERDAY</p>
+</div>
+<button class="ml-auto text-on-surface-variant active:scale-90 transition-transform">
+<span class="material-symbols-outlined" data-icon="more_vert">more_vert</span>
+</button>
+</div>
+<div class="relative overflow-hidden rounded-xl bg-surface-container shadow-[0_12px_32px_rgba(0,0,0,0.4)]">
+<img alt="" class="w-full aspect-[4/5] object-cover" data-alt="High quality vintage film camera detail" src="https://lh3.googleusercontent.com/aida-public/AB6AXuAWJjQP_Lerh4tzmdXJrheGKTwcddixxHP__IfYRLL9xBt86n-8qK9y07NYUpopMe-TCofhj7VNgdsRmdaFcuM5hqoHusSlm5O8JBOhZiOFsnQ3yxFsWKYbKzRgWlFXcNZjIaENKl5IxoToJ-cgap9VMj2z9DNEuugmRP6HOEypC4BWyhyW-d1Ud8ISiRi5vzhIuDWU3OYalZ3g22Ax9UjMbnRQ3WsE9GwwnRFi8zty0oB2M6CcihyGXK58-VelccW32jxznVj8uibP"/>
+<div class="absolute bottom-6 left-6 right-6">
+<div class="p-6 bg-black/40 backdrop-blur-2xl rounded-xl border border-white/5">
+<h3 class="text-lg font-headline font-bold text-white mb-2 uppercase tracking-widest">Leica M6 - Dark Edition</h3>
+<p class="text-xs text-on-surface-variant font-body">Captured using 35mm Portra 400. The mechanical soul of photography still lives.</p>
+<div class="flex justify-between items-center mt-6">
+<div class="flex -space-x-2">
+<div class="w-6 h-6 rounded-full border-2 border-background bg-zinc-800"></div>
+<div class="w-6 h-6 rounded-full border-2 border-background bg-zinc-700"></div>
+<div class="w-6 h-6 rounded-full border-2 border-background bg-zinc-600"></div>
+<div class="flex items-center justify-center w-6 h-6 rounded-full border-2 border-background bg-surface-container-high text-[8px] font-bold">+12</div>
+</div>
+<button class="bg-primary text-on-primary-fixed px-4 py-1.5 rounded-full text-[10px] font-headline font-extrabold uppercase tracking-tighter hover:scale-105 transition-transform active:scale-95">
+                                    View Details
+                                </button>
+</div>
+</div>
+</div>
+</div>
+</article>
+</div>
+</main>
+<!-- BottomNavBar -->
+<nav class="fixed bottom-0 left-0 w-full z-50 flex justify-around items-center px-4 pb-6 pt-2 bg-[#131313]/80 backdrop-blur-2xl rounded-t-[1.5rem] border-t border-white/10 shadow-[0_-8px_24px_rgba(0,0,0,0.5)]">
+<!-- Home (Active) -->
+<a class="flex flex-col items-center justify-center bg-gradient-to-br from-[#c899ff] to-[#be87ff] text-black rounded-full p-3 mb-2 scale-110 shadow-[0_0_15px_rgba(200,153,255,0.4)] active:scale-90 duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="home" style="font-variation-settings: 'FILL' 1;">home</span>
+</a>
+<!-- Explore -->
+<a class="flex flex-col items-center justify-center text-white/50 p-3 hover:text-[#c899ff] transition-all active:scale-90 duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="explore">explore</span>
+</a>
+<!-- Add -->
+<a class="flex flex-col items-center justify-center text-white/50 p-3 hover:text-[#c899ff] transition-all active:scale-90 duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="add_circle" style="font-size: 32px; color: #c899ff;">add_circle</span>
+</a>
+<!-- Shelves -->
+<a class="flex flex-col items-center justify-center text-white/50 p-3 hover:text-[#c899ff] transition-all active:scale-90 duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="shelves">shelves</span>
+</a>
+<!-- Person -->
+<a class="flex flex-col items-center justify-center text-white/50 p-3 hover:text-[#c899ff] transition-all active:scale-90 duration-200" href="#">
+<span class="material-symbols-outlined" data-icon="person">person</span>
+</a>
+</nav>
+</body></html>

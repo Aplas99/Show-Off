@@ -5,6 +5,7 @@ import ItemDetailModal from "@/src/features/showcase/ItemDetailModal";
 import ShowcaseCarousel from "@/src/features/showcase/ShowcaseCarousel";
 import ShowcaseListItem from "@/src/features/showcase/ShowcaseListItem";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import React, {
   useCallback,
@@ -18,6 +19,7 @@ import {
   Animated,
   Easing,
   FlatList,
+  Keyboard,
   Modal,
   Platform,
   RefreshControl,
@@ -25,7 +27,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  View,
+  View
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -49,9 +51,9 @@ const AnimatedGridItem = ({
         toValue: 1,
         delay: index * 50,
         useNativeDriver: true,
-        ...(Platform.OS === "ios"
-          ? { bounciness: 8, speed: 12 }
-          : { tension: 40, friction: 4 }),
+        // Calm spring values — avoids choking the UI thread on Android
+        tension: 80,
+        friction: 8,
       }).start();
     } else {
       scaleAnim.setValue(1);
@@ -80,7 +82,9 @@ export default function ShowcaseDetail() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   // View mode state
-  const [viewMode, setViewMode] = useState<"grid" | "carousel" | "bookcase">("bookcase");
+  const [viewMode, setViewMode] = useState<"grid" | "carousel" | "bookcase">("grid");
+  // Tracks whether images have been prefetched before bookcase is revealed
+  const [bookcaseReady, setBookcaseReady] = useState(false);
 
   // Modal state
   const [selectedItem, setSelectedItem] = useState<ItemWithProduct | null>(
@@ -91,6 +95,38 @@ export default function ShowcaseDetail() {
   // Controls visibility (for Bookcase view)
   const [controlsVisible, setControlsVisible] = useState(true);
   const controlsTranslateY = useRef(new Animated.Value(0)).current;
+
+  // Keyboard-aware positioning for search bar
+  const keyboardOffset = useRef(new Animated.Value(0)).current;
+
+  useEffect(() => {
+    const showSub = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillShow" : "keyboardDidShow",
+      (e) => {
+        Animated.spring(keyboardOffset, {
+          toValue: -e.endCoordinates.height,
+          damping: 20,
+          stiffness: 150,
+          useNativeDriver: true,
+        }).start();
+      }
+    );
+    const hideSub = Keyboard.addListener(
+      Platform.OS === "ios" ? "keyboardWillHide" : "keyboardDidHide",
+      () => {
+        Animated.spring(keyboardOffset, {
+          toValue: 0,
+          damping: 20,
+          stiffness: 150,
+          useNativeDriver: true,
+        }).start();
+      }
+    );
+    return () => {
+      showSub.remove();
+      hideSub.remove();
+    };
+  }, [keyboardOffset]);
 
   // Animation values
   const [shouldAnimateGrid, setShouldAnimateGrid] = useState(false);
@@ -137,13 +173,7 @@ export default function ShowcaseDetail() {
     }).start();
   }, [controlsVisible]);
 
-  const handleToggleView = useCallback(() => {
-    setViewMode((prev) => {
-      if (prev === "grid") return "carousel";
-      if (prev === "carousel") return "bookcase";
-      return "grid";
-    });
-  }, []);
+  // handleToggleView declared below, after items + filteredItems are available
 
   const handleItemPress = useCallback((item: ItemWithProduct) => {
     setSelectedItem(item);
@@ -162,6 +192,7 @@ export default function ShowcaseDetail() {
     refetch,
     isRefetching,
   } = useGetItemsWithProductData(showcaseId!);
+
 
   // Filter and sort
   const filteredItems = useMemo(() => {
@@ -217,6 +248,29 @@ export default function ShowcaseDetail() {
     return filtered;
   }, [items, searchQuery, selectedCondition, priceRange, sortBy, sortOrder]);
 
+  const handleToggleView = useCallback(async () => {
+    const next: "grid" | "carousel" | "bookcase" =
+      viewMode === "grid" ? "carousel" :
+        viewMode === "carousel" ? "bookcase" :
+          "grid";
+
+    if (next === "bookcase" && filteredItems.length > 0) {
+      setBookcaseReady(false);
+      setViewMode("bookcase");
+      // Prefetch all images — wait until all are cached, then reveal
+      const prefetches = filteredItems.map((item) => {
+        const productData = item.products?.data || {};
+        const url = item.image_url || (productData?.images?.[0] ?? null);
+        return url ? Image.prefetch(url) : Promise.resolve();
+      });
+      await Promise.all(prefetches);
+      setBookcaseReady(true);
+    } else {
+      if (next !== "bookcase") setBookcaseReady(false);
+      setViewMode(next);
+    }
+  }, [viewMode, filteredItems]);
+
   if (!showcaseId) {
     return (
       <View style={styles.centerWrap}>
@@ -241,9 +295,9 @@ export default function ShowcaseDetail() {
     );
   }
 
-  // Calculate bottom offset for filter bar
+  // Calculate bottom offset — sits just above the custom tab bar
   const bottomOffset =
-    TAB_BAR_HEIGHT + insets.bottom + (Platform.OS === "android" ? 10 : 0);
+    TAB_BAR_HEIGHT + insets.bottom + (Platform.OS === "android" ? 8 : 0) + 24;
 
   return (
     <View style={styles.container}>
@@ -325,34 +379,52 @@ export default function ShowcaseDetail() {
           ]}
           pointerEvents={viewMode === "bookcase" ? "auto" : "none"}
         >
-          <BookcaseView
-            items={filteredItems}
-            onItemPress={handleItemPress}
-            showcaseName="Showcase" // Could be dynamic if we fetch showcase details
-            onBookmarkPress={() => setControlsVisible(prev => !prev)}
-          />
+          {/* Loading overlay — shown while images are being prefetched */}
+          {viewMode === "bookcase" && !bookcaseReady ? (
+            <View style={styles.bookcaseLoading}>
+              <ActivityIndicator size="large" color="#9B5DE5" />
+              <Text style={styles.bookcaseLoadingText}>Preparing bookcase…</Text>
+            </View>
+          ) : (
+            <BookcaseView
+              items={filteredItems}
+              onItemPress={handleItemPress}
+              showcaseName="Showcase"
+              onBookmarkPress={() => setControlsVisible(prev => !prev)}
+            />
+          )}
         </Animated.View>
       </View>
 
       {/* Search and Filter Controls - Positioned above Tab Bar */}
-      <Animated.View style={[styles.searchContainer, { bottom: bottomOffset, transform: [{ translateY: controlsTranslateY }] }]}>
+      <Animated.View
+        style={[
+          styles.searchContainer,
+          {
+            bottom: bottomOffset,
+            transform: [
+              { translateY: Animated.add(controlsTranslateY, keyboardOffset) },
+            ],
+          },
+        ]}
+      >
         <View style={styles.searchInputContainer}>
           <Ionicons
             name="search"
-            size={20}
-            color="#666"
+            size={18}
+            color="rgba(255,255,255,0.35)"
             style={styles.searchIcon}
           />
           <TextInput
             style={styles.searchInput}
             placeholder="Search items..."
-            placeholderTextColor="#666"
+            placeholderTextColor="rgba(255,255,255,0.3)"
             value={searchQuery}
             onChangeText={setSearchQuery}
           />
           {searchQuery.length > 0 && (
             <TouchableOpacity onPress={() => setSearchQuery("")}>
-              <Ionicons name="close-circle" size={20} color="#666" />
+              <Ionicons name="close-circle" size={18} color="rgba(255,255,255,0.35)" />
             </TouchableOpacity>
           )}
         </View>
@@ -369,7 +441,7 @@ export default function ShowcaseDetail() {
                   ? "library"
                   : "grid"
             }
-            size={20}
+            size={18}
             color="#9B5DE5"
           />
         </TouchableOpacity>
@@ -378,7 +450,7 @@ export default function ShowcaseDetail() {
           style={styles.filterButton}
           onPress={() => setFilterModalOpen(true)}
         >
-          <Ionicons name="options" size={20} color="#9B5DE5" />
+          <Ionicons name="options" size={18} color="#9B5DE5" />
         </TouchableOpacity>
       </Animated.View>
 
@@ -522,47 +594,42 @@ const styles = StyleSheet.create({
   // Bottom Search Bar
   searchContainer: {
     position: "absolute",
-    left: 0,
-    right: 0,
+    left: 12,
+    right: 12,
     flexDirection: "row",
-    paddingHorizontal: 10,
-    paddingVertical: 12,
-    backgroundColor: "rgba(0,0,0,0.9)",
-    borderTopWidth: 1,
-    borderTopColor: "#1a1a1a",
-    gap: 10,
+    paddingHorizontal: 6,
+    paddingVertical: 8,
+    backgroundColor: "rgba(18,18,18,0.92)",
+    borderRadius: 16,
+    gap: 8,
     zIndex: 100,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.06)",
   },
   searchInputContainer: {
     flex: 1,
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#1a1a1a",
-    borderRadius: 8,
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderRadius: 12,
     paddingHorizontal: 12,
-    borderWidth: 1,
-    borderColor: "#333",
   },
   searchIcon: { marginRight: 8 },
   searchInput: {
     flex: 1,
     color: "#FFF",
-    fontSize: 16,
+    fontSize: 14,
     paddingVertical: 10,
   },
   viewToggleButton: {
-    backgroundColor: "#1a1a1a",
-    borderRadius: 8,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "#333",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderRadius: 12,
+    padding: 10,
   },
   filterButton: {
-    backgroundColor: "#1a1a1a",
-    borderRadius: 8,
-    padding: 12,
-    borderWidth: 1,
-    borderColor: "#333",
+    backgroundColor: "rgba(255,255,255,0.06)",
+    borderRadius: 12,
+    padding: 10,
   },
 
   // Modal
@@ -630,4 +697,18 @@ const styles = StyleSheet.create({
   modalActions: { flexDirection: "row", justifyContent: "flex-end" },
   cancelButton: { padding: 10 },
   cancelButtonText: { color: "#9B5DE5", fontSize: 16, fontWeight: "600" },
+
+  // Bookcase prefetch loading overlay
+  bookcaseLoading: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#0f0906",
+    gap: 16,
+  },
+  bookcaseLoadingText: {
+    color: "#8b6b5c",
+    fontSize: 14,
+    fontWeight: "500",
+  },
 });

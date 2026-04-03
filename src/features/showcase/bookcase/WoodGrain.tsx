@@ -3,9 +3,12 @@ import React from "react";
 import { StyleSheet, View } from "react-native";
 import { WOOD_BASE, WOOD_DARK, WOOD_HIGHLIGHT, WOOD_MID } from "./constants";
 
-// --- Wood Texture Component ---
+/**
+ * Simplified WoodGrain — 4 lines instead of 8, single LinearGradient
+ * (was 8 skewed Views + 2 LinearGradients per instance, called 6+ times per page)
+ */
 const WoodGrain = React.memo(({ intensity = 1 }: { intensity?: number }) => (
-    <View style={StyleSheet.absoluteFill}>
+    <View style={StyleSheet.absoluteFill} collapsable={false}>
         <LinearGradient
             colors={[WOOD_HIGHLIGHT, WOOD_MID, WOOD_BASE, WOOD_DARK]}
             locations={[0, 0.3, 0.7, 1]}
@@ -13,28 +16,13 @@ const WoodGrain = React.memo(({ intensity = 1 }: { intensity?: number }) => (
             end={{ x: 1, y: 0 }}
             style={StyleSheet.absoluteFill}
         />
-        {/* Wood grain lines */}
+        {/* 4 grain lines (was 8) */}
         <View style={grainStyles.container}>
-            {[...Array(8)].map((_, i) => (
-                <View
-                    key={i}
-                    style={[
-                        grainStyles.line,
-                        {
-                            left: `${10 + i * 12}%`,
-                            opacity: 0.08 * intensity + (i % 3 === 0 ? 0.05 : 0),
-                            transform: [{ skewX: `${-2 + (i % 2) * 4}deg` }],
-                        },
-                    ]}
-                />
-            ))}
+            <View style={[grainStyles.line, { left: "15%", opacity: 0.07 * intensity }]} />
+            <View style={[grainStyles.line, { left: "32%", opacity: 0.05 * intensity }]} />
+            <View style={[grainStyles.line, { left: "58%", opacity: 0.09 * intensity }]} />
+            <View style={[grainStyles.line, { left: "78%", opacity: 0.06 * intensity }]} />
         </View>
-        {/* Vignette overlay */}
-        <LinearGradient
-            colors={["rgba(0,0,0,0.2)", "transparent", "rgba(0,0,0,0.3)"]}
-            locations={[0, 0.5, 1]}
-            style={StyleSheet.absoluteFill}
-        />
     </View>
 ));
 
