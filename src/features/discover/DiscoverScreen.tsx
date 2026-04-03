@@ -122,17 +122,15 @@ export default function DiscoverScreen() {
                 />
             )}
 
-            {/* Overlaid Navigation (Optional: Add 'Following' | 'For You' tabs here) */}
+            {/* Overlaid Navigation */}
             <View style={[styles.headerOverlay, { paddingTop: insets.top + 10 }]}>
                 <View style={styles.feedTabs}>
-                    <Text style={[styles.feedTab, styles.feedTabActive]}>For You</Text>
-                    <View style={styles.tabSeparator} />
-                    <Text style={styles.feedTab}>Following</Text>
+                    <Text style={[styles.feedTab, styles.feedTabActive]}>FOR YOU</Text>
+                    <Text style={styles.feedTab}>FOLLOWING</Text>
                 </View>
             </View>
 
             {selectedItemId !== null && (
-
                 <CommentModal
                     visible={commentModalVisible}
                     itemId={selectedItemId}
@@ -141,7 +139,6 @@ export default function DiscoverScreen() {
                         setSelectedItemId(null);
                     }}
                 />
-
             )}
         </View>
     );
@@ -150,13 +147,13 @@ export default function DiscoverScreen() {
 const styles = StyleSheet.create({
     container: {
         flex: 1,
-        backgroundColor: "black",
+        backgroundColor: "#000",
     },
     centered: {
         flex: 1,
         justifyContent: "center",
         alignItems: "center",
-        backgroundColor: "black",
+        backgroundColor: "#000",
     },
     emptyText: {
         color: "#9CA3AF",
@@ -174,30 +171,30 @@ const styles = StyleSheet.create({
     feedTabs: {
         flexDirection: "row",
         alignItems: "center",
-        gap: 12,
+        gap: 28,
     },
     feedTab: {
-        color: "rgba(255,255,255,0.6)",
-        fontSize: 17,
-        fontWeight: "600",
+        color: "rgba(255,255,255,0.5)",
+        fontSize: 15,
+        fontWeight: "700",
+        letterSpacing: 2,
+        paddingBottom: 6,
+        textShadowColor: "rgba(0,0,0,0.5)",
+        textShadowOffset: { width: 0, height: 1 },
+        textShadowRadius: 4,
     },
     feedTabActive: {
         color: "#FFF",
         borderBottomWidth: 2,
-        borderBottomColor: "#FFF",
-        paddingBottom: 4,
-    },
-    tabSeparator: {
-        width: 1,
-        height: 12,
-        backgroundColor: "rgba(255,255,255,0.2)",
+        borderBottomColor: COLORS.primary,
+        paddingBottom: 6,
     },
     statusBarOverlay: {
         position: "absolute",
         top: 0,
         left: 0,
         right: 0,
-        backgroundColor: "black",
+        backgroundColor: "#000",
         zIndex: 20,
     },
 });
