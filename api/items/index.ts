@@ -10,6 +10,7 @@ import {
   useQuery,
   useQueryClient,
 } from "@tanstack/react-query";
+import { z } from "zod";
 
 // --- Types ---
 export interface Product {
@@ -26,9 +27,6 @@ export interface Product {
   manufacturer?: string;
   price?: number;
 }
-
-import { z } from "zod";
-// ... existing imports
 
 export const searchParamsSchema = z.object({
   query: z.string(),
@@ -89,6 +87,84 @@ function normalizeCodes(searchQuery: string) {
         ? sanitized
         : undefined,
   };
+}
+
+function normalizeProductCode(code?: string | null) {
+  const sanitized = code?.replace(/[\s-]/g, "").trim();
+  return sanitized || null;
+}
+
+function getProductCode(
+  productData?: Product | null,
+  fallbackCode?: string | null,
+) {
+  return (
+    normalizeProductCode(productData?.ean) ||
+    normalizeProductCode(productData?.upc) ||
+    normalizeProductCode(productData?.isbn) ||
+    normalizeProductCode(fallbackCode)
+  );
+}
+
+function buildProductRow(productData: Product, productEan: string) {
+  return {
+    ean: productEan,
+    searchableTitle: productData.title.trim(),
+    searchableDescription: productData.description || "",
+    searchableBrand: productData.brand || productData.manufacturer || "",
+    data: {
+      ...productData,
+      ean: normalizeProductCode(productData.ean) || productEan,
+      upc: normalizeProductCode(productData.upc) || undefined,
+      isbn: normalizeProductCode(productData.isbn) || undefined,
+    },
+  };
+}
+
+async function upsertProduct(productData: Product, productEan: string) {
+  if (!productData.title.trim()) return null;
+
+  const productRow = buildProductRow(productData, productEan);
+  const { error } = await supabase
+    .from("products")
+    .upsert(productRow, {
+      onConflict: "ean",
+    });
+
+  if (error) {
+    const isGeneratedColumnError =
+      error.code === "428C9" || error.message.includes("generated column");
+
+    if (!isGeneratedColumnError) throw error;
+
+    const { error: minimalError } = await supabase
+      .from("products")
+      .upsert(
+        {
+          ean: productRow.ean,
+          data: productRow.data,
+        },
+        {
+          onConflict: "ean",
+        },
+      );
+
+    if (minimalError) throw minimalError;
+  }
+
+  return productEan;
+}
+
+async function findExistingProductEan(productEan: string) {
+  const { data, error } = await supabase
+    .from("products")
+    .select("ean")
+    .eq("ean", productEan)
+    .maybeSingle();
+
+  if (error) throw error;
+
+  return data?.ean ?? null;
 }
 
 // Fetch from Barcode Lookup API
@@ -243,24 +319,40 @@ export function useCreateItemWithProductLookup() {
       } = await supabase.auth.getUser();
       if (!user) throw new Error("User not authenticated");
 
-      let productData: Product | undefined;
+      let productData: Product | undefined = payload.productData ?? undefined;
       const { ean, upc, isbn } = payload.searchQuery
         ? normalizeCodes(payload.searchQuery)
         : { ean: undefined, upc: undefined, isbn: undefined };
 
-      if ((ean || upc || isbn) && payload.searchQuery) {
+      if (!productData && (ean || upc || isbn) && payload.searchQuery) {
         try {
           // Try UPCItemDB first (free/trial)
           const upcItems = await fetchFromUPCItemDB(payload.searchQuery);
           if (upcItems.length > 0) productData = upcItems[0];
-        } catch (e) {
+        } catch {
           console.log("UPC failed, trying Barcode Lookup...");
           try {
             const blItems = await fetchFromBarcodeLookup(payload.searchQuery);
             if (blItems.length > 0) productData = blItems[0];
-          } catch (e2) {
+          } catch {
             console.log("Both APIs failed or found nothing");
           }
+        }
+      }
+
+      const fallbackProductCode = ean || upc || isbn || null;
+      const candidateProductEan = getProductCode(
+        productData,
+        fallbackProductCode,
+      );
+      let productEan: string | null = null;
+
+      if (candidateProductEan) {
+        if (productData) {
+          productEan = await upsertProduct(productData, candidateProductEan);
+        }
+        if (!productEan) {
+          productEan = await findExistingProductEan(candidateProductEan);
         }
       }
 
@@ -283,8 +375,8 @@ export function useCreateItemWithProductLookup() {
         .from("items")
         .insert({
           user_id: user.id,
-          product_ean: productData?.ean || ean || upc || null,
-          is_verified: !!(productData?.ean || ean || upc),
+          product_ean: productEan,
+          is_verified: !!productEan,
           custom_title: payload.customTitle || null,
           custom_brand: payload.customBrand || null,
           custom_publisher: payload.customPublisher || null,

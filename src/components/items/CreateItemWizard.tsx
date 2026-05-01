@@ -170,6 +170,7 @@ export default function CreateItemWizard({
             await haptics.heavy();
             const payload = {
                 searchQuery: itemData.barcode,
+                productData: itemData.productData || undefined,
                 customTitle: undefined,
                 customBrand: undefined,
                 condition: itemData.condition as ItemCondition,

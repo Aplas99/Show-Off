@@ -1,9 +1,28 @@
 import { ITEM_CONDITIONS } from "@/constants/itemCondition";
 import { z } from "zod";
 
+export const createItemProductSchema = z
+    .object({
+        title: z.string(),
+        brand: z.string().optional(),
+        description: z.string().optional(),
+        images: z.array(z.string()).optional(),
+        ean: z.string().optional(),
+        upc: z.string().optional(),
+        isbn: z.string().optional(),
+        category: z.string().optional(),
+        model: z.string().optional(),
+        color: z.string().optional(),
+        manufacturer: z.string().optional(),
+        price: z.number().optional(),
+    })
+    .nullable()
+    .optional();
+
 export const createItemSchema = z
     .object({
         searchQuery: z.string().trim().optional(),
+        productData: createItemProductSchema,
         customTitle: z.string().trim().optional(),
         customBrand: z.string().trim().optional(),
         customPublisher: z.string().trim().optional(),

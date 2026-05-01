@@ -4,6 +4,11 @@ describe("Item Creation Validation", () => {
     it("validates a correct payload", () => {
         const valid = {
             searchQuery: "123456789",
+            productData: {
+                title: "Test Product",
+                brand: "Example Brand",
+                ean: "123456789",
+            },
             condition: "New",
             forSale: true,
             price: 100,
