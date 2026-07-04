@@ -1,12 +1,11 @@
 import { ItemWithProduct, useGetItemsWithProductData } from "@/api/items";
 import { TAB_BAR_HEIGHT } from "@/constants/layoutConfig";
-import BookcaseView from "@/src/features/showcase/BookcaseView";
+import { BookcaseView } from "@/src/features/showcase/BookcaseView";
 import ItemDetailModal from "@/src/features/showcase/ItemDetailModal";
 import ShowcaseCarousel from "@/src/features/showcase/ShowcaseCarousel";
 import ShowcaseListItem from "@/src/features/showcase/ShowcaseListItem";
 import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
-import { Stack, useLocalSearchParams, useRouter } from "expo-router";
+import { Stack, useLocalSearchParams } from "expo-router";
 import React, {
   useCallback,
   useEffect,
@@ -29,62 +28,22 @@ import {
   TouchableOpacity,
   View
 } from "react-native";
+import Reanimated, { FadeIn } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-
-// Animated wrapper for grid items with bounce effect
-const AnimatedGridItem = ({
-  item,
-  onPress,
-  index,
-  shouldAnimate,
-}: {
-  item: ItemWithProduct;
-  onPress: (item: ItemWithProduct) => void;
-  index: number;
-  shouldAnimate: boolean;
-}) => {
-  const scaleAnim = useRef(new Animated.Value(shouldAnimate ? 0.3 : 1)).current;
-
-  useEffect(() => {
-    if (shouldAnimate) {
-      Animated.spring(scaleAnim, {
-        toValue: 1,
-        delay: index * 50,
-        useNativeDriver: true,
-        // Calm spring values — avoids choking the UI thread on Android
-        tension: 80,
-        friction: 8,
-      }).start();
-    } else {
-      scaleAnim.setValue(1);
-    }
-  }, [shouldAnimate, index]);
-
-  return (
-    <Animated.View style={{ flex: 1, transform: [{ scale: scaleAnim }] }}>
-      <ShowcaseListItem item={item} onPress={onPress} />
-    </Animated.View>
-  );
-};
 
 export default function ShowcaseDetail() {
   const params = useLocalSearchParams();
-  const router = useRouter();
   const insets = useSafeAreaInsets();
   const showcaseId = typeof params.id === "string" ? params.id : params.id?.[0];
 
   // Search and filter state
   const [searchQuery, setSearchQuery] = useState("");
   const [filterModalOpen, setFilterModalOpen] = useState(false);
-  const [selectedCondition, setSelectedCondition] = useState<string>("");
-  const [priceRange, setPriceRange] = useState({ min: "", max: "" });
   const [sortBy, setSortBy] = useState<"name" | "price" | "date">("date");
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   // View mode state
   const [viewMode, setViewMode] = useState<"grid" | "carousel" | "bookcase">("grid");
-  // Tracks whether images have been prefetched before bookcase is revealed
-  const [bookcaseReady, setBookcaseReady] = useState(false);
 
   // Modal state
   const [selectedItem, setSelectedItem] = useState<ItemWithProduct | null>(
@@ -128,39 +87,8 @@ export default function ShowcaseDetail() {
     };
   }, [keyboardOffset]);
 
-  // Animation values
-  const [shouldAnimateGrid, setShouldAnimateGrid] = useState(false);
-  const gridOpacity = useRef(new Animated.Value(0)).current;
-  const carouselOpacity = useRef(new Animated.Value(0)).current;
-  const bookcaseOpacity = useRef(new Animated.Value(1)).current;
-
   useEffect(() => {
-    const duration = 300;
-    const easing = Easing.out(Easing.ease);
-    const useNativeDriver = true;
-
-    if (viewMode === "grid") {
-      setControlsVisible(true); // Always show in grid
-      Animated.parallel([
-        Animated.timing(gridOpacity, { toValue: 1, duration, easing, useNativeDriver }),
-        Animated.timing(carouselOpacity, { toValue: 0, duration, easing, useNativeDriver }),
-        Animated.timing(bookcaseOpacity, { toValue: 0, duration, easing, useNativeDriver }),
-      ]).start();
-    } else if (viewMode === "carousel") {
-      setControlsVisible(true); // Always show in carousel
-      Animated.parallel([
-        Animated.timing(gridOpacity, { toValue: 0, duration, easing, useNativeDriver }),
-        Animated.timing(carouselOpacity, { toValue: 1, duration, easing, useNativeDriver }),
-        Animated.timing(bookcaseOpacity, { toValue: 0, duration, easing, useNativeDriver }),
-      ]).start();
-    } else {
-      setControlsVisible(false); // Default hide in bookcase
-      Animated.parallel([
-        Animated.timing(gridOpacity, { toValue: 0, duration, easing, useNativeDriver }),
-        Animated.timing(carouselOpacity, { toValue: 0, duration, easing, useNativeDriver }),
-        Animated.timing(bookcaseOpacity, { toValue: 1, duration, easing, useNativeDriver }),
-      ]).start();
-    }
+    setControlsVisible(viewMode !== "bookcase");
   }, [viewMode]);
 
   // Animate controls based on visibility
@@ -171,7 +99,7 @@ export default function ShowcaseDetail() {
       useNativeDriver: true,
       easing: Easing.out(Easing.ease),
     }).start();
-  }, [controlsVisible]);
+  }, [controlsTranslateY, controlsVisible]);
 
   // handleToggleView declared below, after items + filteredItems are available
 
@@ -179,6 +107,13 @@ export default function ShowcaseDetail() {
     setSelectedItem(item);
     setModalVisible(true);
   }, []);
+
+  const renderGridItem = useCallback(
+    ({ item }: { item: ItemWithProduct }) => (
+      <ShowcaseListItem item={item} onPress={handleItemPress} />
+    ),
+    [handleItemPress],
+  );
 
   const handleCloseModal = useCallback(() => {
     setModalVisible(false);
@@ -210,18 +145,6 @@ export default function ShowcaseDetail() {
         if (!matchesSearch) return false;
       }
 
-      if (selectedCondition && item.condition !== selectedCondition)
-        return false;
-
-      if (priceRange.min && item.price) {
-        const minPrice = parseFloat(priceRange.min);
-        if (!isNaN(minPrice) && item.price < minPrice) return false;
-      }
-      if (priceRange.max && item.price) {
-        const maxPrice = parseFloat(priceRange.max);
-        if (!isNaN(maxPrice) && item.price > maxPrice) return false;
-      }
-
       return true;
     });
 
@@ -246,30 +169,15 @@ export default function ShowcaseDetail() {
     });
 
     return filtered;
-  }, [items, searchQuery, selectedCondition, priceRange, sortBy, sortOrder]);
+  }, [items, searchQuery, sortBy, sortOrder]);
 
-  const handleToggleView = useCallback(async () => {
+  const handleToggleView = useCallback(() => {
     const next: "grid" | "carousel" | "bookcase" =
       viewMode === "grid" ? "carousel" :
         viewMode === "carousel" ? "bookcase" :
           "grid";
-
-    if (next === "bookcase" && filteredItems.length > 0) {
-      setBookcaseReady(false);
-      setViewMode("bookcase");
-      // Prefetch all images — wait until all are cached, then reveal
-      const prefetches = filteredItems.map((item) => {
-        const productData = item.products?.data || {};
-        const url = item.image_url || (productData?.images?.[0] ?? null);
-        return url ? Image.prefetch(url) : Promise.resolve();
-      });
-      await Promise.all(prefetches);
-      setBookcaseReady(true);
-    } else {
-      if (next !== "bookcase") setBookcaseReady(false);
-      setViewMode(next);
-    }
-  }, [viewMode, filteredItems]);
+    setViewMode(next);
+  }, [viewMode]);
 
   if (!showcaseId) {
     return (
@@ -305,23 +213,22 @@ export default function ShowcaseDetail() {
 
       {/* Content Area */}
       <View style={styles.contentWrapper}>
-        {/* Grid View */}
-        <Animated.View
-          style={[styles.viewContainer, { opacity: gridOpacity }]}
-          pointerEvents={viewMode === "grid" ? "auto" : "none"}
-        >
+        {viewMode === "grid" && (
+          <Reanimated.View
+            entering={FadeIn.duration(150)}
+            style={styles.viewContainer}
+          >
           <FlatList
             data={filteredItems}
             keyExtractor={(item) => String(item.id)}
-            renderItem={({ item, index }) => (
-              <AnimatedGridItem
-                item={item}
-                onPress={handleItemPress}
-                index={index}
-                shouldAnimate={shouldAnimateGrid}
-              />
-            )}
+            renderItem={renderGridItem}
             numColumns={2}
+            initialNumToRender={8}
+            maxToRenderPerBatch={6}
+            updateCellsBatchingPeriod={50}
+            windowSize={7}
+            removeClippedSubviews={process.env.EXPO_OS === "android"}
+            contentInsetAdjustmentBehavior="automatic"
             contentContainerStyle={[
               styles.listContent,
               { paddingBottom: bottomOffset + 80 }, // Add extra padding for bottom bar
@@ -345,55 +252,42 @@ export default function ShowcaseDetail() {
               </Text>
             }
           />
-        </Animated.View>
+          </Reanimated.View>
+        )}
 
-        {/* Carousel View */}
-        <Animated.View
-          style={[
-            styles.viewContainer,
-            styles.absoluteView,
-            { opacity: carouselOpacity },
-          ]}
-          pointerEvents={viewMode === "carousel" ? "auto" : "none"}
-        >
-          <View style={styles.carouselContainer}>
-            {filteredItems.length === 0 ? (
-              <View style={styles.emptyCarouselContainer}>
-                <Text style={styles.emptyText}>No items to display</Text>
-              </View>
-            ) : (
-              <ShowcaseCarousel
-                data={filteredItems}
-                onItemPress={handleItemPress}
-              />
-            )}
-          </View>
-        </Animated.View>
-
-        {/* Bookcase View */}
-        <Animated.View
-          style={[
-            styles.viewContainer,
-            styles.absoluteView,
-            { opacity: bookcaseOpacity },
-          ]}
-          pointerEvents={viewMode === "bookcase" ? "auto" : "none"}
-        >
-          {/* Loading overlay — shown while images are being prefetched */}
-          {viewMode === "bookcase" && !bookcaseReady ? (
-            <View style={styles.bookcaseLoading}>
-              <ActivityIndicator size="large" color="#9B5DE5" />
-              <Text style={styles.bookcaseLoadingText}>Preparing bookcase…</Text>
+        {viewMode === "carousel" && (
+          <Reanimated.View
+            entering={FadeIn.duration(150)}
+            style={styles.viewContainer}
+          >
+            <View style={styles.carouselContainer}>
+              {filteredItems.length === 0 ? (
+                <View style={styles.emptyCarouselContainer}>
+                  <Text style={styles.emptyText}>No items to display</Text>
+                </View>
+              ) : (
+                <ShowcaseCarousel
+                  data={filteredItems}
+                  onItemPress={handleItemPress}
+                />
+              )}
             </View>
-          ) : (
+          </Reanimated.View>
+        )}
+
+        {viewMode === "bookcase" && (
+          <Reanimated.View
+            entering={FadeIn.duration(150)}
+            style={styles.viewContainer}
+          >
             <BookcaseView
               items={filteredItems}
               onItemPress={handleItemPress}
               showcaseName="Showcase"
               onBookmarkPress={() => setControlsVisible(prev => !prev)}
             />
-          )}
-        </Animated.View>
+          </Reanimated.View>
+        )}
       </View>
 
       {/* Search and Filter Controls - Positioned above Tab Bar */}
@@ -697,18 +591,4 @@ const styles = StyleSheet.create({
   modalActions: { flexDirection: "row", justifyContent: "flex-end" },
   cancelButton: { padding: 10 },
   cancelButtonText: { color: "#9B5DE5", fontSize: 16, fontWeight: "600" },
-
-  // Bookcase prefetch loading overlay
-  bookcaseLoading: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#0f0906",
-    gap: 16,
-  },
-  bookcaseLoadingText: {
-    color: "#8b6b5c",
-    fontSize: 14,
-    fontWeight: "500",
-  },
 });

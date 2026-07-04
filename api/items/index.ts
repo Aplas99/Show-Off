@@ -468,5 +468,7 @@ export function useGetItemsWithProductData(showcaseId: string) {
         .filter((item): item is ItemWithProduct => item !== null);
     },
     enabled: !!showcaseId,
+    staleTime: 2 * 60 * 1000,
+    gcTime: 15 * 60 * 1000,
   });
 }

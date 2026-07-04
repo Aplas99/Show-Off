@@ -1,10 +1,18 @@
 import { ItemWithProduct } from "@/api/items";
 import { useColors, type ThemeColors } from "@/constants/theme";
+import { Image } from "expo-image";
 import { Link } from "expo-router";
-import React from "react";
-import { Image, Pressable, StyleSheet, Text, View } from "react-native";
+import React, { useMemo } from "react";
+import {
+  Pressable,
+  StyleProp,
+  StyleSheet,
+  Text,
+  View,
+  ViewStyle,
+} from "react-native";
 
-import { StyleProp, ViewStyle } from "react-native";
+const PLACEHOLDER_IMAGE = require("../../../assets/images/placeholder.png");
 
 type Props = {
   item: ItemWithProduct;
@@ -12,9 +20,9 @@ type Props = {
   style?: StyleProp<ViewStyle>;
 };
 
-export default function ShowcaseListItem({ item, onPress, style }: Props) {
+function ShowcaseListItem({ item, onPress, style }: Props) {
   const colors = useColors();
-  const styles = getStyles(colors);
+  const styles = useMemo(() => getStyles(colors), [colors]);
 
   const product = item.products;
   const title = item.custom_title || product?.searchableTitle || "Unknown Item";
@@ -31,14 +39,23 @@ export default function ShowcaseListItem({ item, onPress, style }: Props) {
   const price = item.price;
   const currency = item.currency_code || "USD";
 
-  const PLACEHOLDER_IMAGE = require("../../../assets/images/placeholder.png");
+  const formattedPrice = useMemo(() => {
+    if (price == null) return null;
+    return new Intl.NumberFormat("en-US", {
+      style: "currency",
+      currency,
+    }).format(price);
+  }, [currency, price]);
 
   const content = (
     <View style={styles.card}>
       <Image
         source={imageUrl ? { uri: imageUrl } : PLACEHOLDER_IMAGE}
         style={styles.image}
-        resizeMode="cover"
+        contentFit="cover"
+        cachePolicy="memory-disk"
+        recyclingKey={String(item.id)}
+        transition={0}
       />
 
       <View style={styles.info}>
@@ -59,14 +76,7 @@ export default function ShowcaseListItem({ item, onPress, style }: Props) {
         {brand && <Text style={styles.brand}>{brand}</Text>}
 
         <View style={styles.footer}>
-          {price !== null && (
-            <Text style={styles.price}>
-              {new Intl.NumberFormat("en-US", {
-                style: "currency",
-                currency,
-              }).format(price)}
-            </Text>
-          )}
+          {formattedPrice && <Text style={styles.price}>{formattedPrice}</Text>}
 
           {item.for_sale && (
             <View style={styles.saleBadge}>
@@ -99,6 +109,8 @@ export default function ShowcaseListItem({ item, onPress, style }: Props) {
     </Link>
   );
 }
+
+export default React.memo(ShowcaseListItem);
 
 const getStyles = (colors: ThemeColors) => StyleSheet.create({
   container: {

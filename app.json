@@ -49,7 +49,9 @@
           "cameraPermission": "Allow Show Off to access your camera to scan barcodes.",
           "barcodeScannerEnabled": true
         }
-      ]
+      ],
+      "expo-font",
+      "expo-web-browser"
     ],
     "experiments": {
       "typedRoutes": true,

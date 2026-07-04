@@ -3,17 +3,16 @@ import { useColors } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useMemo } from "react";
+import React, { useCallback, useMemo } from "react";
 import {
-  Dimensions,
+  FlatList,
   Platform,
-  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
-import { useSafeAreaInsets } from "react-native-safe-area-context";
 import {
   CATEGORY_COLORS,
   CategoryType,
@@ -23,8 +22,6 @@ import {
   WOOD_LIGHT,
 } from "./bookcase/constants";
 import WoodGrain from "./bookcase/WoodGrain";
-
-const { width: SCREEN_WIDTH } = Dimensions.get("window");
 
 // --- Condition helpers ---
 const CONDITION_LABELS: Record<string, string> = {
@@ -210,6 +207,7 @@ const BookCard = React.memo(
     );
   }
 );
+BookCard.displayName = "BookCard";
 
 const bookCardStyles = StyleSheet.create({
   container: {
@@ -462,6 +460,7 @@ const FigureCard = React.memo(
     );
   }
 );
+FigureCard.displayName = "FigureCard";
 
 const figureCardStyles = StyleSheet.create({
   container: {
@@ -591,19 +590,26 @@ const figureCardStyles = StyleSheet.create({
 //  GENERIC CARD — With glass shine effect (non-books)
 // ============================================================
 const ShineCard = React.memo(
-  ({ item, onPress }: { item: ItemWithProduct; onPress?: (i: ItemWithProduct) => void }) => {
+  ({
+    item,
+    onPress,
+    width,
+  }: {
+    item: ItemWithProduct;
+    onPress?: (i: ItemWithProduct) => void;
+    width: number;
+  }) => {
     const colors = useColors();
     const productData = item.products?.data || {};
     const imageUrl = item.image_url || (productData?.images?.[0] ?? null);
     const title = productData?.title || (item as any).custom_title || "Untitled";
-    const brand = productData?.brand || (item as any).custom_brand || "";
     const condition = (item as any).condition || item.condition || "";
     const condLabel = CONDITION_LABELS[condition] || "";
     const category = getItemCategory(item);
 
     return (
       <TouchableOpacity
-        style={shineCardStyles.container}
+        style={[shineCardStyles.container, { width }]}
         onPress={() => onPress?.(item)}
         activeOpacity={0.85}
       >
@@ -677,10 +683,10 @@ const ShineCard = React.memo(
     );
   }
 );
+ShineCard.displayName = "ShineCard";
 
 const shineCardStyles = StyleSheet.create({
   container: {
-    width: (SCREEN_WIDTH - 52) / 2,
     marginBottom: 16,
   },
   imageBox: {
@@ -809,6 +815,7 @@ const MahoganyShelf = React.memo(({ tall }: { tall?: boolean }) => (
     <View style={shelfStyles.shadow} />
   </View>
 ));
+MahoganyShelf.displayName = "MahoganyShelf";
 
 const shelfStyles = StyleSheet.create({
   container: {
@@ -878,6 +885,7 @@ const SectionHeader = React.memo(
     </View>
   )
 );
+SectionHeader.displayName = "SectionHeader";
 
 const headerStyles = StyleSheet.create({
   container: {
@@ -914,14 +922,111 @@ interface BookcaseViewProps {
   onBookmarkPress?: () => void;
 }
 
+type BookcaseRow =
+  | { key: string; kind: "header"; section: ShelfSection }
+  | { key: string; kind: "books" | "figures"; section: ShelfSection }
+  | { key: string; kind: "grid"; items: ItemWithProduct[] }
+  | { key: string; kind: "shelf"; tall: boolean };
+
+function buildBookcaseRows(sections: ShelfSection[]): BookcaseRow[] {
+  return sections.flatMap((section) => {
+    const prefix = section.category;
+    const rows: BookcaseRow[] = [
+      { key: `${prefix}-header`, kind: "header", section },
+    ];
+
+    if (section.category === "Books") {
+      rows.push({ key: `${prefix}-items`, kind: "books", section });
+    } else if (section.category === "Toys") {
+      rows.push({ key: `${prefix}-items`, kind: "figures", section });
+    } else {
+      for (let index = 0; index < section.items.length; index += 2) {
+        rows.push({
+          key: `${prefix}-row-${index / 2}`,
+          kind: "grid",
+          items: section.items.slice(index, index + 2),
+        });
+      }
+    }
+
+    rows.push({
+      key: `${prefix}-shelf`,
+      kind: "shelf",
+      tall: section.category === "Toys",
+    });
+    return rows;
+  });
+}
+
 export const BookcaseView: React.FC<BookcaseViewProps> = ({
   items,
   onItemPress,
   emptyStateText = "Start building your collection",
 }) => {
-  const insets = useSafeAreaInsets();
   const colors = useColors();
+  const { width } = useWindowDimensions();
+  const gridCardWidth = (width - 52) / 2;
   const sections = useMemo(() => groupItemsIntoSections(items), [items]);
+  const rows = useMemo(() => buildBookcaseRows(sections), [sections]);
+
+  const renderRow = useCallback(
+    ({ item: row }: { item: BookcaseRow }) => {
+      if (row.kind === "header") {
+        const titleColor =
+          row.section.category === "Books"
+            ? colors.primary
+            : row.section.category === "Toys"
+              ? colors.secondary
+              : "rgba(255,255,255,0.9)";
+
+        return (
+          <SectionHeader
+            title={row.section.title}
+            shelfLabel={row.section.shelfLabel}
+            titleColor={titleColor}
+          />
+        );
+      }
+
+      if (row.kind === "books" || row.kind === "figures") {
+        const isBooks = row.kind === "books";
+        const Card = isBooks ? BookCard : FigureCard;
+        return (
+          <FlatList
+            horizontal
+            data={row.section.items}
+            keyExtractor={(item) => String(item.id)}
+            renderItem={({ item }) => (
+              <Card item={item} onPress={onItemPress} />
+            )}
+            contentContainerStyle={isBooks ? styles.bookRow : styles.figureRow}
+            initialNumToRender={4}
+            maxToRenderPerBatch={4}
+            windowSize={5}
+            showsHorizontalScrollIndicator={false}
+          />
+        );
+      }
+
+      if (row.kind === "grid") {
+        return (
+          <View style={styles.gridRow}>
+            {row.items.map((item) => (
+              <ShineCard
+                key={item.id}
+                item={item}
+                onPress={onItemPress}
+                width={gridCardWidth}
+              />
+            ))}
+          </View>
+        );
+      }
+
+      return <MahoganyShelf tall={row.tall} />;
+    },
+    [colors.primary, colors.secondary, gridCardWidth, onItemPress],
+  );
 
   if (items.length === 0) {
     return (
@@ -936,9 +1041,6 @@ export const BookcaseView: React.FC<BookcaseViewProps> = ({
     );
   }
 
-  const isBooks = (cat: CategoryType) => cat === "Books";
-  const isFigures = (cat: CategoryType) => cat === "Toys";
-
   return (
     <View style={styles.container}>
       <LinearGradient
@@ -946,91 +1048,21 @@ export const BookcaseView: React.FC<BookcaseViewProps> = ({
         style={StyleSheet.absoluteFill}
       />
 
-      <ScrollView
+      <FlatList
+        data={rows}
+        renderItem={renderRow}
+        keyExtractor={(row) => row.key}
         contentContainerStyle={{
-          paddingTop: insets.top + 8,
-          paddingBottom: insets.bottom + 140,
+          paddingTop: 8,
+          paddingBottom: 140,
         }}
+        contentInsetAdjustmentBehavior="automatic"
+        initialNumToRender={6}
+        maxToRenderPerBatch={4}
+        windowSize={5}
+        removeClippedSubviews={process.env.EXPO_OS === "android"}
         showsVerticalScrollIndicator={false}
-      >
-        {sections.map((section) => {
-          const sectionIsBooks = isBooks(section.category);
-          const sectionIsFigures = isFigures(section.category);
-
-          // Header title color: primary for books, secondary for figures, white for rest
-          const titleColor = sectionIsBooks
-            ? colors.primary
-            : sectionIsFigures
-              ? colors.secondary
-              : "rgba(255,255,255,0.9)";
-
-          return (
-            <View key={section.category}>
-              <SectionHeader
-                title={section.title}
-                shelfLabel={section.shelfLabel}
-                titleColor={titleColor}
-              />
-
-              {/* Books — horizontal scroll with 3D book items */}
-              {sectionIsBooks && (
-                <>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.bookRow}
-                  >
-                    {section.items.map((item) => (
-                      <BookCard
-                        key={item.id || Math.random().toString()}
-                        item={item}
-                        onPress={onItemPress}
-                      />
-                    ))}
-                  </ScrollView>
-                  <MahoganyShelf />
-                </>
-              )}
-
-              {/* Figures — horizontal scroll with glass-encased cards */}
-              {sectionIsFigures && (
-                <>
-                  <ScrollView
-                    horizontal
-                    showsHorizontalScrollIndicator={false}
-                    contentContainerStyle={styles.figureRow}
-                  >
-                    {section.items.map((item) => (
-                      <FigureCard
-                        key={item.id || Math.random().toString()}
-                        item={item}
-                        onPress={onItemPress}
-                      />
-                    ))}
-                  </ScrollView>
-                  <MahoganyShelf tall />
-                </>
-              )}
-
-              {/* Other categories — 2-column grid with shine effect */}
-              {!sectionIsBooks && !sectionIsFigures && (
-                <>
-                  <View style={styles.gridContainer}>
-                    {section.items.map((item) => (
-                      <ShineCard
-                        key={item.id || Math.random().toString()}
-                        item={item}
-                        onPress={onItemPress}
-                      />
-                    ))}
-                  </View>
-                  <MahoganyShelf />
-                </>
-              )}
-            </View>
-          );
-        })}
-      </ScrollView>
+      />
     </View>
   );
 };
@@ -1049,12 +1081,10 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingBottom: 20,
   },
-  gridContainer: {
+  gridRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
     paddingHorizontal: 20,
     gap: 12,
-    paddingBottom: 12,
   },
   // Empty state
   emptyContainer: {
