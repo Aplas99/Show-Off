@@ -2,27 +2,21 @@ import { ItemWithProduct } from "@/api/items";
 import { COLORS } from "@/constants/theme";
 import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
-  Dimensions,
   FlatList,
   StyleSheet,
   Text,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const { width: screenWidth, height: screenHeight } = Dimensions.get("window");
-const ITEM_SIZE = screenWidth * 0.65; // 65% of screen width for larger posters
-const SPACER_SIZE = (screenWidth - ITEM_SIZE) / 2;
-const BACKDROP_HEIGHT = screenHeight * 0.75; // Cover top 75% of screen (extended)
-const POSTER_HEIGHT = screenHeight * 0.45; // Poster card height
 const OVERLAP = 10; // Extra width to prevent sub-pixel gaps on Android
 
 const AnimatedFlatList = Animated.createAnimatedComponent(FlatList);
-const AnimatedImage = Animated.createAnimatedComponent(Image);
 
 const PLACEHOLDER_IMAGE = require("../../../assets/images/placeholder.png");
 
@@ -33,10 +27,31 @@ type Props = {
 };
 
 const Backdrop = React.memo(
-  ({ data, scrollX }: { data: ItemWithProduct[]; scrollX: Animated.Value }) => {
+  function Backdrop({
+    activeIndex,
+    backdropHeight,
+    data,
+    itemSize,
+    screenWidth,
+    scrollX,
+  }: {
+    activeIndex: number;
+    backdropHeight: number;
+    data: ItemWithProduct[];
+    itemSize: number;
+    screenWidth: number;
+    scrollX: Animated.Value;
+  }) {
+    const visibleBackdrops = data
+      .map((item, index) => ({ item, index }))
+      .filter(({ index }) => Math.abs(index - activeIndex) <= 1);
+
     return (
-      <View style={styles.backdropContainer} pointerEvents="none">
-        {data.map((item, index) => {
+      <View
+        style={[styles.backdropContainer, { height: backdropHeight, width: screenWidth }]}
+        pointerEvents="none"
+      >
+        {visibleBackdrops.map(({ item, index }) => {
           // Parse product data to get backdrop image
           // Data is already parsed by the API layer
           const productData = item.products?.data || {};
@@ -50,9 +65,9 @@ const Backdrop = React.memo(
 
           const adjustedIndex = index + 1;
           const inputRange = [
-            (adjustedIndex - 2) * ITEM_SIZE,
-            (adjustedIndex - 1) * ITEM_SIZE,
-            adjustedIndex * ITEM_SIZE,
+            (adjustedIndex - 2) * itemSize,
+            (adjustedIndex - 1) * itemSize,
+            adjustedIndex * itemSize,
           ];
 
           // Fade removed as per user request
@@ -80,6 +95,7 @@ const Backdrop = React.memo(
                 styles.backdropImageContainer,
                 {
                   width: screenWidth + OVERLAP, // Slightly wider
+                  height: backdropHeight,
                   overflow: "hidden",
                   opacity,
                   transform: [{ translateX }],
@@ -90,17 +106,17 @@ const Backdrop = React.memo(
               <Animated.View
                 style={{
                   width: screenWidth + OVERLAP,
-                  height: BACKDROP_HEIGHT,
+                  height: backdropHeight,
                   transform: [{ translateX: inverseTranslateX }],
                 }}
               >
                 <Image
                   source={backdropImageUrl ? { uri: backdropImageUrl } : PLACEHOLDER_IMAGE}
-                  style={styles.backdropImage}
+                  style={{ width: screenWidth, height: backdropHeight }}
                   contentFit="cover"
                   transition={0}
                   cachePolicy="memory-disk"
-                  priority="high"
+                  priority="normal"
                   recyclingKey={item.id.toString()}
                 />
               </Animated.View>
@@ -115,7 +131,11 @@ const Backdrop = React.memo(
             COLORS.background,
           ]}
           locations={[0, 0.4, 0.7, 1]}
-          style={styles.backdropGradient}
+          style={{
+            height: backdropHeight,
+            position: "absolute",
+            width: screenWidth,
+          }}
         />
       </View>
     );
@@ -124,12 +144,13 @@ const Backdrop = React.memo(
 
 function ShowcaseCarousel({ data, onItemPress, onIndexChange }: Props) {
   const scrollX = useRef(new Animated.Value(0)).current;
+  const [activeIndex, setActiveIndex] = useState(0);
   const insets = useSafeAreaInsets();
-
-  // Handle empty items
-  if (!data || data.length === 0) {
-    return null;
-  }
+  const { height: screenHeight, width: screenWidth } = useWindowDimensions();
+  const itemSize = screenWidth * 0.65;
+  const spacerSize = (screenWidth - itemSize) / 2;
+  const backdropHeight = screenHeight * 0.75;
+  const posterHeight = screenHeight * 0.45;
 
   // Add spacers at the beginning and end for centering
   const dataWithSpacers = React.useMemo(
@@ -140,6 +161,14 @@ function ShowcaseCarousel({ data, onItemPress, onIndexChange }: Props) {
     ],
     [data],
   );
+
+  useEffect(() => {
+    setActiveIndex((index) => Math.min(index, Math.max(data.length - 1, 0)));
+  }, [data.length]);
+
+  if (data.length === 0) {
+    return null;
+  }
 
   return (
     <View style={styles.carouselWrapper}>
@@ -155,21 +184,28 @@ function ShowcaseCarousel({ data, onItemPress, onIndexChange }: Props) {
         }}
       /> */}
 
-      <Backdrop data={data} scrollX={scrollX} />
+      <Backdrop
+        activeIndex={activeIndex}
+        backdropHeight={backdropHeight}
+        data={data}
+        itemSize={itemSize}
+        screenWidth={screenWidth}
+        scrollX={scrollX}
+      />
 
       <AnimatedFlatList
         data={dataWithSpacers}
         renderItem={({ item, index }) => {
           // Check if it's a spacer
           if ((item as any).isSpacer) {
-            return <View style={{ width: SPACER_SIZE }} />;
+            return <View style={{ width: spacerSize }} />;
           }
 
           const actualItem = item as ItemWithProduct;
           const inputRange = [
-            (index - 2) * ITEM_SIZE,
-            (index - 1) * ITEM_SIZE,
-            index * ITEM_SIZE,
+            (index - 2) * itemSize,
+            (index - 1) * itemSize,
+            index * itemSize,
           ];
 
           const scale = scrollX.interpolate({
@@ -199,7 +235,7 @@ function ShowcaseCarousel({ data, onItemPress, onIndexChange }: Props) {
               style={[
                 styles.itemContainer,
                 {
-                  width: ITEM_SIZE,
+                  width: itemSize,
                   transform: [{ scale }],
                   paddingTop: screenHeight * 0.25 + insets.top,
                 },
@@ -210,7 +246,7 @@ function ShowcaseCarousel({ data, onItemPress, onIndexChange }: Props) {
                 style={styles.itemContent}
                 activeOpacity={0.9}
               >
-                <View style={styles.posterCard}>
+                <View style={[styles.posterCard, { height: posterHeight }]}>
                   <Image
                     source={imageUrl ? { uri: imageUrl } : PLACEHOLDER_IMAGE}
                     style={styles.posterImage}
@@ -246,7 +282,8 @@ function ShowcaseCarousel({ data, onItemPress, onIndexChange }: Props) {
         }}
         horizontal
         showsHorizontalScrollIndicator={false}
-        snapToInterval={ITEM_SIZE}
+        snapToInterval={itemSize}
+        disableIntervalMomentum
         decelerationRate={0.2}
         bounces={false}
         scrollEventThrottle={16}
@@ -255,8 +292,8 @@ function ShowcaseCarousel({ data, onItemPress, onIndexChange }: Props) {
         windowSize={5}
         initialNumToRender={3}
         getItemLayout={(data, index) => ({
-          length: ITEM_SIZE,
-          offset: ITEM_SIZE * index,
+          length: itemSize,
+          offset: itemSize * index,
           index,
         })}
         onScroll={Animated.event(
@@ -264,11 +301,11 @@ function ShowcaseCarousel({ data, onItemPress, onIndexChange }: Props) {
           { useNativeDriver: true },
         )}
         onMomentumScrollEnd={(event) => {
-          const index = Math.round(
-            event.nativeEvent.contentOffset.x / ITEM_SIZE,
+          const actualIndex = Math.round(
+            event.nativeEvent.contentOffset.x / itemSize,
           );
-          const actualIndex = index - 1;
           if (actualIndex >= 0 && actualIndex < data.length) {
+            setActiveIndex(actualIndex);
             onIndexChange?.(actualIndex);
           }
         }}
@@ -292,29 +329,13 @@ const styles = StyleSheet.create({
   },
   backdropContainer: {
     position: "absolute",
-    width: screenWidth,
-    height: BACKDROP_HEIGHT,
     top: 0,
     overflow: "hidden",
   },
   backdropImageContainer: {
     position: "absolute",
-    width: screenWidth,
-    height: BACKDROP_HEIGHT,
     top: 0,
     left: 0,
-  },
-  backdropImage: {
-    width: screenWidth,
-    height: BACKDROP_HEIGHT,
-    backgroundColor: COLORS.background,
-  },
-  backdropGradient: {
-    position: "absolute",
-    width: screenWidth,
-    height: BACKDROP_HEIGHT,
-    bottom: 0,
-    top: 0,
   },
   listContent: {
     paddingVertical: 0,
@@ -329,7 +350,6 @@ const styles = StyleSheet.create({
   },
   posterCard: {
     width: "100%",
-    height: POSTER_HEIGHT,
     borderRadius: 12,
     overflow: "hidden",
     backgroundColor: COLORS.surfaceContainerHigh,
