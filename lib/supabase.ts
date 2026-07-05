@@ -3,14 +3,38 @@ import * as SecureStore from "expo-secure-store";
 import "react-native-url-polyfill/auto";
 
 const ExpoSecureStoreAdapter = {
-  getItem: (key: string) => {
+  getItem: async (key: string) => {
+    if (process.env.EXPO_OS === "web") {
+      return typeof window !== "undefined" &&
+        typeof window.localStorage?.getItem === "function"
+        ? window.localStorage.getItem(key)
+        : null;
+    }
     return SecureStore.getItemAsync(key);
   },
-  setItem: (key: string, value: string) => {
-    SecureStore.setItemAsync(key, value);
+  setItem: async (key: string, value: string) => {
+    if (process.env.EXPO_OS === "web") {
+      if (
+        typeof window !== "undefined" &&
+        typeof window.localStorage?.setItem === "function"
+      ) {
+        window.localStorage.setItem(key, value);
+      }
+      return;
+    }
+    await SecureStore.setItemAsync(key, value);
   },
-  removeItem: (key: string) => {
-    SecureStore.deleteItemAsync(key);
+  removeItem: async (key: string) => {
+    if (process.env.EXPO_OS === "web") {
+      if (
+        typeof window !== "undefined" &&
+        typeof window.localStorage?.removeItem === "function"
+      ) {
+        window.localStorage.removeItem(key);
+      }
+      return;
+    }
+    await SecureStore.deleteItemAsync(key);
   },
 };
 

@@ -50,6 +50,13 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="tcg-create"
+        options={{
+          href: null,
+          tabBarStyle: { display: "none" },
+        }}
+      />
+      <Tabs.Screen
         name="showcase"
         options={{
           tabBarAccessibilityLabel: "Showcase",

@@ -11,6 +11,7 @@ import {
 } from "@/src/components/ui/SkeletonLoader";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
+import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   FlatList,
@@ -53,6 +54,7 @@ const CATEGORIES = [
 export default function Create() {
   const insets = useSafeAreaInsets();
   const haptics = useHaptics();
+  const router = useRouter();
   const colors = useColors();
   const isDark = useThemeStore((s) => s.isDark);
   const styles = getStyles(colors);
@@ -244,6 +246,27 @@ export default function Create() {
               Select your preferred method to catalog your item.
             </Text>
           </View>
+
+          <TouchableOpacity
+            style={styles.tcgEntryCard}
+            onPress={async () => {
+              await haptics.medium();
+              router.push("/(tabs)/tcg-create" as never);
+            }}
+            activeOpacity={0.85}
+          >
+            <View style={styles.tcgEntryIcon}>
+              <Ionicons name="scan" size={24} color="#000" />
+            </View>
+            <View style={styles.tcgEntryCopy}>
+              <Text style={styles.tcgEntryEyebrow}>TRADING CARDS</Text>
+              <Text style={styles.tcgEntryTitle}>Scan a card stack</Text>
+              <Text style={styles.tcgEntryDescription}>
+                Pick a showcase once, then keep scanning.
+              </Text>
+            </View>
+            <Ionicons name="chevron-forward" size={22} color="#000" />
+          </TouchableOpacity>
 
           {/* Tab Selector */}
           <View style={styles.tabContainer}>
@@ -645,7 +668,10 @@ export default function Create() {
           onClose={handleWizardClose}
           onSuccess={handleWizardSuccess}
           initialBarcode={
-            selectedProduct?.ean || selectedProduct?.upc || barcodeInput
+            selectedProduct?.ean ||
+            selectedProduct?.upc ||
+            selectedProduct?.pokemonTcgId ||
+            barcodeInput
           }
           initialProductData={selectedProduct}
         />
@@ -781,6 +807,42 @@ const getStyles = (colors: ThemeColors) =>
       fontSize: 14,
       textAlign: "center",
       lineHeight: 22,
+    },
+    tcgEntryCard: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 14,
+      padding: 16,
+      marginBottom: 18,
+      borderRadius: 20,
+      backgroundColor: colors.primary,
+    },
+    tcgEntryIcon: {
+      width: 48,
+      height: 48,
+      borderRadius: 16,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: "rgba(255,255,255,0.35)",
+    },
+    tcgEntryCopy: {
+      flex: 1,
+      gap: 2,
+    },
+    tcgEntryEyebrow: {
+      color: "rgba(0,0,0,0.58)",
+      fontSize: 10,
+      fontWeight: "900",
+      letterSpacing: 1.4,
+    },
+    tcgEntryTitle: {
+      color: "#000",
+      fontSize: 18,
+      fontWeight: "800",
+    },
+    tcgEntryDescription: {
+      color: "rgba(0,0,0,0.68)",
+      fontSize: 12,
     },
     // Tab Styles — Pill segmented control
     tabContainer: {

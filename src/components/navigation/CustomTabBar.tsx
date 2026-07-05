@@ -107,6 +107,12 @@ function AnimatedTab({
 
 export default function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
+  const activeRoute = state.routes[state.index];
+  const activeOptions = descriptors[activeRoute.key]?.options;
+
+  if ((activeOptions.tabBarStyle as { display?: string } | undefined)?.display === "none") {
+    return null;
+  }
 
   // Filter out hidden routes (href: null)
   const visibleRoutes = state.routes.filter((route) => {

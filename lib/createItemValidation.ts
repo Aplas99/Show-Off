@@ -15,6 +15,10 @@ export const createItemProductSchema = z
         color: z.string().optional(),
         manufacturer: z.string().optional(),
         price: z.number().optional(),
+        pokemonTcgId: z.string().optional(),
+        pokemonSetId: z.string().optional(),
+        pokemonSetName: z.string().optional(),
+        pokemonCardNumber: z.string().optional(),
     })
     .nullable()
     .optional();

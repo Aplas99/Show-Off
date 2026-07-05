@@ -46,7 +46,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Show Off to access your camera to scan barcodes.",
+          "cameraPermission": "Allow Show Off to access your camera to scan cards and barcodes.",
           "barcodeScannerEnabled": true
         }
       ],
