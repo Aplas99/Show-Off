@@ -4,6 +4,7 @@ import {
 } from "@/api/pokemon";
 import {
   identifyPokemonCardImage,
+  type PokemonCardIdentifiers,
   type PokemonCardScanFrame,
   type RecognizedPokemonCard,
 } from "@/api/pokemon/recognition";
@@ -17,10 +18,15 @@ import {
   summarizePokemonCard,
 } from "@/api/pokemon/cardScanDebug";
 import {
+  extractMarketPrice,
+  formatPrice,
+} from "@/api/pokemon/ocrPostprocessing";
+import {
   useCreateShowcase,
   useGetVisibleShowcases,
   type ShowcaseRow,
 } from "@/api/showcase";
+import { ITEM_CONDITIONS, type ItemCondition } from "@/constants/itemCondition";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { Ionicons } from "@expo/vector-icons";
@@ -33,6 +39,7 @@ import {
   FlatList,
   Modal,
   Pressable,
+  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
@@ -76,6 +83,7 @@ export default function TcgCreateScreen() {
   const [showcaseId, setShowcaseId] = useState<string | null>(null);
   const [entries, setEntries] = useState<ScanEntry[]>([]);
   const [candidateEntryId, setCandidateEntryId] = useState<string | null>(null);
+  const [condition, setCondition] = useState<ItemCondition>("Excellent");
   const colors = useColors();
   const router = useRouter();
   const haptics = useHaptics();
@@ -167,9 +175,10 @@ export default function TcgCreateScreen() {
       showcaseId,
       cardCount: cardIds.length,
       cardIds,
+      condition,
     });
     try {
-      await createBatch.mutateAsync({ showcaseId, cardIds });
+      await createBatch.mutateAsync({ showcaseId, cardIds, condition });
     } catch (error) {
       cardScanError("queue.save-failed", error);
       throw error;
@@ -183,7 +192,7 @@ export default function TcgCreateScreen() {
       pathname: "/(tabs)/showcase/[id]",
       params: { id: showcaseId },
     });
-  }, [createBatch, entries, haptics, router, showcaseId]);
+  }, [condition, createBatch, entries, haptics, router, showcaseId]);
 
   return (
     <View style={styles.container}>
@@ -221,6 +230,8 @@ export default function TcgCreateScreen() {
           showcase={selectedShowcase}
           isSaving={createBatch.isPending}
           error={createBatch.error?.message}
+          condition={condition}
+          onConditionChange={setCondition}
           onBack={() => setStep("scan")}
           onRemove={(id) =>
             setEntries((current) => current.filter((entry) => entry.id !== id))
@@ -421,6 +432,7 @@ function ScannerStep({
   const [error, setError] = useState<string | null>(null);
   const [lastCard, setLastCard] = useState<PokemonTcgCard | null>(null);
   const [manualSearchOpen, setManualSearchOpen] = useState(false);
+  const [lastIdentifiers, setLastIdentifiers] = useState<PokemonCardIdentifiers | null>(null);
   const progress = useSharedValue(0);
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
@@ -455,6 +467,7 @@ function ScannerStep({
     setIsIdentifying(true);
     setError(null);
     setLastCard(null);
+    setLastIdentifiers(null);
     progress.value = 0;
     progress.value = withTiming(0.88, { duration: 5000 });
 
@@ -468,7 +481,21 @@ function ScannerStep({
       });
       const scanFrame = getScanFrame();
       cardScanDebug("camera.scan-frame", { attempt, scanFrame: scanFrame ?? null });
-      return identifyPokemonCardImage(picture.uri, undefined, scanFrame);
+      return identifyPokemonCardImage(
+        picture.uri,
+        undefined,
+        scanFrame,
+        (identifiers) => {
+          setLastIdentifiers(identifiers);
+          cardScanDebug("camera.partial-identifiers", {
+            attempt,
+            nameCandidates: identifiers.nameCandidates,
+            number: identifiers.number,
+            printedTotal: identifiers.printedTotal,
+            setCode: identifiers.setCode,
+          });
+        },
+      );
     };
 
     try {
@@ -495,9 +522,10 @@ function ScannerStep({
       }
 
       // Both attempts returned no matches — fall back to manual search
+      // Try to extract partial identifiers from the last OCR pass for pre-fill
       cardScanDebug("camera.auto-fallback", { reason: "both scan attempts returned 0 matches" });
       progress.value = withTiming(0, { duration: 180 });
-      setError("Could not identify the card. Try searching by name.");
+      setError("Could not identify the card automatically.");
       setManualSearchOpen(true);
       await haptics.error();
     } catch (caught) {
@@ -635,12 +663,20 @@ function ScannerStep({
 
       <ManualCardSearchModal
         visible={manualSearchOpen}
-        onClose={() => setManualSearchOpen(false)}
+        initialName={lastIdentifiers?.nameCandidates[0] ?? ""}
+        initialNumber={lastIdentifiers?.number ?? ""}
+        initialSetCode={lastIdentifiers?.setCode ?? ""}
+        fromFailedScan={!!error}
+        onClose={() => {
+          setManualSearchOpen(false);
+          setLastIdentifiers(null);
+        }}
         onSelect={async (card) => {
           cardScanDebug("manual.card-selected", {
             card: summarizePokemonCard(card),
           });
           setManualSearchOpen(false);
+          setLastIdentifiers(null);
           setError(null);
           setLastCard(card);
           await onRecognized([{ card, score: 1 }]);
@@ -653,25 +689,45 @@ function ScannerStep({
 
 function ManualCardSearchModal({
   visible,
+  initialName = "",
+  initialNumber = "",
+  initialSetCode = "",
+  fromFailedScan = false,
   onClose,
   onSelect,
   colors,
 }: {
   visible: boolean;
+  initialName?: string;
+  initialNumber?: string;
+  initialSetCode?: string;
+  fromFailedScan?: boolean;
   onClose: () => void;
   onSelect: (card: PokemonTcgCard) => Promise<void>;
   colors: ThemeColors;
 }) {
   const styles = useMemo(() => getStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
-  const [name, setName] = useState("");
-  const [collection, setCollection] = useState("");
-  const [number, setNumber] = useState("");
+  const [name, setName] = useState(initialName);
+  const [collection, setCollection] = useState(initialSetCode);
+  const [number, setNumber] = useState(initialNumber);
   const [results, setResults] = useState<PokemonTcgCard[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [isAdding, setIsAdding] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  // Sync initial values when the modal opens with new pre-fill data
+  useEffect(() => {
+    if (visible) {
+      setName(initialName);
+      setCollection(initialSetCode);
+      setNumber(initialNumber);
+      setResults([]);
+      setHasSearched(false);
+      setError(null);
+    }
+  }, [visible, initialName, initialNumber, initialSetCode]);
 
   const search = async () => {
     if (!name.trim() || isSearching) return;
@@ -718,7 +774,9 @@ function ManualCardSearchModal({
           <View style={styles.flex}>
             <Text style={styles.modalTitle}>Find a Pokémon card</Text>
             <Text style={styles.modalSubtitle}>
-              Search by card name, collection/set, and collector number.
+              {fromFailedScan
+                ? "We couldn\u2019t identify this card automatically. Please verify or correct the details below."
+                : "Search by card name, collection/set, and collector number."}
             </Text>
           </View>
           <TouchableOpacity style={styles.backButton} onPress={onClose}>
@@ -727,6 +785,15 @@ function ManualCardSearchModal({
         </View>
 
         <View style={styles.manualSearchFields}>
+          {fromFailedScan && (
+            <View style={styles.fallbackPrompt}>
+              <Ionicons name="sparkles" size={18} color={colors.primary} />
+              <Text style={styles.fallbackPromptText}>
+                OCR guesses are pre-filled when available. Correct the card name,
+                set, or number before searching.
+              </Text>
+            </View>
+          )}
           <TextInput
             style={styles.textInput}
             value={name}
@@ -838,6 +905,8 @@ function ReviewStep({
   showcase,
   isSaving,
   error,
+  condition,
+  onConditionChange,
   onBack,
   onRemove,
   onReviewCandidates,
@@ -848,6 +917,8 @@ function ReviewStep({
   showcase: ShowcaseRow;
   isSaving: boolean;
   error?: string;
+  condition: ItemCondition;
+  onConditionChange: (condition: ItemCondition) => void;
   onBack: () => void;
   onRemove: (id: string) => void;
   onReviewCandidates: (id: string) => void;
@@ -871,35 +942,43 @@ function ReviewStep({
         keyExtractor={(entry) => entry.id}
         contentInsetAdjustmentBehavior="automatic"
         contentContainerStyle={styles.reviewList}
-        renderItem={({ item, index }) => (
-          <Animated.View entering={FadeInDown.delay(index * 35)} style={styles.reviewCard}>
-            {item.card.images.small ? (
-              <Image
-                source={{ uri: item.card.images.small }}
-                style={styles.reviewImage}
-                contentFit="contain"
-              />
-            ) : (
-              <View style={[styles.reviewImage, styles.missingCardImage]}>
-                <Ionicons name="image-outline" size={22} color={colors.grey} />
-              </View>
-            )}
-            <View style={styles.flex}>
-              <Text style={styles.reviewTitle} numberOfLines={1}>{item.card.name}</Text>
-              <Text style={styles.reviewMeta} numberOfLines={1}>
-                {item.card.set.name} · #{item.card.number}
-              </Text>
-              {!item.confirmed && (
-                <TouchableOpacity onPress={() => onReviewCandidates(item.id)}>
-                  <Text style={styles.verifyText}>Verify this match</Text>
-                </TouchableOpacity>
+        renderItem={({ item, index }) => {
+          const price = extractMarketPrice(item.card.tcgplayer?.prices);
+          return (
+            <Animated.View entering={FadeInDown.delay(index * 35)} style={styles.reviewCard}>
+              {item.card.images.small ? (
+                <Image
+                  source={{ uri: item.card.images.small }}
+                  style={styles.reviewImage}
+                  contentFit="contain"
+                />
+              ) : (
+                <View style={[styles.reviewImage, styles.missingCardImage]}>
+                  <Ionicons name="image-outline" size={22} color={colors.grey} />
+                </View>
               )}
-            </View>
-            <TouchableOpacity style={styles.removeButton} onPress={() => onRemove(item.id)}>
-              <Ionicons name="trash-outline" size={20} color={colors.danger} />
-            </TouchableOpacity>
-          </Animated.View>
-        )}
+              <View style={styles.flex}>
+                <Text style={styles.reviewTitle} numberOfLines={1}>{item.card.name}</Text>
+                <Text style={styles.reviewMeta} numberOfLines={1}>
+                  {item.card.set.name} · #{item.card.number}
+                </Text>
+                {price != null ? (
+                  <Text style={styles.priceText}>{formatPrice(price)} market</Text>
+                ) : (
+                  <Text style={styles.priceTextMuted}>No price data</Text>
+                )}
+                {!item.confirmed && (
+                  <TouchableOpacity onPress={() => onReviewCandidates(item.id)}>
+                    <Text style={styles.verifyText}>Verify this match</Text>
+                  </TouchableOpacity>
+                )}
+              </View>
+              <TouchableOpacity style={styles.removeButton} onPress={() => onRemove(item.id)}>
+                <Ionicons name="trash-outline" size={20} color={colors.danger} />
+              </TouchableOpacity>
+            </Animated.View>
+          );
+        }}
         ListEmptyComponent={
           <View style={styles.emptyState}>
             <Text style={styles.emptyTitle}>No cards scanned</Text>
@@ -914,6 +993,34 @@ function ReviewStep({
           <Text style={styles.reviewWarning}>{needsReview} uncertain match{needsReview === 1 ? "" : "es"} need review.</Text>
         )}
         {error && <Text style={styles.errorText}>{error}</Text>}
+        <View style={styles.conditionRow}>
+          <Text style={styles.conditionLabel}>Condition</Text>
+          <ScrollView
+            horizontal
+            showsHorizontalScrollIndicator={false}
+            contentContainerStyle={styles.conditionChips}
+          >
+            {ITEM_CONDITIONS.map((c) => (
+              <TouchableOpacity
+                key={c}
+                style={[
+                  styles.conditionChip,
+                  c === condition && styles.conditionChipActive,
+                ]}
+                onPress={() => onConditionChange(c)}
+              >
+                <Text
+                  style={[
+                    styles.conditionChipText,
+                    c === condition && styles.conditionChipTextActive,
+                  ]}
+                >
+                  {c}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </ScrollView>
+        </View>
         <View style={styles.inlineActions}>
           <TouchableOpacity style={styles.secondaryButton} onPress={onBack} disabled={isSaving}>
             <Ionicons name="scan" size={18} color={colors.text} />
@@ -1072,14 +1179,23 @@ const getStyles = (colors: ThemeColors) =>
     shutterInner: { width: 62, height: 62, borderRadius: 31, backgroundColor: "#FFF" },
     reviewButton: { width: 88, height: 46, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, borderRadius: 23, backgroundColor: "rgba(0,0,0,0.62)" },
     reviewButtonText: { color: "#FFF", fontSize: 13, fontWeight: "700" },
-    reviewList: { padding: 20, paddingBottom: 170, gap: 10 },
+    reviewList: { padding: 20, paddingBottom: 220, gap: 10 },
     reviewCard: { flexDirection: "row", alignItems: "center", gap: 14, padding: 12, borderRadius: 18, borderWidth: 1, borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainer },
     reviewImage: { width: 58, height: 82, borderRadius: 7, backgroundColor: colors.surfaceContainerHigh },
     reviewTitle: { color: colors.text, fontSize: 16, fontWeight: "700" },
     reviewMeta: { color: colors.onSurfaceVariant, fontSize: 12, marginTop: 4 },
+    priceText: { color: "#22c55e", fontSize: 12, fontWeight: "700", marginTop: 3 },
+    priceTextMuted: { color: colors.grey, fontSize: 11, fontStyle: "italic", marginTop: 3 },
     verifyText: { color: colors.tertiary, fontSize: 12, fontWeight: "700", marginTop: 8 },
     removeButton: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: colors.errorContainer },
     reviewWarning: { color: colors.tertiary, fontSize: 12, textAlign: "center" },
+    conditionRow: { gap: 8, marginBottom: 4 },
+    conditionLabel: { color: colors.onSurfaceVariant, fontSize: 12, fontWeight: "700", letterSpacing: 0.3 },
+    conditionChips: { gap: 8 },
+    conditionChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12, borderWidth: 1, borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainer },
+    conditionChipActive: { borderColor: colors.primary, backgroundColor: `${colors.primary}22` },
+    conditionChipText: { color: colors.onSurfaceVariant, fontSize: 13, fontWeight: "600" },
+    conditionChipTextActive: { color: colors.primary, fontWeight: "800" },
     modalBackdrop: { flex: 1, justifyContent: "flex-end", padding: 12, backgroundColor: colors.overlay },
     candidateSheet: { maxHeight: "78%", gap: 12, padding: 18, borderRadius: 26, backgroundColor: colors.surfaceContainerLow },
     modalHeader: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 16 },
@@ -1089,6 +1205,8 @@ const getStyles = (colors: ThemeColors) =>
     candidateImage: { width: 52, height: 74, borderRadius: 6 },
     manualSearchPage: { flex: 1, paddingTop: 20, backgroundColor: colors.background },
     manualSearchFields: { gap: 10, paddingHorizontal: 20, paddingVertical: 16 },
+    fallbackPrompt: { flexDirection: "row", alignItems: "flex-start", gap: 10, padding: 12, borderRadius: 14, borderWidth: 1, borderColor: `${colors.primary}55`, backgroundColor: `${colors.primary}14` },
+    fallbackPromptText: { flex: 1, color: colors.onSurfaceVariant, fontSize: 12, lineHeight: 17, fontWeight: "600" },
     manualSearchRow: { flexDirection: "row", gap: 10 },
     numberInput: { flex: 0, width: 92 },
     manualResults: { flexGrow: 1, paddingHorizontal: 20, paddingBottom: 40 },

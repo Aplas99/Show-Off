@@ -34,6 +34,30 @@ function cardKey(card: PokemonTcgCard) {
   ].join("|");
 }
 
+/**
+ * Search for Pokémon cards across the supported text-search providers.
+ *
+ * Provider order:
+ * 1. Pokémon TCG API via `searchPokemonCardsCacheFirst`, which checks the
+ *    Supabase cache before making an external API request.
+ * 2. TCGTracking, only as a manual fallback when the user supplied a
+ *    collection/set and the primary source did not return enough results.
+ *
+ * This is the manual/fallback search path used by `ManualCardSearchModal`;
+ * it is intentionally NOT used for scan recognition. The scan pipeline should
+ * stay deterministic and text-identifier based through `searchCardsByIdentifiers`
+ * in `recognition.ts`.
+ *
+ * @param input.name Card name or partial card name entered by the user.
+ * @param input.collection Optional set/collection name or code. Supplying this
+ * enables TCGTracking fallback.
+ * @param input.number Optional collector/card number, including promo numbers.
+ * @param input.limit Maximum merged results returned across providers.
+ * @returns Deduplicated Pokémon card records suitable for user confirmation.
+ *
+ * For the scan-pipeline search, see `searchCardsByIdentifiers` in
+ * `recognition.ts`, which only uses the Pokémon TCG API + Supabase cache.
+ */
 export async function searchPokemonCardSources(
   input: PokemonSourceSearchInput,
 ) {
