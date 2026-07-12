@@ -2,6 +2,7 @@ import {
   buildPokemonCardQuery,
   buildPokemonNameQuery,
   getPokemonCardCacheFirst,
+  PokemonTcgApiError,
   pokemonCardToCacheRow,
   searchPokemonCardsCacheFirst,
   type PokemonTcgCard,
@@ -88,6 +89,28 @@ describe("Pokémon TCG cache-first provider", () => {
     expect(result.source).toBe("api");
     expect(dependencies.fetchCards).toHaveBeenCalledWith("Charizard", 1, 20);
     expect(dependencies.cacheCards).toHaveBeenCalledWith([card]);
+  });
+
+  it("treats a 404 card search as an empty API result", async () => {
+    const dependencies = createDependencies({
+      fetchCards: jest.fn().mockRejectedValue(
+        new PokemonTcgApiError(404, '/cards?q=name:"Missingno"'),
+      ),
+    });
+
+    const result = await searchPokemonCardsCacheFirst(
+      { query: "Missingno" },
+      dependencies,
+    );
+
+    expect(result).toEqual({
+      cards: [],
+      page: 1,
+      pageSize: 20,
+      totalCount: 0,
+      source: "api",
+    });
+    expect(dependencies.cacheCards).not.toHaveBeenCalled();
   });
 
   it("does not accept an inexact cached result for structured OCR lookup", async () => {

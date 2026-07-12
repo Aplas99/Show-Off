@@ -121,6 +121,25 @@ export interface PokemonTcgDependencies {
 const POKEMON_TCG_API_URL = "https://api.pokemontcg.io/v2";
 const PokemonTcgAPIKey = process.env.EXPO_PUBLIC_POKE_KEY || "";
 
+export class PokemonTcgApiError extends Error {
+  status: number;
+  path: string;
+
+  constructor(status: number, path: string) {
+    super(`Pokemon TCG API error: ${status}`);
+    this.name = "PokemonTcgApiError";
+    this.status = status;
+    this.path = path;
+  }
+}
+
+export function isPokemonTcgApiErrorStatus(
+  error: unknown,
+  status: number,
+): error is PokemonTcgApiError {
+  return error instanceof PokemonTcgApiError && error.status === status;
+}
+
 function parseCachedCard(row: PokemonCardCacheRow): PokemonTcgCard | null {
   const parsed = pokemonTcgCardSchema.safeParse(row.raw_data);
   return parsed.success ? parsed.data : null;
@@ -206,7 +225,7 @@ async function fetchPokemonApi(path: string) {
   });
 
   if (!response.ok) {
-    throw new Error(`Pokémon TCG API error: ${response.status}`);
+    throw new PokemonTcgApiError(response.status, path);
   }
 
   return response.json();
@@ -363,18 +382,33 @@ export async function searchPokemonCardsCacheFirst(
     };
   }
 
-  const externalResult =
-    input.number || input.collection || input.printedTotal || input.setCode
-    ? await dependencies.fetchCards(
-        query,
+  let externalResult: Omit<PokemonCardSearchResult, "source">;
+  try {
+    externalResult =
+      input.number || input.collection || input.printedTotal || input.setCode
+      ? await dependencies.fetchCards(
+          query,
+          page,
+          pageSize,
+          input.number,
+          input.collection,
+          input.printedTotal,
+          input.setCode,
+        )
+      : await dependencies.fetchCards(query, page, pageSize);
+  } catch (error) {
+    if (isPokemonTcgApiErrorStatus(error, 404)) {
+      return {
+        cards: [],
         page,
         pageSize,
-        input.number,
-        input.collection,
-        input.printedTotal,
-        input.setCode,
-      )
-    : await dependencies.fetchCards(query, page, pageSize);
+        totalCount: 0,
+        source: "api",
+      };
+    }
+    throw error;
+  }
+
   await dependencies.cacheCards(externalResult.cards);
 
   return { ...externalResult, source: "api" };
