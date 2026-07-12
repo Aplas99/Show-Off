@@ -483,13 +483,27 @@ async function searchCardsByIdentifiers(
 
 async function recognizeTextWithMlKit(imageUri: string) {
   try {
-    const { recognizeText } = await import(
+    const mlKit = await import(
       "@infinitered/react-native-mlkit-text-recognition"
     );
+    const { recognizeText } = mlKit;
+
+    // The module can load in Expo Go but the native module won't be
+    // registered, leaving recognizeText as undefined.
+    if (typeof recognizeText !== "function") {
+      throw new Error(
+        "Card OCR requires a development build; it is unavailable in Expo Go.",
+      );
+    }
+
     return await recognizeText(imageUri);
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    if (message.includes("RNMLKitTextRecognition")) {
+    if (
+      message.includes("RNMLKitTextRecognition") ||
+      message.includes("development build") ||
+      message.includes("native module")
+    ) {
       throw new Error(
         "Card OCR requires a development build; it is unavailable in Expo Go.",
       );
