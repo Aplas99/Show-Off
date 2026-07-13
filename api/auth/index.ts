@@ -72,6 +72,26 @@ export const useSignIn = () => {
   });
 };
 
+/**
+ * Permanently deletes the current account via the delete-account Edge
+ * Function, then clears local session + cache.
+ */
+export const useDeleteAccount = () => {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      const { error } = await supabase.functions.invoke("delete-account");
+      if (error) throw new Error(error.message);
+      // Server already removed the user; drop the local session.
+      await supabase.auth.signOut().catch(() => undefined);
+    },
+    onSuccess: () => {
+      queryClient.clear();
+    },
+  });
+};
+
 export const useRequestPasswordReset = () => {
   return useMutation({
     mutationFn: requestPasswordReset,

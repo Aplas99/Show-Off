@@ -1,10 +1,11 @@
-import { ItemWithProduct, useUpdateItemCondition } from "@/api/items";
+import { ItemWithProduct, useDeleteItem, useUpdateItemCondition } from "@/api/items";
 import { ITEM_CONDITIONS } from "@/constants/itemCondition";
 import { COLORS } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
 
 import React, { useEffect, useRef, useState } from "react";
 import {
+  Alert,
   Animated,
   Dimensions,
   Modal,
@@ -27,6 +28,33 @@ const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get("window");
 
 export default function ItemDetailModal({ visible, item, onClose }: Props) {
   const updateCondition = useUpdateItemCondition();
+  const deleteItem = useDeleteItem();
+
+  const handleDelete = () => {
+    if (!item) return;
+    Alert.alert(
+      "Delete Item",
+      "This removes the item from all showcases and cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteItem.mutateAsync(item.id);
+              onClose();
+            } catch (error: any) {
+              Alert.alert(
+                "Could not delete item",
+                error?.message ?? "Please try again.",
+              );
+            }
+          },
+        },
+      ],
+    );
+  };
   const [conditionPickerOpen, setConditionPickerOpen] = useState(false);
   const [condition, setCondition] = useState<string | null>(item?.condition ?? null);
   const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
@@ -218,6 +246,15 @@ export default function ItemDetailModal({ visible, item, onClose }: Props) {
                     </TouchableOpacity>
                     <TouchableOpacity style={styles.shareButton}>
                       <Ionicons name="share-outline" size={18} color="#FFF" />
+                    </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.deleteButton}
+                      onPress={handleDelete}
+                      disabled={deleteItem.isPending}
+                      accessibilityRole="button"
+                      accessibilityLabel="Delete item"
+                    >
+                      <Ionicons name="trash-outline" size={18} color="#FFF" />
                     </TouchableOpacity>
                   </View>
                 </View>
@@ -534,6 +571,16 @@ const styles = StyleSheet.create({
     color: "#000",
     fontSize: 14,
     fontWeight: "700",
+  },
+  deleteButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: `${COLORS.danger}CC`,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
   },
   shareButton: {
     width: 40,

@@ -102,6 +102,39 @@ export function useUpdateItemCondition() {
   });
 }
 
+export function useDeleteItem() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (itemId: number) => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not authenticated");
+
+      // Remove showcase links first in case the FK doesn't cascade.
+      const { error: linkError } = await supabase
+        .from("showcase_items")
+        .delete()
+        .eq("item_id", itemId);
+      if (linkError) throw new Error(linkError.message);
+
+      const { error } = await supabase
+        .from("items")
+        .delete()
+        .eq("id", itemId)
+        .eq("user_id", user.id);
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["showcase"] });
+      queryClient.invalidateQueries({ queryKey: ["showcase:items"] });
+      queryClient.invalidateQueries({ queryKey: ["items", "my"] });
+      queryClient.invalidateQueries({ queryKey: ["social", "feed"] });
+      queryClient.invalidateQueries({ queryKey: ["profile"] });
+    },
+  });
+}
+
 function getPokemonMarketPrice(card: PokemonTcgCard) {
   const prices = card.tcgplayer?.prices;
   if (!prices) return undefined;
