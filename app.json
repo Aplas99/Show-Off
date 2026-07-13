@@ -50,6 +50,12 @@
           "barcodeScannerEnabled": true
         }
       ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Show Off to access your photos so you can add images of your collectibles."
+        }
+      ],
       "expo-font",
       "expo-web-browser"
     ],

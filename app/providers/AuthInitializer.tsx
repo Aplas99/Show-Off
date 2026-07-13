@@ -29,10 +29,8 @@ export default function AuthInitializer({ children }: { children: React.ReactNod
     const inAuthGroup = segments[0] === "(auth)";
 
     if (session && inAuthGroup) {
-      console.log("AuthInitializer check:", { inAuthGroup, segments, session });
       router.replace("/(tabs)/discover");
     } else if (!session && !inAuthGroup) {
-      console.log("AuthInitializer check:", { inAuthGroup, segments, session });
       router.replace("/(auth)/signin");
     }
   }, [session, loading, navigationState]);

@@ -35,13 +35,8 @@ export default function TabLayout() {
           tabBarLabel: "Discover",
         }}
       />
-      <Tabs.Screen
-        name="marketplace"
-        options={{
-          tabBarAccessibilityLabel: "Marketplace",
-          tabBarLabel: "Marketplace",
-        }}
-      />
+      {/* Hidden until the marketplace feature ships. */}
+      <Tabs.Screen name="marketplace" options={{ href: null }} />
       <Tabs.Screen
         name="create"
         options={{
