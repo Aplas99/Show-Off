@@ -129,7 +129,9 @@ export default function SignIn() {
 
             <TouchableOpacity
               style={styles.forgotPasswordButton}
-              onPress={() => { }}
+              onPress={() => router.push("/(auth)/forgot-password" as any)}
+              accessibilityRole="button"
+              accessibilityLabel="Forgot password"
             >
               <Text style={styles.forgotPasswordButtonText}>
                 Forgot Password?
