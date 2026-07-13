@@ -1,13 +1,13 @@
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import {
-  searchPokemonCardsCacheFirst,
-  type PokemonTcgCard,
-} from "./index";
-import {
   cardScanDebug,
   cardScanError,
   summarizePokemonCard,
 } from "./cardScanDebug";
+import {
+  searchPokemonCardsCacheFirst,
+  type PokemonTcgCard,
+} from "./index";
 import {
   cleanOcrText,
   deduplicateLines,

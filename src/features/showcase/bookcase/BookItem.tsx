@@ -198,6 +198,8 @@ const BookItem = React.memo(({ item, positionX, onPress, scrollX }: BookItemProp
     );
 });
 
+BookItem.displayName = "BookItem";
+
 const bookStyles = StyleSheet.create({
     container: {
         height: ITEM_HEIGHT + 10,

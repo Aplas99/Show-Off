@@ -3,6 +3,15 @@ import {
   type PokemonTcgCard,
 } from "@/api/pokemon";
 import {
+  cardScanDebug,
+  cardScanError,
+  summarizePokemonCard,
+} from "@/api/pokemon/cardScanDebug";
+import {
+  extractMarketPrice,
+  formatPrice,
+} from "@/api/pokemon/ocrPostprocessing";
+import {
   identifyPokemonCardImage,
   type PokemonCardIdentifiers,
   type PokemonCardScanFrame,
@@ -12,15 +21,6 @@ import {
   createManualPokemonCard,
   searchPokemonCardSources,
 } from "@/api/pokemon/search";
-import {
-  cardScanDebug,
-  cardScanError,
-  summarizePokemonCard,
-} from "@/api/pokemon/cardScanDebug";
-import {
-  extractMarketPrice,
-  formatPrice,
-} from "@/api/pokemon/ocrPostprocessing";
 import {
   useCreateShowcase,
   useGetVisibleShowcases,
@@ -45,9 +45,9 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  type LayoutRectangle,
   useWindowDimensions,
   View,
+  type LayoutRectangle,
 } from "react-native";
 import Animated, {
   FadeIn,
@@ -149,11 +149,11 @@ export default function TcgCreateScreen() {
         current.map((entry) =>
           entry.id === entryId
             ? {
-                ...entry,
-                card: match.card,
-                score: match.score,
-                confirmed: true,
-              }
+              ...entry,
+              card: match.card,
+              score: match.score,
+              confirmed: true,
+            }
             : entry,
         ),
       );

@@ -133,7 +133,7 @@ export default function SignIn() {
             <Link href="/signup" asChild>
               <TouchableOpacity style={styles.dontHaveAccountButton}>
                 <Text style={styles.dontHaveAccountText}>
-                  Don't have an account?
+                  Don&apos;t have an account?
                   <Text style={styles.signupLink}> Sign Up </Text>
                 </Text>
               </TouchableOpacity>

@@ -1023,7 +1023,11 @@ export const BookcaseView: React.FC<BookcaseViewProps> = ({
         );
       }
 
-      return <MahoganyShelf tall={row.tall} />;
+      if (row.kind === "shelf") {
+        return <MahoganyShelf tall={row.tall} />;
+      }
+
+      return null;
     },
     [colors.primary, colors.secondary, gridCardWidth, onItemPress],
   );

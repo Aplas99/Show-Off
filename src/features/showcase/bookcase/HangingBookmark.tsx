@@ -54,6 +54,8 @@ const HangingBookmark = React.memo(({ onPress }: { onPress?: () => void }) => {
     );
 });
 
+HangingBookmark.displayName = "HangingBookmark";
+
 const bookmarkStyles = StyleSheet.create({
     container: {
         position: "absolute",
