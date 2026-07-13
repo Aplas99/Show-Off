@@ -6,6 +6,23 @@ clean, ESLint clean, 86/86 Jest tests passing.
 
 Legend: 🔴 blocker before launch · 🟠 should fix soon · 🟡 nice to have
 
+## Status update (later on 2026-07-13)
+
+Fixed on this branch: 1 (password reset flow), 2 (fake Google buttons
+removed — real OAuth still TODO), 5 (confirm-email state), 6 partial
+(image-picker plugin, eas.json; store metadata/privacy policy still TODO),
+7 partial (error boundary; crash reporting still TODO), 8, 9, 10, 11, 12
+partial (item + account deletion; item/showcase editing still TODO), 13
+partial (uploads scoped + sized; orphan cleanup on item delete still TODO),
+17, 19 partial (query defaults + sign-out cache clear), 18 partial
+(session logging removed), 16 partial (marketplace tab hidden), 23 (CI).
+
+Still open: 3 (API keys in bundle → Edge Function proxy), 4 (TCG cache
+RLS lockdown — depends on 3), 14 (feed scalability/personalization), 15
+(verify social RLS policies), 20 (auth screen theming), 21, 22 (a11y
+sweep beyond auth screens), OAuth providers (Google/Apple), and the
+membership IAP-policy decision.
+
 ## 🔴 Blockers
 
 1. **Password reset is a dead button.** `app/(auth)/signin.tsx` — "Forgot
