@@ -7,6 +7,8 @@ import {
   normalizeName,
   normalizeOcrDigits,
   similarityRatio,
+  isPokemonFoilCard,
+  isPokemonPromoCard,
 } from "./ocrPostprocessing";
 
 describe("OCR postprocessing utilities", () => {
@@ -35,8 +37,8 @@ describe("OCR postprocessing utilities", () => {
   });
 
   describe("normalizeOcrDigits", () => {
-    it("replaces O with 0", () => {
-      expect(normalizeOcrDigits("O42")).toBe("42");
+    it("replaces O with 0, preserving the resulting leading zero", () => {
+      expect(normalizeOcrDigits("O42")).toBe("042");
     });
 
     it("replaces I and L with 1", () => {
@@ -44,9 +46,9 @@ describe("OCR postprocessing utilities", () => {
       expect(normalizeOcrDigits("L42")).toBe("142");
     });
 
-    it("strips leading zeros", () => {
-      expect(normalizeOcrDigits("042")).toBe("42");
-      expect(normalizeOcrDigits("001")).toBe("1");
+    it("preserves leading zeros so the API query matches the card's stored number", () => {
+      expect(normalizeOcrDigits("042")).toBe("042");
+      expect(normalizeOcrDigits("001")).toBe("001");
     });
 
     it("handles mixed letter/digit sequences", () => {
@@ -157,6 +159,19 @@ describe("OCR postprocessing utilities", () => {
       expect(formatPrice(12.5)).toBe("$12.50");
       expect(formatPrice(0.99)).toBe("$0.99");
       expect(formatPrice(350)).toBe("$350.00");
+    });
+  });
+
+  describe("card finish indicators", () => {
+    it("recognizes foil cards from rarity or official price variants", () => {
+      expect(isPokemonFoilCard({ rarity: "Rare Holo" })).toBe(true);
+      expect(isPokemonFoilCard({ tcgplayer: { prices: { reverseHolofoil: {} } } })).toBe(true);
+      expect(isPokemonFoilCard({ rarity: "Common" })).toBe(false);
+    });
+
+    it("recognizes promo cards from rarity or official set metadata", () => {
+      expect(isPokemonPromoCard({ rarity: "Promo", set: { id: "svp", name: "Scarlet & Violet Black Star Promos" } })).toBe(true);
+      expect(isPokemonPromoCard({ set: { id: "base1", name: "Base" } })).toBe(false);
     });
   });
 });

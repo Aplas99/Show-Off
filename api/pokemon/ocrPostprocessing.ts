@@ -36,7 +36,6 @@ export function normalizeOcrDigits(value: string): string {
     .replace(/[O]/g, "0")
     .replace(/[IL]/g, "1")
     .replace(/[^A-Z0-9]/g, "")
-    .replace(/^0+(?=\d)/, "")
     .toLowerCase();
 }
 
@@ -121,4 +120,24 @@ export function extractMarketPrice(
  */
 export function formatPrice(value: number): string {
   return `$${value.toFixed(2)}`;
+}
+
+const POKEMON_PROMO_SET_IDS = new Set([
+  "basep", "bwp", "dpp", "hsp", "np", "smp", "svp", "swshp", "xyp",
+]);
+
+export function isPokemonPromoCard(card: {
+  rarity?: string;
+  set: { id: string; name: string };
+}) {
+  return /promo/i.test(card.rarity ?? "") || /promo/i.test(card.set.name) || POKEMON_PROMO_SET_IDS.has(card.set.id);
+}
+
+export function isPokemonFoilCard(card: {
+  rarity?: string;
+  tcgplayer?: { prices?: Record<string, unknown> };
+}) {
+  if (/holo|shiny/i.test(card.rarity ?? "")) return true;
+  const variants = Object.keys(card.tcgplayer?.prices ?? {});
+  return variants.some((variant) => /holofoil/i.test(variant));
 }

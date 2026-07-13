@@ -1,16 +1,18 @@
+import { POKEMON_TCG_SETS } from "@/constants/pokemonTcgSets";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
+import {
+  searchPokemonCardsCacheFirst,
+  type PokemonTcgCard,
+} from "./index";
 import {
   cardScanDebug,
   cardScanError,
   summarizePokemonCard,
 } from "./cardScanDebug";
 import {
-  searchPokemonCardsCacheFirst,
-  type PokemonTcgCard,
-} from "./index";
-import {
   cleanOcrText,
   deduplicateLines,
+  isPokemonPromoCard,
   levenshtein,
   normalizeName,
   normalizeOcrDigits,
@@ -20,6 +22,8 @@ import {
 export interface RecognizedPokemonCard {
   card: PokemonTcgCard;
   score: number;
+  exactMatch?: boolean;
+  identifierMatches?: number;
 }
 
 export interface PokemonCardScanFrame {
@@ -42,10 +46,12 @@ export interface PokemonOcrResult {
 
 export interface PokemonCardIdentifiers {
   nameCandidates: string[];
+  collectionCandidates?: string[];
   number: string | null;
   printedTotal: number | null;
   setCode: string | null;
   rawText: string;
+  scanHints?: { foil: boolean; promo: boolean };
 }
 
 export interface PokemonRecognitionDependencies {
@@ -66,7 +72,7 @@ export interface PokemonRecognitionDependencies {
 const CARD_ASPECT_RATIO = 63 / 88;
 
 /** Resolution target for OCR crops. Higher = better text but slower. */
-const OCR_IMAGE_WIDTH = 2000;
+const OCR_IMAGE_WIDTH = 1400;
 
 /** Top portion of the card containing the name banner. */
 const NAME_ZONE_TOP = 0;
@@ -90,6 +96,46 @@ const OCR_METADATA_WORDS = new Set([
   "supporter",
   "trainer",
 ]);
+
+/**
+ * Game-mechanic keywords — lines containing any of these are card rules /
+ * ability text / stats, never Pokémon names.
+ */
+const GAME_MECHANIC_KEYWORDS = [
+  "ability",
+  "weakness",
+  "resistance",
+  "retreat",
+  "poké-power",
+  "poké-body",
+  "poképower",
+  "pokébody",
+  "evolves from",
+  "dynamax",
+  "gigantamax",
+  "vmax rule",
+  "vstar rule",
+  "v rule",
+  "ex rule",
+  "discard",
+];
+
+/** Language codes that OCR concatenates with set codes (e.g. "TWMEN"). */
+const LANGUAGE_SUFFIXES = ["EN", "DE", "FR", "ES", "IT", "PT", "JP", "KO", "ZH"];
+
+/**
+ * Check whether a single word is a metadata word — either exactly or within
+ * 1 edit distance (catches OCR typos like "BASIG" → "BASIC").
+ */
+function isMetadataWord(word: string): boolean {
+  if (OCR_METADATA_WORDS.has(word)) return true;
+  for (const meta of OCR_METADATA_WORDS) {
+    if (Math.abs(word.length - meta.length) <= 1 && levenshtein(word, meta) <= 1) {
+      return true;
+    }
+  }
+  return false;
+}
 
 /** Short uppercase tokens that are NOT set codes — common false positives. */
 const SET_CODE_BLACKLIST = new Set([
@@ -132,6 +178,13 @@ const MAX_CANDIDATES = 5;
 
 /** Minimum name similarity to award any name score. */
 const MIN_NAME_SIMILARITY = 0.65;
+
+/**
+ * Score threshold to stop searching early and surface matches for user
+ * confirmation. Lower than a perfect match so foil scans (where the name
+ * is garbled but number + collection match) return quickly.
+ */
+const EARLY_EXIT_SCORE = 0.6;
 
 // ---------------------------------------------------------------------------
 // Image preparation
@@ -289,11 +342,12 @@ function ocrLines(result: PokemonOcrResult) {
 
 function cleanNameCandidate(value: string) {
   return value
-    .replace(/^(?:basic|stage\s*\d*|trainer|energy)\s*/i, "")
+    .replace(/^(?:basic|stage\s*\d*|trainer|energy|ability)\s*/i, "")
     .replace(/\s+HP\s*\d+.*$/i, "")
     .replace(/\bHP\s*\d+\b/gi, "")
     .replace(/\b\d{2,3}\s*HP\b/gi, "")
     .replace(/\s+\d{2,3}$/, "")
+    .replace(/\bV(?:ny|rnax)\b/gi, "VMAX")
     .replace(/[^a-z0-9.'':\-\s]/gi, " ")
     .replace(/\s+/g, " ")
     .trim();
@@ -336,28 +390,59 @@ export function parsePokemonCardText(
   const setCodes = (prefix.match(/\b[A-Z]{2,5}\b/gi) ?? []).map((code) =>
     code.toUpperCase(),
   );
-  const setCode =
+  const rawSetCode =
     [...setCodes]
       .reverse()
       .find((code) => !SET_CODE_BLACKLIST.has(code)) ?? null;
+  // Strip language suffixes that OCR concatenates (e.g. "TWMEN" → "TWM")
+  const setCode = rawSetCode
+    ? LANGUAGE_SUFFIXES.reduce(
+        (code, suffix) =>
+          code.length > suffix.length && code.endsWith(suffix)
+            ? code.slice(0, -suffix.length)
+            : code,
+        rawSetCode,
+      )
+    : null;
 
   // --- Name candidate extraction ---
   const nameCandidates = lines
     .slice(0, 10)
     .filter((line) => line !== numberLine)
+    // Reject lines containing game-mechanic keywords before cleaning
+    .filter((line) => {
+      const lower = line.toLowerCase();
+      return !GAME_MECHANIC_KEYWORDS.some((kw) => lower.includes(kw));
+    })
     .map(cleanNameCandidate)
     .filter((line) => {
       if (line.length < 2 || line.length > 40 || !/[a-z]/i.test(line)) return false;
       const words = line.toLowerCase().split(/\s+/);
-      return !words.every((word) => OCR_METADATA_WORDS.has(word));
+      // Reject lines where every word is an exact or fuzzy metadata match
+      if (words.every((word) => isMetadataWord(word))) return false;
+      return true;
     })
     .filter((line, index, all) =>
       all.findIndex((candidate) => normalizeName(candidate) === normalizeName(line)) === index,
     )
     .slice(0, 4);
 
+  const catalogMatches = POKEMON_TCG_SETS.map((set) => {
+    const nameSimilarity = lines.reduce(
+      (best, line) => Math.max(best, similarityRatio(normalizeName(line), normalizeName(set.name))),
+      0,
+    );
+    const codeMatches = !!setCode && !!set.code && normalizeName(set.code) === normalizeName(setCode);
+    const totalMatches = !!printedTotal && set.printedTotal === printedTotal;
+    return { set, score: codeMatches ? 1 : totalMatches ? 0.9 : nameSimilarity };
+  })
+    .filter(({ score }) => score >= 0.78)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, 3);
+
   return {
     nameCandidates,
+    collectionCandidates: catalogMatches.map(({ set }) => set.name),
     number,
     printedTotal,
     setCode,
@@ -378,21 +463,37 @@ export function scoreCardMatch(
   name: string,
   identifiers: PokemonCardIdentifiers,
 ): number {
+  if (identifiers.scanHints?.promo && !isPokemonPromoCard(card)) return 0;
+  // Strip leading zeros for comparison so "081" and "81" are equivalent.
+  const normalizeNum = (s: string) => normalizeOcrDigits(s).replace(/^0+(?=\d)/, "");
   // Name similarity
   const nameSim = similarityRatio(
     normalizeName(card.name),
     normalizeName(name),
   );
-  if (nameSim < MIN_NAME_SIMILARITY) return 0;
+  const numberExactlyMatches =
+    !!identifiers.number &&
+    normalizeNum(card.number) === normalizeNum(identifiers.number);
+  const collectionExactlyMatches =
+    identifiers.collectionCandidates?.some(
+      (collection) => normalizeName(card.set.name) === normalizeName(collection),
+    ) ||
+    (!!identifiers.setCode &&
+      normalizeName(card.set.ptcgoCode ?? "") === normalizeName(identifiers.setCode)) ||
+    (!!identifiers.printedTotal && card.set.printedTotal === identifiers.printedTotal);
+  if (nameSim < MIN_NAME_SIMILARITY) {
+    return numberExactlyMatches && collectionExactlyMatches ? 2 / 3 : 0;
+  }
   const nameScore = nameSim * SCORE_WEIGHT_NAME;
 
   // Number match
   let numberScore = 0;
   if (identifiers.number) {
-    const cardNum = normalizeOcrDigits(card.number);
-    if (cardNum === identifiers.number) {
+    const cardNum = normalizeNum(card.number);
+    const idNum = normalizeNum(identifiers.number);
+    if (cardNum === idNum) {
       numberScore = SCORE_WEIGHT_NUMBER;
-    } else if (levenshtein(cardNum, identifiers.number) <= 1) {
+    } else if (levenshtein(cardNum, idNum) <= 1) {
       numberScore = SCORE_WEIGHT_NUMBER * 0.5;
     }
   } else {
@@ -424,6 +525,46 @@ export function scoreCardMatch(
   return total >= MIN_MATCH_SCORE ? total : 0;
 }
 
+function normalizedCollectorNumber(value: string) {
+  return normalizeOcrDigits(value.split(/[\/.]/, 1)[0]).replace(/^0+(?=\d)/, "");
+}
+
+export function isExactCardIdentifierMatch(
+  card: PokemonTcgCard,
+  name: string,
+  identifiers: PokemonCardIdentifiers,
+) {
+  if (normalizeName(card.name) !== normalizeName(name)) return false;
+  if (identifiers.number && normalizedCollectorNumber(card.number) !== normalizedCollectorNumber(identifiers.number)) return false;
+  if (identifiers.printedTotal && card.set.printedTotal !== identifiers.printedTotal) return false;
+  if (identifiers.setCode && normalizeName(card.set.ptcgoCode ?? "") !== normalizeName(identifiers.setCode)) return false;
+  return true;
+}
+
+export function countCardIdentifierMatches(
+  card: PokemonTcgCard,
+  name: string,
+  identifiers: PokemonCardIdentifiers,
+) {
+  const nameMatches = normalizeName(card.name) === normalizeName(name);
+  const numberMatches = !!identifiers.number && normalizedCollectorNumber(card.number) === normalizedCollectorNumber(identifiers.number);
+  const collectionMatches =
+    identifiers.collectionCandidates?.some(
+      (collection) => similarityRatio(normalizeName(card.set.name), normalizeName(collection)) >= 0.86,
+    ) ||
+    (!!identifiers.setCode && normalizeName(card.set.ptcgoCode ?? "") === normalizeName(identifiers.setCode)) ||
+    (!!identifiers.printedTotal && card.set.printedTotal === identifiers.printedTotal);
+  return [nameMatches, numberMatches, collectionMatches].filter(Boolean).length;
+}
+
+export function buildOfficialNameFallbacks(name: string) {
+  const words = name
+    .replace(/[^a-z0-9\s]/gi, " ")
+    .split(/\s+/)
+    .filter((word) => word.length >= 4);
+  return [...new Set(words.sort((a, b) => b.length - a.length))].slice(0, 2);
+}
+
 // ---------------------------------------------------------------------------
 // Card search
 // ---------------------------------------------------------------------------
@@ -442,17 +583,28 @@ async function searchCardsByIdentifiers(
   const allScored: RecognizedPokemonCard[] = [];
 
   for (const name of identifiers.nameCandidates) {
-    const attempts = identifiers.setCode
-      ? [identifiers.setCode, undefined]
-      : [undefined];
+    const collection = identifiers.collectionCandidates?.[0];
+    const attempts = [
+      { query: name, number: identifiers.number ?? undefined, collection, printedTotal: identifiers.printedTotal ?? undefined, setCode: identifiers.setCode ?? undefined },
+      // No-name fallback early: when foil OCR garbles the name, number +
+      // collection is the fastest way to identify the card from cache.
+      { query: "", number: identifiers.number ?? undefined, collection },
+      { query: name, number: identifiers.number ?? undefined },
+      { query: name, collection },
+      { query: name },
+    ].filter((attempt, index, all) =>
+      all.findIndex((item) => JSON.stringify(item) === JSON.stringify(attempt)) === index,
+    );
 
-    for (const setCode of attempts) {
+    for (const attempt of attempts) {
       const result = await searchPokemonCardsCacheFirst({
-        query: name,
-        number: identifiers.number ?? undefined,
-        printedTotal: identifiers.printedTotal ?? undefined,
-        setCode,
+        ...attempt,
         pageSize: 25,
+      });
+      cardScanDebug("catalog.search-attempt", {
+        ...attempt,
+        source: result.source,
+        resultCount: result.cards.length,
       });
 
       for (const card of result.cards) {
@@ -460,16 +612,53 @@ async function searchCardsByIdentifiers(
         if (score > 0) {
           // Avoid duplicates
           if (!allScored.some((s) => s.card.id === card.id)) {
-            allScored.push({ card, score });
+            const identifierMatches = countCardIdentifierMatches(card, name, identifiers);
+            allScored.push({
+              card,
+              score,
+              exactMatch: identifierMatches >= 2,
+              identifierMatches,
+            });
           }
         }
       }
 
-      // If we found strong matches, stop searching
-      if (allScored.some((s) => s.score >= 0.8)) break;
+      // If we found matches above the early-exit threshold, stop searching
+      if (allScored.some((s) => s.score >= EARLY_EXIT_SCORE)) break;
     }
 
-    if (allScored.some((s) => s.score >= 0.8)) break;
+    // If we found matches above the early-exit threshold, stop all names
+    if (allScored.some((s) => s.score >= EARLY_EXIT_SCORE)) break;
+
+    // Only try fuzzy fallbacks when no scored results exist at all
+    if (allScored.length === 0) {
+      const fallbacks = buildOfficialNameFallbacks(name);
+      for (const fallbackName of fallbacks) {
+        const result = await searchPokemonCardsCacheFirst({
+          query: fallbackName,
+          pageSize: 100,
+          bypassCache: true,
+        });
+        cardScanDebug("catalog.fuzzy-attempt", {
+          query: fallbackName,
+          source: result.source,
+          resultCount: result.cards.length,
+        });
+        for (const card of result.cards) {
+          const score = scoreCardMatch(card, name, identifiers);
+          if (score > 0 && !allScored.some((item) => item.card.id === card.id)) {
+            const identifierMatches = countCardIdentifierMatches(card, name, identifiers);
+            allScored.push({
+              card,
+              score,
+              exactMatch: identifierMatches >= 2,
+              identifierMatches,
+            });
+          }
+        }
+        if (allScored.length > 0) break;
+      }
+    }
   }
 
   return allScored
@@ -527,6 +716,7 @@ export async function identifyPokemonCardImage(
   dependencies: PokemonRecognitionDependencies = defaultDependencies,
   scanFrame?: PokemonCardScanFrame,
   onIdentifiers?: (identifiers: PokemonCardIdentifiers) => void,
+  scanHints: { foil: boolean; promo: boolean } = { foil: false, promo: false },
 ): Promise<RecognizedPokemonCard[]> {
   const startedAt = Date.now();
   cardScanDebug("ocr.started");
@@ -536,6 +726,12 @@ export async function identifyPokemonCardImage(
       : await dependencies.prepareImage(imageUri);
     const ocr = await dependencies.recognizeText(preparedUri);
     const identifiers = parsePokemonCardText(ocr);
+    identifiers.scanHints = scanHints;
+    if (scanHints.promo && (identifiers.collectionCandidates?.length ?? 0) === 0) {
+      identifiers.collectionCandidates = POKEMON_TCG_SETS
+        .filter((set) => /promo/i.test(set.name))
+        .map((set) => set.name);
+    }
     onIdentifiers?.(identifiers);
     cardScanDebug("ocr.identifiers", {
       nameCandidates: identifiers.nameCandidates,

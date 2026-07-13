@@ -1,8 +1,9 @@
-import { ItemWithProduct } from "@/api/items";
+import { ItemWithProduct, useUpdateItemCondition } from "@/api/items";
+import { ITEM_CONDITIONS } from "@/constants/itemCondition";
 import { COLORS } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
   Dimensions,
@@ -25,6 +26,9 @@ type Props = {
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get("window");
 
 export default function ItemDetailModal({ visible, item, onClose }: Props) {
+  const updateCondition = useUpdateItemCondition();
+  const [conditionPickerOpen, setConditionPickerOpen] = useState(false);
+  const [condition, setCondition] = useState<string | null>(item?.condition ?? null);
   const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const headerOpacity = useRef(new Animated.Value(0)).current;
@@ -86,6 +90,10 @@ export default function ItemDetailModal({ visible, item, onClose }: Props) {
       ]).start();
     }
   }, [visible, slideAnim, fadeAnim]);
+
+  useEffect(() => {
+    setCondition(item?.condition ?? null);
+  }, [item?.condition, item?.id]);
 
   if (!item && !visible) return null;
   const displayItem = item;
@@ -259,8 +267,9 @@ export default function ItemDetailModal({ visible, item, onClose }: Props) {
                   <View style={styles.bentoRow}>
                     <BentoItem
                       label="Condition"
-                      value={displayItem?.condition || "N/A"}
+                      value={condition || "Add condition"}
                       flex={1}
+                      onPress={() => setConditionPickerOpen(true)}
                     />
                     <BentoItem
                       label="Category"
@@ -327,6 +336,28 @@ export default function ItemDetailModal({ visible, item, onClose }: Props) {
           </Animated.View>
         </View>
       </GestureHandlerRootView>
+      <Modal visible={conditionPickerOpen} transparent animationType="fade" onRequestClose={() => setConditionPickerOpen(false)}>
+        <Pressable style={styles.conditionOverlay} onPress={() => setConditionPickerOpen(false)}>
+          <View style={styles.conditionPicker}>
+            <Text style={styles.conditionPickerTitle}>Card condition</Text>
+            {ITEM_CONDITIONS.map((option) => (
+              <TouchableOpacity
+                key={option}
+                style={styles.conditionOption}
+                onPress={async () => {
+                  if (!displayItem) return;
+                  await updateCondition.mutateAsync({ itemId: displayItem.id, condition: option });
+                  setCondition(option);
+                  setConditionPickerOpen(false);
+                }}
+              >
+                <Text style={styles.conditionOptionText}>{option}</Text>
+                {condition === option && <Ionicons name="checkmark" size={20} color={COLORS.primary} />}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </Pressable>
+      </Modal>
     </Modal>
   );
 }
@@ -339,6 +370,7 @@ const BentoItem = ({
   trailing,
   flex,
   fullWidth,
+  onPress,
 }: {
   label: string;
   value: string;
@@ -346,13 +378,16 @@ const BentoItem = ({
   trailing?: React.ReactNode;
   flex?: number;
   fullWidth?: boolean;
+  onPress?: () => void;
 }) => (
-  <View
+  <TouchableOpacity
     style={[
       bentoStyles.container,
       flex ? { flex } : {},
       fullWidth ? { flexDirection: "row", alignItems: "center", justifyContent: "space-between" } : {},
     ]}
+    onPress={onPress}
+    disabled={!onPress}
   >
     {icon && (
       <Ionicons
@@ -367,7 +402,7 @@ const BentoItem = ({
       <Text style={bentoStyles.value}>{value}</Text>
     </View>
     {trailing}
-  </View>
+  </TouchableOpacity>
 );
 
 const bentoStyles = StyleSheet.create({
@@ -403,6 +438,36 @@ const styles = StyleSheet.create({
   },
   backdropPressable: {
     flex: 1,
+  },
+  conditionOverlay: {
+    flex: 1,
+    justifyContent: "center",
+    padding: 24,
+    backgroundColor: "rgba(0,0,0,0.72)",
+  },
+  conditionPicker: {
+    padding: 20,
+    borderRadius: 20,
+    backgroundColor: COLORS.surfaceContainerHigh,
+  },
+  conditionPickerTitle: {
+    color: COLORS.text,
+    fontSize: 20,
+    fontWeight: "800",
+    marginBottom: 12,
+  },
+  conditionOption: {
+    minHeight: 48,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.outlineVariant,
+  },
+  conditionOptionText: {
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: "600",
   },
   modalContainer: {
     height: "95%",

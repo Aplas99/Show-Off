@@ -3,15 +3,6 @@ import {
   type PokemonTcgCard,
 } from "@/api/pokemon";
 import {
-  cardScanDebug,
-  cardScanError,
-  summarizePokemonCard,
-} from "@/api/pokemon/cardScanDebug";
-import {
-  extractMarketPrice,
-  formatPrice,
-} from "@/api/pokemon/ocrPostprocessing";
-import {
   identifyPokemonCardImage,
   type PokemonCardIdentifiers,
   type PokemonCardScanFrame,
@@ -22,11 +13,19 @@ import {
   searchPokemonCardSources,
 } from "@/api/pokemon/search";
 import {
+  cardScanDebug,
+  cardScanError,
+  summarizePokemonCard,
+} from "@/api/pokemon/cardScanDebug";
+import {
+  extractMarketPrice,
+  formatPrice,
+} from "@/api/pokemon/ocrPostprocessing";
+import {
   useCreateShowcase,
   useGetVisibleShowcases,
   type ShowcaseRow,
 } from "@/api/showcase";
-import { ITEM_CONDITIONS, type ItemCondition } from "@/constants/itemCondition";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { Ionicons } from "@expo/vector-icons";
@@ -39,15 +38,14 @@ import {
   FlatList,
   Modal,
   Pressable,
-  ScrollView,
   StatusBar,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  type LayoutRectangle,
   useWindowDimensions,
   View,
-  type LayoutRectangle,
 } from "react-native";
 import Animated, {
   FadeIn,
@@ -68,14 +66,13 @@ interface ScanEntry {
   confirmed: boolean;
 }
 
-const MIN_CONFIDENT_SCORE = 0.75;
-const MIN_SCORE_GAP = 0.08;
+const MIN_REVIEW_SCORE = 0.6;
+const MIN_CONFIDENT_SCORE = 0.8;
 
 function isConfidentMatch(matches: RecognizedPokemonCard[]) {
   const first = matches[0];
-  const second = matches[1];
-  if (!first || first.score < MIN_CONFIDENT_SCORE) return false;
-  return !second || first.score - second.score >= MIN_SCORE_GAP;
+  if (!first) return false;
+  return first.score >= MIN_CONFIDENT_SCORE || (first.identifierMatches ?? 0) >= 2;
 }
 
 export default function TcgCreateScreen() {
@@ -83,7 +80,6 @@ export default function TcgCreateScreen() {
   const [showcaseId, setShowcaseId] = useState<string | null>(null);
   const [entries, setEntries] = useState<ScanEntry[]>([]);
   const [candidateEntryId, setCandidateEntryId] = useState<string | null>(null);
-  const [condition, setCondition] = useState<ItemCondition>("Excellent");
   const colors = useColors();
   const router = useRouter();
   const haptics = useHaptics();
@@ -113,12 +109,15 @@ export default function TcgCreateScreen() {
     async (matches: RecognizedPokemonCard[]) => {
       const topMatch = matches[0];
       if (!topMatch) throw new Error("No matching Pokémon card found");
+      if (topMatch.score < MIN_REVIEW_SCORE) {
+        throw new Error("The card match was too uncertain. Try another photo.");
+      }
 
       const confirmed = isConfidentMatch(matches);
       cardScanDebug("queue.match-evaluated", {
         autoConfirmed: confirmed,
+        minimumReviewScore: MIN_REVIEW_SCORE,
         minimumScore: MIN_CONFIDENT_SCORE,
-        minimumGap: MIN_SCORE_GAP,
         candidates: matches.map((match) => ({
           score: match.score,
           card: summarizePokemonCard(match.card),
@@ -149,11 +148,11 @@ export default function TcgCreateScreen() {
         current.map((entry) =>
           entry.id === entryId
             ? {
-              ...entry,
-              card: match.card,
-              score: match.score,
-              confirmed: true,
-            }
+                ...entry,
+                card: match.card,
+                score: match.score,
+                confirmed: true,
+              }
             : entry,
         ),
       );
@@ -162,6 +161,18 @@ export default function TcgCreateScreen() {
     },
     [haptics],
   );
+
+  const handleDismissCandidate = useCallback(() => {
+    if (!candidateEntryId) return;
+
+    cardScanDebug("queue.candidate-rejected", { entryId: candidateEntryId });
+    setEntries((current) =>
+      current.filter(
+        (entry) => entry.id !== candidateEntryId || entry.confirmed,
+      ),
+    );
+    setCandidateEntryId(null);
+  }, [candidateEntryId]);
 
   const handleSave = useCallback(async () => {
     if (!showcaseId || entries.length === 0) return;
@@ -175,13 +186,12 @@ export default function TcgCreateScreen() {
       showcaseId,
       cardCount: cardIds.length,
       cardIds,
-      condition,
     });
     try {
-      await createBatch.mutateAsync({ showcaseId, cardIds, condition });
+      await createBatch.mutateAsync({ showcaseId, cardIds });
     } catch (error) {
       cardScanError("queue.save-failed", error);
-      throw error;
+      return;
     }
     cardScanDebug("queue.save-completed", {
       showcaseId,
@@ -192,7 +202,7 @@ export default function TcgCreateScreen() {
       pathname: "/(tabs)/showcase/[id]",
       params: { id: showcaseId },
     });
-  }, [condition, createBatch, entries, haptics, router, showcaseId]);
+  }, [createBatch, entries, haptics, router, showcaseId]);
 
   return (
     <View style={styles.container}>
@@ -230,8 +240,6 @@ export default function TcgCreateScreen() {
           showcase={selectedShowcase}
           isSaving={createBatch.isPending}
           error={createBatch.error?.message}
-          condition={condition}
-          onConditionChange={setCondition}
           onBack={() => setStep("scan")}
           onRemove={(id) =>
             setEntries((current) => current.filter((entry) => entry.id !== id))
@@ -244,7 +252,7 @@ export default function TcgCreateScreen() {
 
       <CandidateModal
         entry={candidateEntry}
-        onClose={() => setCandidateEntryId(null)}
+        onClose={handleDismissCandidate}
         onSelect={handleSelectCandidate}
         colors={colors}
       />
@@ -429,9 +437,16 @@ function ScannerStep({
   const frameLayoutRef = useRef<LayoutRectangle | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [isIdentifying, setIsIdentifying] = useState(false);
+  const [scanStatus, setScanStatus] = useState("Reading card text...");
   const [error, setError] = useState<string | null>(null);
   const [lastCard, setLastCard] = useState<PokemonTcgCard | null>(null);
   const [manualSearchOpen, setManualSearchOpen] = useState(false);
+  const [fromFailedScan, setFromFailedScan] = useState(false);
+  const [scanAttempt, setScanAttempt] = useState(1);
+  const [borderState, setBorderState] = useState<"idle" | "error" | "success">("idle");
+  const [torchOn, setTorchOn] = useState(false);
+  const [foilHint, setFoilHint] = useState(false);
+  const [promoHint, setPromoHint] = useState(false);
   const [lastIdentifiers, setLastIdentifiers] = useState<PokemonCardIdentifiers | null>(null);
   const progress = useSharedValue(0);
   const insets = useSafeAreaInsets();
@@ -463,16 +478,21 @@ function ScannerStep({
   }));
 
   const capture = async () => {
+    const attempt = scanAttempt;
     if (!cameraRef.current || !isReady || isIdentifying) return;
     setIsIdentifying(true);
+    setBorderState("idle");
     setError(null);
     setLastCard(null);
-    setLastIdentifiers(null);
+    if (attempt === 1) setLastIdentifiers(null);
+    setScanStatus("Capturing card...");
     progress.value = 0;
     progress.value = withTiming(0.88, { duration: 5000 });
 
     const attemptScan = async (attempt: number) => {
-      const picture = await cameraRef.current!.takePictureAsync({ quality: 1 });
+      const picture = await cameraRef.current!.takePictureAsync({
+        quality: foilHint ? 1 : 0.75,
+      });
       if (!picture?.uri) throw new Error("Camera did not return an image");
       cardScanDebug("camera.captured", {
         attempt,
@@ -481,12 +501,14 @@ function ScannerStep({
       });
       const scanFrame = getScanFrame();
       cardScanDebug("camera.scan-frame", { attempt, scanFrame: scanFrame ?? null });
+      setScanStatus("Reading card text...");
       return identifyPokemonCardImage(
         picture.uri,
         undefined,
         scanFrame,
         (identifiers) => {
           setLastIdentifiers(identifiers);
+          setScanStatus("Searching card database...");
           cardScanDebug("camera.partial-identifiers", {
             attempt,
             nameCandidates: identifiers.nameCandidates,
@@ -495,44 +517,46 @@ function ScannerStep({
             setCode: identifiers.setCode,
           });
         },
+        { foil: foilHint, promo: promoHint },
       );
     };
 
     try {
       await haptics.medium();
 
-      // First attempt
-      let matches = await attemptScan(1);
+      const matches = await attemptScan(attempt);
       if (matches.length > 0) {
         progress.value = withTiming(1, { duration: 180 });
+        setBorderState("success");
+        setScanAttempt(1);
         setLastCard(matches[0].card);
         await onRecognized(matches);
         return;
       }
 
-      // Silent retry — wait briefly for a slightly different exposure/angle
-      cardScanDebug("camera.silent-retry", { reason: "no matches on first attempt" });
-      await new Promise((resolve) => setTimeout(resolve, 400));
-      matches = await attemptScan(2);
-      if (matches.length > 0) {
-        progress.value = withTiming(1, { duration: 180 });
-        setLastCard(matches[0].card);
-        await onRecognized(matches);
-        return;
-      }
-
-      // Both attempts returned no matches — fall back to manual search
-      // Try to extract partial identifiers from the last OCR pass for pre-fill
-      cardScanDebug("camera.auto-fallback", { reason: "both scan attempts returned 0 matches" });
+      cardScanDebug("camera.scan-missed", { attempt });
       progress.value = withTiming(0, { duration: 180 });
-      setError("Could not identify the card automatically.");
-      setManualSearchOpen(true);
+      if (attempt === 1) {
+        setBorderState("error");
+        setScanAttempt(2);
+      } else {
+        setScanAttempt(1);
+        setFromFailedScan(true);
+        setManualSearchOpen(true);
+      }
       await haptics.error();
     } catch (caught) {
       cardScanError("camera.capture-or-scan-failed", caught);
       progress.value = withTiming(0, { duration: 180 });
-      setError(caught instanceof Error ? caught.message : "Unable to identify card");
-      setManualSearchOpen(true);
+      if (attempt === 1) {
+        setError(caught instanceof Error ? caught.message : "Unable to identify card");
+        setBorderState("error");
+        setScanAttempt(2);
+      } else {
+        setScanAttempt(1);
+        setFromFailedScan(true);
+        setManualSearchOpen(true);
+      }
       await haptics.error();
     } finally {
       setIsIdentifying(false);
@@ -568,6 +592,7 @@ function ScannerStep({
         ref={cameraRef}
         style={StyleSheet.absoluteFill}
         facing="back"
+        enableTorch={torchOn}
         onCameraReady={() => setIsReady(true)}
       />
       <View style={styles.cameraShade} pointerEvents="none" />
@@ -590,41 +615,76 @@ function ScannerStep({
 
       <View style={styles.scannerCenter} pointerEvents="box-none">
         <View
-          style={[styles.cardFrame, { width: frameWidth, height: frameHeight }]}
+          style={[
+            styles.cardFrame,
+            { width: frameWidth, height: frameHeight },
+            borderState === "error" && styles.cardFrameError,
+            borderState === "success" && styles.cardFrameSuccess,
+          ]}
           onLayout={(event) => {
             frameLayoutRef.current = event.nativeEvent.layout;
           }}
         >
-          <Animated.View style={[styles.progressTop, horizontalProgressStyle]} />
-          <Animated.View style={[styles.progressBottom, horizontalProgressStyle]} />
-          <Animated.View style={[styles.progressLeft, verticalProgressStyle]} />
-          <Animated.View style={[styles.progressRight, verticalProgressStyle]} />
+          <Animated.View style={[styles.progressTop, horizontalProgressStyle, borderState === "success" && styles.progressSuccess]} />
+          <Animated.View style={[styles.progressBottom, horizontalProgressStyle, borderState === "success" && styles.progressSuccess]} />
+          <Animated.View style={[styles.progressLeft, verticalProgressStyle, borderState === "success" && styles.progressSuccess]} />
+          <Animated.View style={[styles.progressRight, verticalProgressStyle, borderState === "success" && styles.progressSuccess]} />
           {isIdentifying && (
             <View style={styles.identifyingOverlay}>
               <ActivityIndicator color="#FFF" size="large" />
-              <Text style={styles.identifyingText}>Identifying card…</Text>
+              <Text style={styles.identifyingText}>{scanStatus}</Text>
             </View>
           )}
         </View>
         <Text style={styles.scannerHint}>
-          Fill the frame with one card and avoid foil glare.
+          {borderState === "error"
+            ? "Please try again — re-center the card and keep the name and number sharp."
+            : foilHint
+              ? "Tilt the foil card slightly until glare clears the name and number."
+              : "Fill the frame with one card and keep the name and number sharp."}
         </Text>
-        {error && (
-          <>
-            <Animated.View entering={FadeIn} style={styles.scanMessageError}>
-              <Ionicons name="alert-circle" size={18} color="#FFF" />
-              <Text style={styles.scanMessageText}>{error}</Text>
-            </Animated.View>
-            <TouchableOpacity
-              style={styles.manualFallbackButton}
-              onPress={() => setManualSearchOpen(true)}
-            >
-              <Ionicons name="search" size={17} color="#FFF" />
-              <Text style={styles.manualFallbackText}>Search by name and set</Text>
-            </TouchableOpacity>
-          </>
+        <View style={styles.scanHintChecks}>
+          <TouchableOpacity
+            style={[styles.scanHintCheck, torchOn && styles.scanHintCheckActive]}
+            onPress={() => setTorchOn((current) => !current)}
+            accessibilityRole="switch"
+            accessibilityState={{ checked: torchOn }}
+            accessibilityLabel={torchOn ? "Turn flashlight off" : "Turn flashlight on"}
+          >
+            <Ionicons name={torchOn ? "flashlight" : "flashlight-outline"} size={20} color={torchOn ? colors.primary : "#FFF"} />
+            <Text style={styles.scanHintCheckText}>Torch</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.scanHintCheck, foilHint && styles.scanHintCheckActive]}
+            onPress={() => {
+              setFoilHint((current) => {
+                if (!current) setTorchOn(false);
+                return !current;
+              });
+            }}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: foilHint }}
+          >
+            <Ionicons name={foilHint ? "checkbox" : "square-outline"} size={20} color={foilHint ? colors.primary : "#FFF"} />
+            <Text style={styles.scanHintCheckText}>Foil</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.scanHintCheck, promoHint && styles.scanHintCheckActive]}
+            onPress={() => setPromoHint((current) => !current)}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: promoHint }}
+          >
+            <Ionicons name={promoHint ? "checkbox" : "square-outline"} size={20} color={promoHint ? colors.primary : "#FFF"} />
+            <Text style={styles.scanHintCheckText}>Promo</Text>
+          </TouchableOpacity>
+        </View>
+        {borderState === "error" && error && (
+          <Animated.View entering={FadeIn} style={styles.scanMessageError}>
+            <Ionicons name="alert-circle" size={18} color="#FFF" />
+            <Text style={styles.scanMessageText}>{error}</Text>
+          </Animated.View>
         )}
-        {lastCard && !error && (
+        {lastCard && (
           <Animated.View entering={FadeIn} style={styles.scanMessageSuccess}>
             <Ionicons name="checkmark-circle" size={18} color="#FFF" />
             <Text style={styles.scanMessageText} numberOfLines={1}>
@@ -637,7 +697,7 @@ function ScannerStep({
       <View style={[styles.cameraControls, { paddingBottom: insets.bottom + 18 }]}>
         <TouchableOpacity
           style={styles.manualControlButton}
-          onPress={() => setManualSearchOpen(true)}
+          onPress={() => { setFromFailedScan(false); setManualSearchOpen(true); }}
           accessibilityLabel="Search for a card manually"
         >
           <Ionicons name="search" size={19} color="#FFF" />
@@ -645,7 +705,7 @@ function ScannerStep({
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.shutterOuter, (!isReady || isIdentifying) && styles.disabled]}
-          onPress={capture}
+          onPress={() => capture()}
           disabled={!isReady || isIdentifying}
           accessibilityLabel="Capture and identify Pokémon card"
         >
@@ -666,9 +726,10 @@ function ScannerStep({
         initialName={lastIdentifiers?.nameCandidates[0] ?? ""}
         initialNumber={lastIdentifiers?.number ?? ""}
         initialSetCode={lastIdentifiers?.setCode ?? ""}
-        fromFailedScan={!!error}
+        fromFailedScan={fromFailedScan}
         onClose={() => {
           setManualSearchOpen(false);
+          setFromFailedScan(false);
           setLastIdentifiers(null);
         }}
         onSelect={async (card) => {
@@ -676,6 +737,7 @@ function ScannerStep({
             card: summarizePokemonCard(card),
           });
           setManualSearchOpen(false);
+          setFromFailedScan(false);
           setLastIdentifiers(null);
           setError(null);
           setLastCard(card);
@@ -683,6 +745,7 @@ function ScannerStep({
         }}
         colors={colors}
       />
+
     </View>
   );
 }
@@ -862,9 +925,8 @@ function ManualCardSearchModal({
               )}
               <View style={styles.flex}>
                 <Text style={styles.reviewTitle}>{item.name}</Text>
-                <Text style={styles.reviewMeta}>
-                  {item.set.name} · {item.number}
-                </Text>
+                <Text style={styles.reviewMeta}>Set / collection: {item.set.name}</Text>
+                <Text style={styles.reviewMeta}>Number: #{item.number}</Text>
               </View>
               <Ionicons name="add-circle" size={25} color={colors.primary} />
             </TouchableOpacity>
@@ -905,8 +967,6 @@ function ReviewStep({
   showcase,
   isSaving,
   error,
-  condition,
-  onConditionChange,
   onBack,
   onRemove,
   onReviewCandidates,
@@ -917,8 +977,6 @@ function ReviewStep({
   showcase: ShowcaseRow;
   isSaving: boolean;
   error?: string;
-  condition: ItemCondition;
-  onConditionChange: (condition: ItemCondition) => void;
   onBack: () => void;
   onRemove: (id: string) => void;
   onReviewCandidates: (id: string) => void;
@@ -959,9 +1017,8 @@ function ReviewStep({
               )}
               <View style={styles.flex}>
                 <Text style={styles.reviewTitle} numberOfLines={1}>{item.card.name}</Text>
-                <Text style={styles.reviewMeta} numberOfLines={1}>
-                  {item.card.set.name} · #{item.card.number}
-                </Text>
+                <Text style={styles.reviewMeta} numberOfLines={1}>Set / collection: {item.card.set.name}</Text>
+                <Text style={styles.reviewMeta} numberOfLines={1}>Number: #{item.card.number}</Text>
                 {price != null ? (
                   <Text style={styles.priceText}>{formatPrice(price)} market</Text>
                 ) : (
@@ -993,34 +1050,6 @@ function ReviewStep({
           <Text style={styles.reviewWarning}>{needsReview} uncertain match{needsReview === 1 ? "" : "es"} need review.</Text>
         )}
         {error && <Text style={styles.errorText}>{error}</Text>}
-        <View style={styles.conditionRow}>
-          <Text style={styles.conditionLabel}>Condition</Text>
-          <ScrollView
-            horizontal
-            showsHorizontalScrollIndicator={false}
-            contentContainerStyle={styles.conditionChips}
-          >
-            {ITEM_CONDITIONS.map((c) => (
-              <TouchableOpacity
-                key={c}
-                style={[
-                  styles.conditionChip,
-                  c === condition && styles.conditionChipActive,
-                ]}
-                onPress={() => onConditionChange(c)}
-              >
-                <Text
-                  style={[
-                    styles.conditionChipText,
-                    c === condition && styles.conditionChipTextActive,
-                  ]}
-                >
-                  {c}
-                </Text>
-              </TouchableOpacity>
-            ))}
-          </ScrollView>
-        </View>
         <View style={styles.inlineActions}>
           <TouchableOpacity style={styles.secondaryButton} onPress={onBack} disabled={isSaving}>
             <Ionicons name="scan" size={18} color={colors.text} />
@@ -1075,7 +1104,8 @@ function CandidateModal({
                 <Image source={{ uri: item.card.images.small }} style={styles.candidateImage} contentFit="contain" />
                 <View style={styles.flex}>
                   <Text style={styles.reviewTitle}>{item.card.name}</Text>
-                  <Text style={styles.reviewMeta}>{item.card.set.name} · #{item.card.number}</Text>
+                  <Text style={styles.reviewMeta}>Set / collection: {item.card.set.name}</Text>
+                  <Text style={styles.reviewMeta}>Number: #{item.card.number}</Text>
                 </View>
                 <Ionicons name="chevron-forward" size={20} color={colors.grey} />
               </TouchableOpacity>
@@ -1160,13 +1190,20 @@ const getStyles = (colors: ThemeColors) =>
     queueCount: { color: "#FFF", fontSize: 14, fontWeight: "800", fontVariant: ["tabular-nums"] },
     scannerCenter: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24 },
     cardFrame: { borderRadius: 22, borderWidth: 2, borderColor: "rgba(255,255,255,0.45)", overflow: "hidden" },
+    cardFrameError: { borderColor: "#FF3B30", borderWidth: 3 },
+    cardFrameSuccess: { borderColor: "#22c55e", borderWidth: 3 },
     progressTop: { position: "absolute", top: -2, left: 0, height: 5, borderRadius: 3, backgroundColor: colors.primary },
     progressBottom: { position: "absolute", bottom: -2, right: 0, height: 5, borderRadius: 3, backgroundColor: colors.primary },
     progressLeft: { position: "absolute", bottom: 0, left: -2, width: 5, borderRadius: 3, backgroundColor: colors.primary },
     progressRight: { position: "absolute", top: 0, right: -2, width: 5, borderRadius: 3, backgroundColor: colors.primary },
+    progressSuccess: { backgroundColor: "#22c55e" },
     identifyingOverlay: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, backgroundColor: "rgba(0,0,0,0.48)" },
     identifyingText: { color: "#FFF", fontSize: 14, fontWeight: "700" },
     scannerHint: { color: "rgba(255,255,255,0.84)", fontSize: 13, textAlign: "center", marginTop: 18 },
+    scanHintChecks: { flexDirection: "row", gap: 10, marginTop: 12 },
+    scanHintCheck: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 14, borderWidth: 1, borderColor: "rgba(255,255,255,0.38)", backgroundColor: "rgba(0,0,0,0.52)" },
+    scanHintCheckActive: { borderColor: colors.primary, backgroundColor: "rgba(0,0,0,0.72)" },
+    scanHintCheckText: { color: "#FFF", fontSize: 13, fontWeight: "700" },
     scanMessageError: { maxWidth: 340, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 10, marginTop: 14, borderRadius: 14, backgroundColor: "rgba(190,30,55,0.88)" },
     scanMessageSuccess: { maxWidth: 340, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 10, marginTop: 14, borderRadius: 14, backgroundColor: "rgba(22,125,70,0.9)" },
     scanMessageText: { flex: 1, color: "#FFF", fontSize: 12, fontWeight: "600" },
@@ -1189,14 +1226,10 @@ const getStyles = (colors: ThemeColors) =>
     verifyText: { color: colors.tertiary, fontSize: 12, fontWeight: "700", marginTop: 8 },
     removeButton: { width: 40, height: 40, borderRadius: 20, alignItems: "center", justifyContent: "center", backgroundColor: colors.errorContainer },
     reviewWarning: { color: colors.tertiary, fontSize: 12, textAlign: "center" },
-    conditionRow: { gap: 8, marginBottom: 4 },
-    conditionLabel: { color: colors.onSurfaceVariant, fontSize: 12, fontWeight: "700", letterSpacing: 0.3 },
-    conditionChips: { gap: 8 },
-    conditionChip: { paddingHorizontal: 14, paddingVertical: 8, borderRadius: 12, borderWidth: 1, borderColor: colors.outlineVariant, backgroundColor: colors.surfaceContainer },
-    conditionChipActive: { borderColor: colors.primary, backgroundColor: `${colors.primary}22` },
-    conditionChipText: { color: colors.onSurfaceVariant, fontSize: 13, fontWeight: "600" },
-    conditionChipTextActive: { color: colors.primary, fontWeight: "800" },
     modalBackdrop: { flex: 1, justifyContent: "flex-end", padding: 12, backgroundColor: colors.overlay },
+    centeredModalBackdrop: { flex: 1, alignItems: "center", justifyContent: "center", padding: 24, backgroundColor: colors.overlay },
+    retryPromptCard: { width: "100%", maxWidth: 390, gap: 14, padding: 22, borderRadius: 24, backgroundColor: colors.surfaceContainerLow },
+    retryPromptButton: { flex: 0, width: "100%" },
     candidateSheet: { maxHeight: "78%", gap: 12, padding: 18, borderRadius: 26, backgroundColor: colors.surfaceContainerLow },
     modalHeader: { flexDirection: "row", alignItems: "flex-start", justifyContent: "space-between", gap: 16 },
     modalTitle: { color: colors.text, fontSize: 22, fontWeight: "800" },

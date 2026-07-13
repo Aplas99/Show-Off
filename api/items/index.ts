@@ -70,7 +70,7 @@ export interface ItemWithProduct {
   pokemon_tcg_card_id?: string | null;
   created_at: string;
   image_url: string;
-  condition: string;
+  condition: string | null;
   user_description: string | null;
   for_sale: boolean;
   price: number | null;
@@ -84,6 +84,23 @@ export interface ItemWithProduct {
 
 const BarcodeLookupAPIKey =
   process.env.EXPO_PUBLIC_BARCODE_LOOKUP_API_KEY || "";
+
+export function useUpdateItemCondition() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { itemId: number; condition: string | null }) => {
+      const { error } = await supabase
+        .from("items")
+        .update({ condition: input.condition })
+        .eq("id", input.itemId);
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["showcase"] });
+      queryClient.invalidateQueries({ queryKey: ["items", "my"] });
+    },
+  });
+}
 
 function getPokemonMarketPrice(card: PokemonTcgCard) {
   const prices = card.tcgplayer?.prices;

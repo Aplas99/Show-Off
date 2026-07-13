@@ -96,6 +96,8 @@ export interface SearchPokemonCardsInput {
   setCode?: string;
   page?: number;
   pageSize?: number;
+  /** Scanner fallback searches need the complete official result set. */
+  bypassCache?: boolean;
 }
 
 export interface PokemonTcgDependencies {
@@ -158,7 +160,7 @@ export function buildPokemonCardQuery(
   printedTotal?: number,
   setCode?: string,
 ) {
-  const nameQuery = buildPokemonNameQuery(query);
+  const nameQuery = query.trim() ? buildPokemonNameQuery(query) : null;
   const normalizedNumber = number
     ?.split(/[\/.]/, 1)[0]
     .replace(/[^a-z0-9]/gi, "")
@@ -315,7 +317,7 @@ export async function searchPokemonCardsCacheFirst(
   dependencies: PokemonTcgDependencies = defaultDependencies,
 ): Promise<PokemonCardSearchResult> {
   const query = input.query.replace(/\s+/g, " ").trim();
-  if (!query) {
+  if (!query && !input.number && !input.collection && !input.printedTotal && !input.setCode) {
     return { cards: [], page: 1, pageSize: 20, totalCount: 0, source: "cache" };
   }
 
@@ -331,11 +333,9 @@ export async function searchPokemonCardsCacheFirst(
   ]
     .filter(Boolean)
     .join(" ");
-  const cachedCards = await dependencies.findCachedCards(
-    cacheQuery,
-    pageSize,
-    offset,
-  );
+  const cachedCards = input.bypassCache
+    ? []
+    : await dependencies.findCachedCards(cacheQuery, pageSize, offset);
 
   const normalize = (value: string) =>
     value.toLowerCase().replace(/[^a-z0-9]/g, "");
@@ -348,7 +348,7 @@ export async function searchPokemonCardsCacheFirst(
     if (normalizedNumber) {
       const cardNumber = normalize(card.number).replace(/^0+(?=\d)/, "");
       if (cardNumber !== normalizedNumber) return false;
-      if (normalize(card.name) !== normalize(query)) return false;
+      if (query && normalize(card.name) !== normalize(query)) return false;
     }
     if (
       input.collection &&
@@ -440,7 +440,6 @@ export function useCreatePokemonCardBatch() {
     mutationFn: async (input: {
       showcaseId: string;
       cardIds: string[];
-      condition?: string;
     }) => {
       if (input.cardIds.length === 0) {
         throw new Error("Scan at least one card before saving");
@@ -449,10 +448,50 @@ export function useCreatePokemonCardBatch() {
       const { data, error } = await supabase.rpc("create_pokemon_tcg_batch", {
         p_showcase_id: input.showcaseId,
         p_card_ids: input.cardIds,
-        p_condition: input.condition ?? "Excellent",
       });
 
-      if (error) throw new Error(error.message);
+      if (error && error.code !== "PGRST202") throw new Error(error.message);
+      if (error) {
+        console.warn(
+          "[Pokémon TCG] Batch RPC is unavailable; using client fallback. Apply migration 20260704143000 for atomic saves.",
+        );
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) throw new Error("User not authenticated");
+
+        const { data: items, error: insertError } = await supabase
+          .from("items")
+          .insert(input.cardIds.map((cardId) => ({
+            user_id: user.id,
+            pokemon_tcg_card_id: cardId,
+            is_verified: true,
+            condition: null,
+            for_sale: false,
+          })))
+          .select("id, pokemon_tcg_card_id");
+        if (insertError) throw new Error(insertError.message);
+
+        const insertedItems = items ?? [];
+        const { error: linkError } = await supabase
+          .from("showcase_items")
+          .insert(insertedItems.map((item) => ({
+            showcase_id: input.showcaseId,
+            item_id: item.id,
+          })));
+        if (linkError) {
+          const insertedIds = insertedItems.map((item) => item.id);
+          if (insertedIds.length > 0) {
+            await supabase.from("items").delete().in("id", insertedIds);
+          }
+          throw new Error(linkError.message);
+        }
+
+        return insertedItems.map((item) => ({
+          item_id: item.id,
+          pokemon_tcg_card_id: item.pokemon_tcg_card_id,
+        }));
+      }
       return data ?? [];
     },
     onSuccess: (_data, input) => {

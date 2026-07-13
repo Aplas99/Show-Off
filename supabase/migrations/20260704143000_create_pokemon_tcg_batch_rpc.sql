@@ -60,3 +60,5 @@ REVOKE ALL ON FUNCTION public.create_pokemon_tcg_batch(UUID, TEXT[], TEXT)
   FROM PUBLIC;
 GRANT EXECUTE ON FUNCTION public.create_pokemon_tcg_batch(UUID, TEXT[], TEXT)
   TO authenticated;
+
+NOTIFY pgrst, 'reload schema';

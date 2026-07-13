@@ -91,6 +91,21 @@ describe("Pokémon TCG cache-first provider", () => {
     expect(dependencies.cacheCards).toHaveBeenCalledWith([card]);
   });
 
+  it("bypasses partial cache results for complete scanner fallbacks", async () => {
+    const dependencies = createDependencies({
+      findCachedCards: jest.fn().mockResolvedValue([card]),
+    });
+
+    const result = await searchPokemonCardsCacheFirst(
+      { query: "Gyarados", pageSize: 100, bypassCache: true },
+      dependencies,
+    );
+
+    expect(result.source).toBe("api");
+    expect(dependencies.findCachedCards).not.toHaveBeenCalled();
+    expect(dependencies.fetchCards).toHaveBeenCalledWith("Gyarados", 1, 100);
+  });
+
   it("treats a 404 card search as an empty API result", async () => {
     const dependencies = createDependencies({
       fetchCards: jest.fn().mockRejectedValue(
@@ -174,6 +189,12 @@ describe("Pokémon TCG cache-first provider", () => {
   it("combines a recognized name and collector number", () => {
     expect(buildPokemonCardQuery("Bulbasaur", "166/165")).toBe(
       'name:"Bulbasaur" number:"166"',
+    );
+  });
+
+  it("supports collection and number lookup when OCR misses the name", () => {
+    expect(buildPokemonCardQuery("", "111", "Stellar Crown")).toBe(
+      'number:"111" set.name:"Stellar Crown"',
     );
   });
 

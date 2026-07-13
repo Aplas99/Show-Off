@@ -1,7 +1,10 @@
 import type { PokemonTcgCard } from "./index";
 import {
+  buildOfficialNameFallbacks,
   calculatePokemonCardCrop,
+  countCardIdentifierMatches,
   identifyPokemonCardImage,
+  isExactCardIdentifierMatch,
   parsePokemonCardText,
   scoreCardMatch,
   type PokemonCardIdentifiers,
@@ -254,6 +257,77 @@ describe("Pokémon card image recognition", () => {
       expect(identifiers.nameCandidates).toHaveLength(1);
       expect(identifiers.nameCandidates[0]).toBe("Charizard");
     });
+
+    it("repairs a common VMAX foil OCR error", () => {
+      const identifiers = parsePokemonCardText({
+        text: "VMAX\nGyarados Vny\n029/203",
+      });
+
+      expect(identifiers.nameCandidates).toContain("Gyarados VMAX");
+      expect(identifiers.number).toBe("029");
+      expect(identifiers.printedTotal).toBe(203);
+      expect(identifiers.collectionCandidates).toContain("Evolving Skies");
+    });
+
+    it("filters out fuzzy metadata like BASIG (misread of BASIC)", () => {
+      const identifiers = parsePokemonCardText({
+        text: "BASIG\nOkidogi\nAbilityAdrena-Power\nweakness Ox2\nH TWMEN 111/167 k",
+      });
+
+      expect(identifiers.nameCandidates).not.toContain("BASIG");
+      expect(identifiers.nameCandidates).toContain("Okidogi");
+    });
+
+    it("filters out lines containing game-mechanic keywords", () => {
+      const identifiers = parsePokemonCardText({
+        text: "BASIG\nOkidogi\nAbilityAdrena-Power\nweakness Ox2\nH TWMEN 111/167 k",
+      });
+
+      expect(identifiers.nameCandidates).not.toContain("Adrena-Power");
+      expect(identifiers.nameCandidates).not.toEqual(
+        expect.arrayContaining([expect.stringMatching(/weakness/i)]),
+      );
+    });
+
+    it("strips language suffixes from set codes (TWMEN → TWM)", () => {
+      const identifiers = parsePokemonCardText({
+        text: "Okidogi\nH TWMEN 111/167 k",
+      });
+
+      expect(identifiers.setCode).toBe("TWM");
+    });
+
+    it("produces only the real name from a realistic Okidogi scan", () => {
+      const identifiers = parsePokemonCardText({
+        text: "BASIG\nOkidogi\nAbilityAdrena-Power\nNO 1014 Retainer Pokémnon HT 5'11 WI 2033 lbs\nweakness Ox2\nH TWMEN 111/167 k",
+      });
+
+      expect(identifiers.nameCandidates).toEqual(["Okidogi"]);
+      expect(identifiers.number).toBe("111");
+      expect(identifiers.printedTotal).toBe(167);
+      expect(identifiers.setCode).toBe("TWM");
+      expect(identifiers.collectionCandidates).toContain("Twilight Masquerade");
+    });
+
+    it("filters evolution, mechanic, and attack text from a foil VMAX scan", () => {
+      const identifiers = parsePokemonCardText({
+        text: "VHAX GyaradosAY\nEvolves from Gyarados V\nDynamax\nHyper Beam\nDiscard an Energy from your opponents Active Pokémon.\nweaknessx2\n9E 029/203",
+      });
+
+      // "Evolves from..." is evolution text, "Dynamax" is a mechanic keyword,
+      // "Discard..." is attack text — all should be filtered out.
+      expect(identifiers.nameCandidates).not.toEqual(
+        expect.arrayContaining([expect.stringMatching(/evolves/i)]),
+      );
+      expect(identifiers.nameCandidates).not.toContain("Dynamax");
+      expect(identifiers.nameCandidates).not.toEqual(
+        expect.arrayContaining([expect.stringMatching(/discard/i)]),
+      );
+      // The mangled name and "Hyper Beam" may still pass — the early-exit
+      // threshold handles those by returning matches quickly.
+      expect(identifiers.number).toBe("029");
+      expect(identifiers.printedTotal).toBe(203);
+    });
   });
 
   describe("scoreCardMatch", () => {
@@ -270,6 +344,26 @@ describe("Pokémon card image recognition", () => {
       expect(score).toBeGreaterThanOrEqual(0.9);
     });
 
+    it("requires all recognized official fields for an exact match", () => {
+      expect(isExactCardIdentifierMatch(ragingBolt, "Raging Bolt", baseIdentifiers)).toBe(true);
+      expect(isExactCardIdentifierMatch(ragingBolt, "Raging Bolt", {
+        ...baseIdentifiers,
+        number: "112",
+      })).toBe(false);
+    });
+
+    it("accepts a two-of-three identifier match", () => {
+      expect(countCardIdentifierMatches(ragingBolt, "Raging Bolt", {
+        ...baseIdentifiers,
+        number: "999",
+        collectionCandidates: ["Stellar Crown"],
+      })).toBe(2);
+    });
+
+    it("builds distinctive official-catalog fallbacks", () => {
+      expect(buildOfficialNameFallbacks("Raging Boit ex")).toEqual(["Raging", "Boit"]);
+    });
+
     it("gives partial score for name match with wrong number", () => {
       const identifiers = { ...baseIdentifiers, number: "999" };
       const score = scoreCardMatch(ragingBolt, "Raging Bolt", identifiers);
@@ -277,8 +371,16 @@ describe("Pokémon card image recognition", () => {
       expect(score).toBeLessThan(0.8);
     });
 
-    it("returns 0 for completely different names", () => {
+    it("keeps a two-of-three match when the recognized name is wrong", () => {
       const score = scoreCardMatch(ragingBolt, "Pikachu", baseIdentifiers);
+      expect(score).toBeCloseTo(2 / 3);
+    });
+
+    it("rejects a different name unless collection and number both match", () => {
+      const score = scoreCardMatch(ragingBolt, "Pikachu", {
+        ...baseIdentifiers,
+        number: "999",
+      });
       expect(score).toBe(0);
     });
 
