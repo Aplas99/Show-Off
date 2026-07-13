@@ -1,0 +1,175 @@
+import { supabase } from "@/lib/supabase";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import * as WebBrowser from "expo-web-browser";
+import { z } from "zod";
+
+// --- Types & schemas ---
+
+export const subscriptionRowSchema = z.object({
+  id: z.string().min(1),
+  user_id: z.string().min(1),
+  status: z.string().min(1),
+  price_id: z.string().nullable(),
+  cancel_at_period_end: z.boolean(),
+  current_period_end: z.string().nullable(),
+  created_at: z.string(),
+  updated_at: z.string(),
+});
+
+export type SubscriptionRow = z.infer<typeof subscriptionRowSchema>;
+
+export type MembershipPlanId = "monthly" | "annual";
+
+export interface MembershipPlan {
+  id: MembershipPlanId;
+  name: string;
+  /** Display-only. Real amounts live on the Stripe Price objects. */
+  priceLabel: string;
+  description: string;
+}
+
+// Placeholder copy — keep in sync with the Stripe Prices configured via
+// STRIPE_PRICE_ID_MONTHLY / STRIPE_PRICE_ID_ANNUAL on the Edge Function.
+export const MEMBERSHIP_PLANS: MembershipPlan[] = [
+  {
+    id: "monthly",
+    name: "Collector Monthly",
+    priceLabel: "$4.99 / month",
+    description: "Larger uploads, unlimited showcases, and priority scanning.",
+  },
+  {
+    id: "annual",
+    name: "Collector Annual",
+    priceLabel: "$39.99 / year",
+    description: "Everything in Monthly, two months free.",
+  },
+];
+
+/** Stripe statuses that count as a paid membership. */
+const ACTIVE_MEMBERSHIP_STATUSES = ["active", "trialing"] as const;
+
+export function isActiveMembershipStatus(status: string | null | undefined) {
+  return (
+    !!status &&
+    (ACTIVE_MEMBERSHIP_STATUSES as readonly string[]).includes(status)
+  );
+}
+
+export const membershipKeys = {
+  all: () => ["membership"] as const,
+  current: () => ["membership", "current"] as const,
+};
+
+// --- Helpers ---
+
+/**
+ * Non-hook membership check for use inside plain async code
+ * (e.g. upload size limits in api/storage). Fails closed to the free tier.
+ */
+export async function getHasActiveMembership(): Promise<boolean> {
+  try {
+    const { data, error } = await supabase
+      .from("subscriptions")
+      .select("id, status")
+      .in("status", [...ACTIVE_MEMBERSHIP_STATUSES])
+      .limit(1);
+
+    if (error) return false;
+    return (data?.length ?? 0) > 0;
+  } catch {
+    return false;
+  }
+}
+
+async function fetchCurrentSubscription(): Promise<SubscriptionRow | null> {
+  const {
+    data: { user },
+  } = await supabase.auth.getUser();
+  if (!user) return null;
+
+  const { data, error } = await supabase
+    .from("subscriptions")
+    .select(
+      "id, user_id, status, price_id, cancel_at_period_end, current_period_end, created_at, updated_at",
+    )
+    .eq("user_id", user.id)
+    .order("updated_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (error) throw new Error(error.message);
+  if (!data) return null;
+
+  const parsed = subscriptionRowSchema.safeParse(data);
+  return parsed.success ? parsed.data : null;
+}
+
+async function invokeStripeSession(body: {
+  action: "checkout" | "portal";
+  plan?: MembershipPlanId;
+}): Promise<string> {
+  const { data, error } = await supabase.functions.invoke("stripe-checkout", {
+    body,
+  });
+
+  if (error) throw new Error(error.message);
+  const url = (data as { url?: string } | null)?.url;
+  if (!url) throw new Error("Stripe did not return a session URL.");
+  return url;
+}
+
+// --- Hooks ---
+
+/**
+ * Current user's membership state. `isPaidUser` is the flag feature gates
+ * should consume.
+ */
+export function useMembership() {
+  return useQuery({
+    queryKey: membershipKeys.current(),
+    queryFn: async () => {
+      const subscription = await fetchCurrentSubscription();
+      return {
+        subscription,
+        isPaidUser: isActiveMembershipStatus(subscription?.status),
+      };
+    },
+    staleTime: 60 * 1000,
+  });
+}
+
+/**
+ * Starts a Stripe Checkout session for the given plan and opens it in an
+ * auth browser session. Resolves when the browser is dismissed.
+ */
+export function useStartCheckout() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (plan: MembershipPlanId) => {
+      const url = await invokeStripeSession({ action: "checkout", plan });
+      return WebBrowser.openAuthSessionAsync(url, "showoff://membership");
+    },
+    onSettled: () => {
+      // The webhook updates the subscription row; refetch on return.
+      qc.invalidateQueries({ queryKey: membershipKeys.all() });
+    },
+  });
+}
+
+/**
+ * Opens the Stripe Billing Portal (update payment method, cancel, invoices).
+ */
+export function useOpenBillingPortal() {
+  const qc = useQueryClient();
+
+  return useMutation({
+    mutationFn: async () => {
+      const url = await invokeStripeSession({ action: "portal" });
+      return WebBrowser.openAuthSessionAsync(url, "showoff://membership");
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: membershipKeys.all() });
+    },
+  });
+}

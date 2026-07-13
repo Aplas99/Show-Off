@@ -385,6 +385,16 @@ deno_version = 2
 # [edge_runtime.secrets]
 # secret_key = "env(SECRET_VALUE)"
 
+[functions.stripe-checkout]
+enabled = true
+verify_jwt = true
+
+[functions.stripe-webhook]
+enabled = true
+# Stripe calls this endpoint directly; authenticity is enforced via the
+# webhook signature (STRIPE_WEBHOOK_SECRET), not a Supabase JWT.
+verify_jwt = false
+
 [analytics]
 enabled = true
 port = 54327

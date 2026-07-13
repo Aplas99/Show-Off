@@ -33,6 +33,9 @@ npx jest --watch                                    # watch mode
 | `EXPO_PUBLIC_POKE_KEY` | Pokémon TCG API key (bundled; move to Edge Function before production) |
 | `EXPO_PUBLIC_BARCODE_LOOKUP_API_KEY` | Barcode Lookup product search API |
 | `EXPO_PUBLIC_CARD_SCAN_DEBUG` | Set to `false` to silence `[CardScan]` OCR logs |
+| `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Stripe publishable key (reserved for future native SDK use) |
+
+Stripe server secrets (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_MONTHLY`, `STRIPE_PRICE_ID_ANNUAL`) live in Supabase Edge Function secrets, not app env — see `docs/stripe-memberships.md`.
 
 ## Architecture
 
@@ -50,7 +53,8 @@ api/              All Supabase + external API calls, exported as TanStack Query 
   showcase/       Showcase CRUD
   social/         Feed, interactions (likes, bookmarks, comments)
   auth/           Auth hooks
-  storage/        Image upload to Supabase Storage
+  memberships/    Stripe membership state + checkout/portal hooks
+  storage/        Image upload to Supabase Storage (upload limit gated on membership)
 lib/              Supabase client, Zod validation schemas
 constants/        theme.ts (colors), layoutConfig.ts, itemCondition.ts, pokemonTcgSets.ts
 hooks/            useAuthStore (Zustand), useThemeStore, useAnimations, useHaptics
@@ -98,7 +102,12 @@ ML Kit (`@infinitered/react-native-mlkit-text-recognition`) is a native module �
 - `products` — shared product catalog (barcode path); `ean` is the PK
 - `pokemon_tcg_cards` — TCG card cache; `id` is the TCG provider ID (e.g. `xy1-1`)
 - `showcase_items` — join table linking items to showcases
+- `billing_customers` / `subscriptions` — Stripe membership state, written only by the `stripe-webhook` Edge Function (see `docs/stripe-memberships.md`)
 - Migrations in `supabase/migrations/` must be applied in timestamp order
+
+### Memberships (Stripe)
+
+Checkout runs in the browser via the `stripe-checkout` Edge Function; subscription state syncs back through `stripe-webhook` into `public.subscriptions`. Client hooks live in `api/memberships` (`useMembership`, `useStartCheckout`, `useOpenBillingPortal`); gate features with `isPaidUser`, `getHasActiveMembership()` (plain async), or the `has_active_membership()` SQL helper. Full setup in `docs/stripe-memberships.md`.
 
 ### Routing
 

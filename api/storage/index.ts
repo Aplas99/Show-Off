@@ -1,3 +1,4 @@
+import { getHasActiveMembership } from "@/api/memberships";
 import { supabase } from "@/lib/supabase";
 import { useMutation } from "@tanstack/react-query";
 import { Alert } from "react-native";
@@ -19,9 +20,8 @@ export async function uploadImageToSupabase({
     fileSize,
     bucketName = "item-images",
 }: UploadImageParams): Promise<string> {
-    // Determine max size based on user type (Scaffolding)
-    // TODO: Connect to actual user subscription logic
-    const isPaidUser = false;
+    // Paid members get the larger upload limit (see api/memberships).
+    const isPaidUser = await getHasActiveMembership();
     const MAX_FILE_SIZE_BYTES = isPaidUser ? PAID_USER_MAX_FILE_SIZE_BYTES : FREE_USER_MAX_FILE_SIZE_BYTES;
 
     // 1. Validate file size
