@@ -4,6 +4,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Link, useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Image,
   SafeAreaView,
@@ -28,9 +29,19 @@ export default function SignUp() {
       // Validate inputs using Zod
       signUpSchema.parse({ email, password, username });
 
-      await signUp({ email, password, username });
-      // Navigation is handled by the hook or we can do it here if useSignUp doesn't invalidate/redirect
-      router.push("/");
+      const { session } = await signUp({ email, password, username });
+
+      if (!session) {
+        // Email confirmation is enabled — no session until the user verifies.
+        Alert.alert(
+          "Confirm your email",
+          `We sent a confirmation link to ${email}. Please verify your email, then sign in.`,
+          [{ text: "OK", onPress: () => router.replace("/(auth)/signin") }],
+        );
+        return;
+      }
+
+      router.replace("/");
     } catch (error: any) {
       if (error instanceof z.ZodError) {
         Alert.alert("Invalid Input", error.issues[0]?.message || "Validation failed");
@@ -40,10 +51,6 @@ export default function SignUp() {
     }
   };
 
-  const handleGoogleSignIn = async () => {
-    // TODO: Implement Google sign-in logic
-    router.push("/");
-  };
   return (
     <View style={styles.container}>
       {/* Background Gradient */}
@@ -71,28 +78,8 @@ export default function SignUp() {
                 resizeMode="contain"
               />
             </View>
-            <Text style={styles.title}>AuctionAlley</Text>
+            <Text style={styles.title}>Show Off</Text>
             <Text style={styles.subtitle}>Collect Em All</Text>
-          </View>
-          {/* Auth Provider Buttons */}
-          <View style={styles.providerIconsRow}>
-            <TouchableOpacity
-              style={styles.providerButton}
-              onPress={handleGoogleSignIn}
-            >
-              <Image
-                source={require("@/assets/images/google-icon.png")}
-                style={styles.providerIcon}
-                resizeMode="contain"
-              />
-            </TouchableOpacity>
-            {/* Add more provider buttons here if needed */}
-          </View>
-          {/* Separator with OR */}
-          <View style={styles.separatorContainer}>
-            <View style={styles.separator} />
-            <Text style={styles.orText}>OR</Text>
-            <View style={styles.separator} />
           </View>
           {/* Form Inputs */}
           <View style={styles.formContainer}>
@@ -103,6 +90,9 @@ export default function SignUp() {
               value={username}
               onChangeText={setUsername}
               autoCapitalize="none"
+              autoComplete="username-new"
+              accessibilityLabel="Username"
+              editable={!isPending}
             />
             <TextInput
               style={styles.input}
@@ -111,7 +101,10 @@ export default function SignUp() {
               value={email}
               onChangeText={setEmail}
               autoCapitalize="none"
+              autoComplete="email"
               keyboardType="email-address"
+              accessibilityLabel="Email"
+              editable={!isPending}
             />
             <TextInput
               style={styles.input}
@@ -120,9 +113,22 @@ export default function SignUp() {
               value={password}
               onChangeText={setPassword}
               secureTextEntry
+              autoComplete="password-new"
+              accessibilityLabel="Password"
+              editable={!isPending}
             />
-            <TouchableOpacity style={styles.signUpButton} onPress={handleSignUp}>
-              <Text style={styles.signUpButtonText}>Sign Up</Text>
+            <TouchableOpacity
+              style={[styles.signUpButton, isPending && styles.buttonDisabled]}
+              onPress={handleSignUp}
+              disabled={isPending}
+              accessibilityRole="button"
+              accessibilityLabel="Sign Up"
+            >
+              {isPending ? (
+                <ActivityIndicator color="#FFF" />
+              ) : (
+                <Text style={styles.signUpButtonText}>Sign Up</Text>
+              )}
             </TouchableOpacity>
             {/* Already have an account? */}
             <Link href="/signin" asChild>
@@ -261,6 +267,9 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontWeight: "600",
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
   haveAccountButton: {
     alignItems: "center",

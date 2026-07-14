@@ -1,7 +1,7 @@
+import { useSignOut } from "@/api/auth";
 import { useGetCurrentUserProfile } from "@/api/profile/index";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { useThemeStore } from "@/hooks/useThemeStore";
-import { supabase } from "@/lib/supabase";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
@@ -20,6 +20,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function ProfileScreen() {
   const { data, isLoading, error } = useGetCurrentUserProfile();
+  const { mutateAsync: signOut } = useSignOut();
   const insets = useSafeAreaInsets();
   const colors = useColors();
   const isDark = useThemeStore((s) => s.isDark);
@@ -55,7 +56,14 @@ export default function ProfileScreen() {
         text: "Sign Out",
         style: "destructive",
         onPress: async () => {
-          await supabase.auth.signOut();
+          try {
+            // Clears the TanStack Query cache so the next user
+            // doesn't see this user's data.
+            await signOut();
+          } catch {
+            // Even if the network call fails, fall through to the
+            // auth screen; the local session is cleared regardless.
+          }
           router.replace("/(auth)/signin");
         },
       },

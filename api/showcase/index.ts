@@ -47,6 +47,39 @@ export function useGetVisibleShowcases() {
   });
 }
 
+export function useCreateShowcase() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: { name: string; isPublic?: boolean }) => {
+      const name = input.name.replace(/\s+/g, " ").trim();
+      if (!name) throw new Error("Showcase name is required");
+
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error("User not authenticated");
+
+      const { data, error } = await supabase
+        .from("showcase")
+        .insert({
+          profile_id: user.id,
+          name,
+          is_default: false,
+          is_public: input.isPublic ?? false,
+        })
+        .select("id, profile_id, is_default, created_at, name, is_public")
+        .single();
+
+      if (error) throw new Error(error.message);
+      return data as ShowcaseRow;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.showcase.visible() });
+    },
+  });
+}
+
 /**
  * Link an item to one or more showcases.
  */

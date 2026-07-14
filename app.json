@@ -13,7 +13,7 @@
       "bundleIdentifier": "com.zed99.showoff"
     },
     "android": {
-      "softwareKeyboardLayoutMode": "adjustResize",
+      "softwareKeyboardLayoutMode": "resize",
       "adaptiveIcon": {
         "backgroundColor": "#E6F4FE",
         "foregroundImage": "assets/images/android-icon-foreground.png",
@@ -46,8 +46,14 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Show Off to access your camera to scan barcodes.",
+          "cameraPermission": "Allow Show Off to access your camera to scan cards and barcodes.",
           "barcodeScannerEnabled": true
+        }
+      ],
+      [
+        "expo-image-picker",
+        {
+          "photosPermission": "Allow Show Off to access your photos so you can add images of your collectibles."
         }
       ],
       "expo-font",

@@ -1,9 +1,12 @@
+import { useDeleteAccount } from "@/api/auth";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { useThemeStore, type ThemeMode } from "@/hooks/useThemeStore";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useEffect } from "react";
 import {
+    ActivityIndicator,
+    Alert,
     Pressable,
     StyleSheet,
     Text,
@@ -31,6 +34,44 @@ export default function SettingsScreen() {
     const router = useRouter();
     const { mode, setMode, isDark } = useThemeStore();
     const styles = getStyles(colors);
+    const deleteAccount = useDeleteAccount();
+
+    const handleDeleteAccount = () => {
+        Alert.alert(
+            "Delete Account",
+            "This permanently deletes your account, items, showcases, and images. This cannot be undone.",
+            [
+                { text: "Cancel", style: "cancel" },
+                {
+                    text: "Delete Forever",
+                    style: "destructive",
+                    onPress: () =>
+                        Alert.alert(
+                            "Are you absolutely sure?",
+                            "There is no way to recover your account after this.",
+                            [
+                                { text: "Keep My Account", style: "cancel" },
+                                {
+                                    text: "Delete",
+                                    style: "destructive",
+                                    onPress: async () => {
+                                        try {
+                                            await deleteAccount.mutateAsync();
+                                            router.replace("/(auth)/signin");
+                                        } catch (error: any) {
+                                            Alert.alert(
+                                                "Could not delete account",
+                                                error?.message ?? "Please try again later.",
+                                            );
+                                        }
+                                    },
+                                },
+                            ],
+                        ),
+                },
+            ],
+        );
+    };
 
     return (
         <View style={[styles.container, { paddingTop: insets.top }]}>
@@ -89,6 +130,24 @@ export default function SettingsScreen() {
                 </Animated.View>
             </Animated.View>
 
+            {/* Membership */}
+            <Animated.View entering={FadeInDown.delay(250).springify()}>
+                <View style={styles.sectionHeader}>
+                    <Ionicons name="diamond-outline" size={20} color={colors.primary} />
+                    <Text style={styles.sectionTitle}>Membership</Text>
+                </View>
+                <View style={styles.themeCard}>
+                    <TouchableOpacity
+                        style={[styles.infoRow, { borderBottomWidth: 0 }]}
+                        onPress={() => router.push("/(tabs)/profile/membership" as any)}
+                        activeOpacity={0.7}
+                    >
+                        <Text style={styles.infoLabel}>Manage Membership</Text>
+                        <Ionicons name="chevron-forward" size={18} color={colors.grey} />
+                    </TouchableOpacity>
+                </View>
+            </Animated.View>
+
             {/* App Info */}
             <Animated.View entering={FadeInDown.delay(300).springify()} style={styles.footerSection}>
                 <View style={styles.sectionHeader}>
@@ -105,6 +164,32 @@ export default function SettingsScreen() {
                         <Text style={styles.infoLabel}>Theme Mode</Text>
                         <Text style={styles.infoValue}>{mode.charAt(0).toUpperCase() + mode.slice(1)}{mode === "system" ? (isDark ? " (Dark)" : " (Light)") : ""}</Text>
                     </View>
+                </View>
+            </Animated.View>
+
+            {/* Danger Zone */}
+            <Animated.View entering={FadeInDown.delay(350).springify()}>
+                <View style={styles.sectionHeader}>
+                    <Ionicons name="warning-outline" size={20} color={colors.danger} />
+                    <Text style={styles.sectionTitle}>Danger Zone</Text>
+                </View>
+                <View style={styles.themeCard}>
+                    <TouchableOpacity
+                        style={[styles.infoRow, { borderBottomWidth: 0 }]}
+                        onPress={handleDeleteAccount}
+                        disabled={deleteAccount.isPending}
+                        accessibilityRole="button"
+                        accessibilityLabel="Delete account"
+                    >
+                        <Text style={[styles.infoLabel, { color: colors.danger }]}>
+                            Delete Account
+                        </Text>
+                        {deleteAccount.isPending ? (
+                            <ActivityIndicator size="small" color={colors.danger} />
+                        ) : (
+                            <Ionicons name="chevron-forward" size={18} color={colors.danger} />
+                        )}
+                    </TouchableOpacity>
                 </View>
             </Animated.View>
         </View>

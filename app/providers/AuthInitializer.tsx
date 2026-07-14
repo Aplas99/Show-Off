@@ -27,12 +27,12 @@ export default function AuthInitializer({ children }: { children: React.ReactNod
     if (loading || !navigationState?.key) return;
 
     const inAuthGroup = segments[0] === "(auth)";
+    // Recovery links sign the user in but must stay on the reset screen.
+    const isResettingPassword = (segments as string[])[1] === "reset-password";
 
-    if (session && inAuthGroup) {
-      console.log("AuthInitializer check:", { inAuthGroup, segments, session });
+    if (session && inAuthGroup && !isResettingPassword) {
       router.replace("/(tabs)/discover");
     } else if (!session && !inAuthGroup) {
-      console.log("AuthInitializer check:", { inAuthGroup, segments, session });
       router.replace("/(auth)/signin");
     }
   }, [session, loading, navigationState]);

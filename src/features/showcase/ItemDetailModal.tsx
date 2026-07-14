@@ -1,9 +1,11 @@
-import { ItemWithProduct } from "@/api/items";
+import { ItemWithProduct, useDeleteItem, useUpdateItemCondition } from "@/api/items";
+import { ITEM_CONDITIONS } from "@/constants/itemCondition";
 import { COLORS } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
+  Alert,
   Animated,
   Dimensions,
   Modal,
@@ -25,6 +27,36 @@ type Props = {
 const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get("window");
 
 export default function ItemDetailModal({ visible, item, onClose }: Props) {
+  const updateCondition = useUpdateItemCondition();
+  const deleteItem = useDeleteItem();
+
+  const handleDelete = () => {
+    if (!item) return;
+    Alert.alert(
+      "Delete Item",
+      "This removes the item from all showcases and cannot be undone.",
+      [
+        { text: "Cancel", style: "cancel" },
+        {
+          text: "Delete",
+          style: "destructive",
+          onPress: async () => {
+            try {
+              await deleteItem.mutateAsync(item.id);
+              onClose();
+            } catch (error: any) {
+              Alert.alert(
+                "Could not delete item",
+                error?.message ?? "Please try again.",
+              );
+            }
+          },
+        },
+      ],
+    );
+  };
+  const [conditionPickerOpen, setConditionPickerOpen] = useState(false);
+  const [condition, setCondition] = useState<string | null>(item?.condition ?? null);
   const slideAnim = useRef(new Animated.Value(SCREEN_HEIGHT)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const headerOpacity = useRef(new Animated.Value(0)).current;
@@ -86,6 +118,10 @@ export default function ItemDetailModal({ visible, item, onClose }: Props) {
       ]).start();
     }
   }, [visible, slideAnim, fadeAnim]);
+
+  useEffect(() => {
+    setCondition(item?.condition ?? null);
+  }, [item?.condition, item?.id]);
 
   if (!item && !visible) return null;
   const displayItem = item;
@@ -211,6 +247,15 @@ export default function ItemDetailModal({ visible, item, onClose }: Props) {
                     <TouchableOpacity style={styles.shareButton}>
                       <Ionicons name="share-outline" size={18} color="#FFF" />
                     </TouchableOpacity>
+                    <TouchableOpacity
+                      style={styles.deleteButton}
+                      onPress={handleDelete}
+                      disabled={deleteItem.isPending}
+                      accessibilityRole="button"
+                      accessibilityLabel="Delete item"
+                    >
+                      <Ionicons name="trash-outline" size={18} color="#FFF" />
+                    </TouchableOpacity>
                   </View>
                 </View>
 
@@ -244,6 +289,12 @@ export default function ItemDetailModal({ visible, item, onClose }: Props) {
                       </View>
                     )}
                   </View>
+                  {displayItem?.pokemon_tcg_card_id && price != null && (
+                    <Text style={styles.priceDisclaimer}>
+                      Market price estimate — may not be 100% accurate and
+                      varies with grading, style, and condition.
+                    </Text>
+                  )}
                 </Animated.View>
 
                 {/* 2. Bento Grid */}
@@ -259,8 +310,9 @@ export default function ItemDetailModal({ visible, item, onClose }: Props) {
                   <View style={styles.bentoRow}>
                     <BentoItem
                       label="Condition"
-                      value={displayItem?.condition || "N/A"}
+                      value={condition || "Add condition"}
                       flex={1}
+                      onPress={() => setConditionPickerOpen(true)}
                     />
                     <BentoItem
                       label="Category"
@@ -327,6 +379,28 @@ export default function ItemDetailModal({ visible, item, onClose }: Props) {
           </Animated.View>
         </View>
       </GestureHandlerRootView>
+      <Modal visible={conditionPickerOpen} transparent animationType="fade" onRequestClose={() => setConditionPickerOpen(false)}>
+        <Pressable style={styles.conditionOverlay} onPress={() => setConditionPickerOpen(false)}>
+          <View style={styles.conditionPicker}>
+            <Text style={styles.conditionPickerTitle}>Card condition</Text>
+            {ITEM_CONDITIONS.map((option) => (
+              <TouchableOpacity
+                key={option}
+                style={styles.conditionOption}
+                onPress={async () => {
+                  if (!displayItem) return;
+                  await updateCondition.mutateAsync({ itemId: displayItem.id, condition: option });
+                  setCondition(option);
+                  setConditionPickerOpen(false);
+                }}
+              >
+                <Text style={styles.conditionOptionText}>{option}</Text>
+                {condition === option && <Ionicons name="checkmark" size={20} color={COLORS.primary} />}
+              </TouchableOpacity>
+            ))}
+          </View>
+        </Pressable>
+      </Modal>
     </Modal>
   );
 }
@@ -339,6 +413,7 @@ const BentoItem = ({
   trailing,
   flex,
   fullWidth,
+  onPress,
 }: {
   label: string;
   value: string;
@@ -346,13 +421,16 @@ const BentoItem = ({
   trailing?: React.ReactNode;
   flex?: number;
   fullWidth?: boolean;
+  onPress?: () => void;
 }) => (
-  <View
+  <TouchableOpacity
     style={[
       bentoStyles.container,
       flex ? { flex } : {},
       fullWidth ? { flexDirection: "row", alignItems: "center", justifyContent: "space-between" } : {},
     ]}
+    onPress={onPress}
+    disabled={!onPress}
   >
     {icon && (
       <Ionicons
@@ -367,7 +445,7 @@ const BentoItem = ({
       <Text style={bentoStyles.value}>{value}</Text>
     </View>
     {trailing}
-  </View>
+  </TouchableOpacity>
 );
 
 const bentoStyles = StyleSheet.create({
@@ -403,6 +481,36 @@ const styles = StyleSheet.create({
   },
   backdropPressable: {
     flex: 1,
+  },
+  conditionOverlay: {
+    flex: 1,
+    justifyContent: "center",
+    padding: 24,
+    backgroundColor: "rgba(0,0,0,0.72)",
+  },
+  conditionPicker: {
+    padding: 20,
+    borderRadius: 20,
+    backgroundColor: COLORS.surfaceContainerHigh,
+  },
+  conditionPickerTitle: {
+    color: COLORS.text,
+    fontSize: 20,
+    fontWeight: "800",
+    marginBottom: 12,
+  },
+  conditionOption: {
+    minHeight: 48,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    borderBottomWidth: 1,
+    borderBottomColor: COLORS.outlineVariant,
+  },
+  conditionOptionText: {
+    color: COLORS.text,
+    fontSize: 15,
+    fontWeight: "600",
   },
   modalContainer: {
     height: "95%",
@@ -470,6 +578,16 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: "700",
   },
+  deleteButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: `${COLORS.danger}CC`,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
   shareButton: {
     width: 40,
     height: 40,
@@ -518,6 +636,14 @@ const styles = StyleSheet.create({
     color: COLORS.outline,
     fontSize: 20,
     fontWeight: "600",
+  },
+  // Pulls up into priceRow's bottom margin so it hugs the price it qualifies.
+  priceDisclaimer: {
+    color: COLORS.onSurfaceVariant,
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: -24,
+    marginBottom: 32,
   },
   saleBadge: {
     backgroundColor: COLORS.primary,

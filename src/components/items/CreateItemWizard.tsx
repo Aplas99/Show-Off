@@ -99,7 +99,11 @@ export default function CreateItemWizard({
             setItemData((prev) => ({
                 ...prev,
                 productData: initialProductData,
-                barcode: initialProductData.ean || initialProductData.upc || prev.barcode,
+                barcode:
+                    initialProductData.ean ||
+                    initialProductData.upc ||
+                    initialProductData.pokemonTcgId ||
+                    prev.barcode,
             }));
             setCurrentStep(2);
         }

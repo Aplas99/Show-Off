@@ -4,6 +4,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Link, useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
+  ActivityIndicator,
   Alert,
   Image,
   StyleSheet,
@@ -72,40 +73,8 @@ export default function SignIn() {
                 resizeMode="contain"
               />
             </View>
-            <Text style={styles.title}>AuctionAlley</Text>
+            <Text style={styles.title}>Show Off</Text>
             <Text style={styles.subtitle}>Welcome Back</Text>
-          </View>
-          {/* Service Provider Icons Row */}
-          <View style={styles.providerIconsRow}>
-            <TouchableOpacity style={styles.providerButton}>
-              <Image
-                source={require("@/assets/images/google-icon.png")}
-                style={styles.providerIcon}
-                resizeMode="contain"
-              />
-            </TouchableOpacity>
-            {/* Example for future providers:
-          <TouchableOpacity style={styles.providerButton}>
-            <Image
-              source={require("@/assets/images/apple-icon.png")}
-              style={styles.providerIcon}
-              resizeMode="contain"
-            />
-          </TouchableOpacity>
-          <TouchableOpacity style={styles.providerButton}>
-            <Image
-              source={require("@/assets/images/facebook-icon.png")}
-              style={styles.providerIcon}
-              resizeMode="contain"
-            />
-          </TouchableOpacity>
-          */}
-          </View>
-          {/* Separator with OR */}
-          <View style={styles.separatorContainer}>
-            <View style={styles.separator} />
-            <Text style={styles.orText}>OR</Text>
-            <View style={styles.separator} />
           </View>
           {/* Form Inputs */}
           <View style={styles.formContainer}>
@@ -116,7 +85,10 @@ export default function SignIn() {
               value={email}
               onChangeText={setEmail}
               autoCapitalize="none"
+              autoComplete="email"
               keyboardType="email-address"
+              accessibilityLabel="Email"
+              editable={!loading}
             />
             <TextInput
               style={styles.input}
@@ -125,15 +97,28 @@ export default function SignIn() {
               value={password}
               onChangeText={setPassword}
               secureTextEntry
+              autoComplete="password"
+              accessibilityLabel="Password"
+              editable={!loading}
             />
-            <TouchableOpacity style={styles.signInButton} onPress={handleSignIn}>
-              <Text style={styles.signInButtonText}>Sign In</Text>
+            <TouchableOpacity
+              style={[styles.signInButton, loading && styles.buttonDisabled]}
+              onPress={handleSignIn}
+              disabled={loading}
+              accessibilityRole="button"
+              accessibilityLabel="Sign In"
+            >
+              {loading ? (
+                <ActivityIndicator color="#FFF" />
+              ) : (
+                <Text style={styles.signInButtonText}>Sign In</Text>
+              )}
             </TouchableOpacity>
 
             <Link href="/signup" asChild>
               <TouchableOpacity style={styles.dontHaveAccountButton}>
                 <Text style={styles.dontHaveAccountText}>
-                  Don't have an account?
+                  Don&apos;t have an account?
                   <Text style={styles.signupLink}> Sign Up </Text>
                 </Text>
               </TouchableOpacity>
@@ -144,7 +129,9 @@ export default function SignIn() {
 
             <TouchableOpacity
               style={styles.forgotPasswordButton}
-              onPress={() => { }}
+              onPress={() => router.push("/(auth)/forgot-password" as any)}
+              accessibilityRole="button"
+              accessibilityLabel="Forgot password"
             >
               <Text style={styles.forgotPasswordButtonText}>
                 Forgot Password?
@@ -238,6 +225,9 @@ const styles = StyleSheet.create({
     color: "#fff",
     fontSize: 16,
     fontWeight: "600",
+  },
+  buttonDisabled: {
+    opacity: 0.6,
   },
   dontHaveAccountButton: {
     alignItems: "center",

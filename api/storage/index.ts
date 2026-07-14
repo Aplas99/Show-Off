@@ -1,5 +1,7 @@
+import { getHasActiveMembership } from "@/api/memberships";
 import { supabase } from "@/lib/supabase";
 import { useMutation } from "@tanstack/react-query";
+import * as FileSystem from "expo-file-system/legacy";
 import { Alert } from "react-native";
 
 const FREE_USER_MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
@@ -19,12 +21,21 @@ export async function uploadImageToSupabase({
     fileSize,
     bucketName = "item-images",
 }: UploadImageParams): Promise<string> {
-    // Determine max size based on user type (Scaffolding)
-    // TODO: Connect to actual user subscription logic
-    const isPaidUser = false;
+    // Paid members get the larger upload limit (see api/memberships).
+    const isPaidUser = await getHasActiveMembership();
     const MAX_FILE_SIZE_BYTES = isPaidUser ? PAID_USER_MAX_FILE_SIZE_BYTES : FREE_USER_MAX_FILE_SIZE_BYTES;
 
-    // 1. Validate file size
+    // 1. Validate file size (measure it ourselves when not provided)
+    if (fileSize == null) {
+        try {
+            const info = await FileSystem.getInfoAsync(uri);
+            if (info.exists && typeof info.size === "number") {
+                fileSize = info.size;
+            }
+        } catch {
+            // Size unknown — the storage bucket's own limit still applies.
+        }
+    }
     if (fileSize && fileSize > MAX_FILE_SIZE_BYTES) {
         const limitMb = MAX_FILE_SIZE_BYTES / (1024 * 1024);
         throw new Error(
@@ -42,9 +53,15 @@ export async function uploadImageToSupabase({
         );
     }
 
-    // 3. Prepare file for upload
+    // 3. Prepare file for upload — scoped per user so per-owner storage
+    // policies are possible and cleanup can target a user's folder.
+    const {
+        data: { user },
+    } = await supabase.auth.getUser();
+    if (!user) throw new Error("You must be signed in to upload images.");
+
     const fileName = `${Date.now()}-${Math.floor(Math.random() * 10000)}.${ext}`;
-    const filePath = `public/${fileName}`;
+    const filePath = `${user.id}/${fileName}`;
 
     const formData = new FormData();
     formData.append("file", {

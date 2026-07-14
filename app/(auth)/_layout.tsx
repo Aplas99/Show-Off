@@ -1,15 +1,20 @@
 import { useAuthStore } from "@/hooks/useAuthStore";
 import { LinearGradient } from "expo-linear-gradient";
-import { Redirect, Slot } from "expo-router";
+import { Redirect, Slot, useSegments } from "expo-router";
 import React from "react";
 import { StyleSheet, View } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 
 export default function AuthLayout() {
   const { session } = useAuthStore();
+  const segments = useSegments();
 
-  if (session) {
-    return <Redirect href={"/(tabs)/discover"} />;  
+  // Password recovery signs the user in via the emailed link, but they
+  // still need to stay on the reset screen to choose a new password.
+  const isResettingPassword = (segments as string[])[1] === "reset-password";
+
+  if (session && !isResettingPassword) {
+    return <Redirect href={"/(tabs)/discover"} />;
   }
 
   return (

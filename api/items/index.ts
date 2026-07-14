@@ -1,5 +1,9 @@
 import { uploadImageToSupabase } from "@/api/storage";
 import {
+  searchPokemonCardsCacheFirst,
+  type PokemonTcgCard,
+} from "@/api/pokemon";
+import {
   CreateItemPayload,
   validateCreateItem,
 } from "@/lib/createItemValidation";
@@ -26,6 +30,10 @@ export interface Product {
   color?: string;
   manufacturer?: string;
   price?: number;
+  pokemonTcgId?: string;
+  pokemonSetId?: string;
+  pokemonSetName?: string;
+  pokemonCardNumber?: string;
 }
 
 export const searchParamsSchema = z.object({
@@ -42,7 +50,8 @@ export type SearchParams = z.infer<typeof searchParamsSchema>;
  * This is a subset of the full Product table, focusing on searchable fields.
  */
 export interface ShowcaseItemProduct {
-  ean: string;
+  ean?: string | null;
+  pokemonTcgId?: string | null;
   searchableTitle: string;
   searchableDescription?: string | null;
   searchableBrand: string;
@@ -57,10 +66,11 @@ export interface ItemWithProduct {
   id: number;
   user_id: string;
   showcase_id: string | null;
-  product_ean: string;
+  product_ean: string | null;
+  pokemon_tcg_card_id?: string | null;
   created_at: string;
   image_url: string;
-  condition: string;
+  condition: string | null;
   user_description: string | null;
   for_sale: boolean;
   price: number | null;
@@ -74,6 +84,93 @@ export interface ItemWithProduct {
 
 const BarcodeLookupAPIKey =
   process.env.EXPO_PUBLIC_BARCODE_LOOKUP_API_KEY || "";
+
+export function useUpdateItemCondition() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { itemId: number; condition: string | null }) => {
+      const { error } = await supabase
+        .from("items")
+        .update({ condition: input.condition })
+        .eq("id", input.itemId);
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["showcase"] });
+      queryClient.invalidateQueries({ queryKey: ["items", "my"] });
+    },
+  });
+}
+
+export function useDeleteItem() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async (itemId: number) => {
+      const {
+        data: { user },
+      } = await supabase.auth.getUser();
+      if (!user) throw new Error("Not authenticated");
+
+      // Remove showcase links first in case the FK doesn't cascade.
+      const { error: linkError } = await supabase
+        .from("showcase_items")
+        .delete()
+        .eq("item_id", itemId);
+      if (linkError) throw new Error(linkError.message);
+
+      const { error } = await supabase
+        .from("items")
+        .delete()
+        .eq("id", itemId)
+        .eq("user_id", user.id);
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["showcase"] });
+      queryClient.invalidateQueries({ queryKey: ["showcase:items"] });
+      queryClient.invalidateQueries({ queryKey: ["items", "my"] });
+      queryClient.invalidateQueries({ queryKey: ["social", "feed"] });
+      queryClient.invalidateQueries({ queryKey: ["profile"] });
+    },
+  });
+}
+
+function getPokemonMarketPrice(card: PokemonTcgCard) {
+  const prices = card.tcgplayer?.prices;
+  if (!prices) return undefined;
+
+  const preferredVariants = ["normal", "holofoil", "reverseHolofoil"];
+  for (const variant of preferredVariants) {
+    const market = prices[variant]?.market;
+    if (typeof market === "number") return market;
+  }
+
+  return Object.values(prices).find(
+    (price) => typeof price.market === "number",
+  )?.market ?? undefined;
+}
+
+export function pokemonCardToProduct(card: PokemonTcgCard): Product {
+  const details = [
+    card.set.name,
+    `#${card.number}`,
+    card.rarity,
+  ].filter(Boolean);
+
+  return {
+    title: card.name,
+    brand: "Pokémon",
+    manufacturer: "The Pokémon Company",
+    description: details.join(" • "),
+    images: [card.images.large, card.images.small],
+    category: "TCG",
+    price: getPokemonMarketPrice(card),
+    pokemonTcgId: card.id,
+    pokemonSetId: card.set.id,
+    pokemonSetName: card.set.name,
+    pokemonCardNumber: card.number,
+  };
+}
 
 // --- Helpers ---
 function normalizeCodes(searchQuery: string) {
@@ -274,19 +371,41 @@ async function fetchFromUPCItemDB(query: string): Promise<Product[]> {
 // Main Product Search Hook (Infinite)
 export function useProductSearch(params: SearchParams) {
   return useInfiniteQuery({
-    queryKey: ["product-search", params.query, params.brand, params.category],
+    queryKey: [
+      "product-search",
+      params.query,
+      params.brand,
+      params.manufacturer,
+      params.category,
+    ],
     queryFn: async ({ pageParam = 1 }) => {
-      if (!params.query) return { items: [] };
+      if (!params.query) return { items: [], hasMore: false };
+
+      if (params.category?.trim().toLowerCase() === "tcg") {
+        const result = await searchPokemonCardsCacheFirst({
+          query: params.query,
+          page: pageParam as number,
+          pageSize: 20,
+        });
+
+        return {
+          items: result.cards.map(pokemonCardToProduct),
+          hasMore:
+            result.source === "api" &&
+            result.page * result.pageSize < result.totalCount,
+        };
+      }
+
       const items = await fetchFromBarcodeLookup(
         params.query,
         pageParam as number,
         params,
       );
-      return { items };
+      return { items, hasMore: items.length >= 10 };
     },
     initialPageParam: 1,
     getNextPageParam: (lastPage, allPages) => {
-      return lastPage.items.length < 10 ? undefined : allPages.length + 1;
+      return lastPage.hasMore ? allPages.length + 1 : undefined;
     },
     enabled: !!params.query,
   });
@@ -320,6 +439,7 @@ export function useCreateItemWithProductLookup() {
       if (!user) throw new Error("User not authenticated");
 
       let productData: Product | undefined = payload.productData ?? undefined;
+      const pokemonTcgCardId = productData?.pokemonTcgId ?? null;
       const { ean, upc, isbn } = payload.searchQuery
         ? normalizeCodes(payload.searchQuery)
         : { ean: undefined, upc: undefined, isbn: undefined };
@@ -376,7 +496,8 @@ export function useCreateItemWithProductLookup() {
         .insert({
           user_id: user.id,
           product_ean: productEan,
-          is_verified: !!productEan,
+          pokemon_tcg_card_id: pokemonTcgCardId,
+          is_verified: !!productEan || !!pokemonTcgCardId,
           custom_title: payload.customTitle || null,
           custom_brand: payload.customBrand || null,
           custom_publisher: payload.customPublisher || null,
@@ -419,9 +540,12 @@ export function useGetItemsWithProductData(showcaseId: string) {
                     item_id,
                     showcase_id,
                     items (
-                        id, user_id, product_ean, created_at, image_url, condition, user_description, for_sale, price, currency_code, custom_title, custom_brand, custom_publisher, custom_category,
+                        id, user_id, product_ean, pokemon_tcg_card_id, created_at, image_url, condition, user_description, for_sale, price, currency_code, custom_title, custom_brand, custom_publisher, custom_category,
                         products (
                             ean, searchableTitle, searchableDescription, searchableBrand, data
+                        ),
+                        pokemon_tcg_cards (
+                            id, name, set_name, number, rarity, image_small, image_large, raw_data
                         )
                     )
                 `,
@@ -435,6 +559,7 @@ export function useGetItemsWithProductData(showcaseId: string) {
           if (!row?.items) return null;
           const item = row.items;
           const product = item.products;
+          const pokemonCard = item.pokemon_tcg_cards;
 
           // Parse data field if it's a string (legacy/db support)
           let parsedProductData: any = {};
@@ -462,6 +587,27 @@ export function useGetItemsWithProductData(showcaseId: string) {
                 ...product,
                 data: parsedProductData,
               }
+              : pokemonCard
+                ? {
+                  ean: null,
+                  pokemonTcgId: pokemonCard.id,
+                  searchableTitle: pokemonCard.name,
+                  searchableDescription: [
+                    pokemonCard.set_name,
+                    `#${pokemonCard.number}`,
+                    pokemonCard.rarity,
+                  ].filter(Boolean).join(" • "),
+                  searchableBrand: "Pokémon",
+                  data: {
+                    ...(pokemonCard.raw_data ?? {}),
+                    category: "TCG",
+                    publisher: "The Pokémon Company",
+                    images: [
+                      pokemonCard.image_large,
+                      pokemonCard.image_small,
+                    ].filter(Boolean),
+                  },
+                }
               : null,
           } as ItemWithProduct;
         })

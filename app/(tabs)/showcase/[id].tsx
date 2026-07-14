@@ -1,7 +1,8 @@
 import { ItemWithProduct, useGetItemsWithProductData } from "@/api/items";
 import { TAB_BAR_HEIGHT } from "@/constants/layoutConfig";
-import { BookcaseView } from "@/src/features/showcase/BookcaseView";
 import ItemDetailModal from "@/src/features/showcase/ItemDetailModal";
+import { PokemonCardGridView } from "@/src/features/showcase/PokemonCardGridView";
+import PokemonCardTiltModal from "@/src/features/showcase/PokemonCardTiltModal";
 import ShowcaseCarousel from "@/src/features/showcase/ShowcaseCarousel";
 import ShowcaseListItem from "@/src/features/showcase/ShowcaseListItem";
 import { Ionicons } from "@expo/vector-icons";
@@ -16,7 +17,6 @@ import React, {
 import {
   ActivityIndicator,
   Animated,
-  Easing,
   FlatList,
   Keyboard,
   Modal,
@@ -43,7 +43,7 @@ export default function ShowcaseDetail() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
 
   // View mode state
-  const [viewMode, setViewMode] = useState<"grid" | "carousel" | "bookcase">("grid");
+  const [viewMode, setViewMode] = useState<"grid" | "carousel">("grid");
 
   // Modal state
   const [selectedItem, setSelectedItem] = useState<ItemWithProduct | null>(
@@ -51,9 +51,9 @@ export default function ShowcaseDetail() {
   );
   const [modalVisible, setModalVisible] = useState(false);
 
-  // Controls visibility (for Bookcase view)
-  const [controlsVisible, setControlsVisible] = useState(true);
-  const controlsTranslateY = useRef(new Animated.Value(0)).current;
+  // Pokémon card 3D tilt viewer state
+  const [tiltItem, setTiltItem] = useState<ItemWithProduct | null>(null);
+  const [tiltVisible, setTiltVisible] = useState(false);
 
   // Keyboard-aware positioning for search bar
   const keyboardOffset = useRef(new Animated.Value(0)).current;
@@ -87,25 +87,19 @@ export default function ShowcaseDetail() {
     };
   }, [keyboardOffset]);
 
-  useEffect(() => {
-    setControlsVisible(viewMode !== "bookcase");
-  }, [viewMode]);
-
-  // Animate controls based on visibility
-  useEffect(() => {
-    Animated.timing(controlsTranslateY, {
-      toValue: controlsVisible ? 0 : 100, // Slide down 100px to hide
-      duration: 300,
-      useNativeDriver: true,
-      easing: Easing.out(Easing.ease),
-    }).start();
-  }, [controlsTranslateY, controlsVisible]);
-
-  // handleToggleView declared below, after items + filteredItems are available
-
   const handleItemPress = useCallback((item: ItemWithProduct) => {
+    if (item.pokemon_tcg_card_id) {
+      setTiltItem(item);
+      setTiltVisible(true);
+      return;
+    }
     setSelectedItem(item);
     setModalVisible(true);
+  }, []);
+
+  const handleCloseTilt = useCallback(() => {
+    setTiltVisible(false);
+    setTimeout(() => setTiltItem(null), 300);
   }, []);
 
   const renderGridItem = useCallback(
@@ -171,13 +165,18 @@ export default function ShowcaseDetail() {
     return filtered;
   }, [items, searchQuery, sortBy, sortOrder]);
 
+  // A showcase made entirely of Pokémon cards renders as a TCG Pocket-style
+  // collection grid instead of the generic item grid.
+  const isPokemonShowcase = useMemo(
+    () =>
+      (items?.length ?? 0) > 0 &&
+      (items ?? []).every((item) => !!item.pokemon_tcg_card_id),
+    [items],
+  );
+
   const handleToggleView = useCallback(() => {
-    const next: "grid" | "carousel" | "bookcase" =
-      viewMode === "grid" ? "carousel" :
-        viewMode === "carousel" ? "bookcase" :
-          "grid";
-    setViewMode(next);
-  }, [viewMode]);
+    setViewMode((prev) => (prev === "grid" ? "carousel" : "grid"));
+  }, []);
 
   if (!showcaseId) {
     return (
@@ -213,7 +212,22 @@ export default function ShowcaseDetail() {
 
       {/* Content Area */}
       <View style={styles.contentWrapper}>
-        {viewMode === "grid" && (
+        {viewMode === "grid" && isPokemonShowcase && (
+          <Reanimated.View
+            entering={FadeIn.duration(150)}
+            style={styles.viewContainer}
+          >
+            <PokemonCardGridView
+              items={filteredItems}
+              onItemPress={handleItemPress}
+              bottomPadding={bottomOffset + 80}
+              refreshing={isRefetching}
+              onRefresh={refetch}
+            />
+          </Reanimated.View>
+        )}
+
+        {viewMode === "grid" && !isPokemonShowcase && (
           <Reanimated.View
             entering={FadeIn.duration(150)}
             style={styles.viewContainer}
@@ -275,19 +289,6 @@ export default function ShowcaseDetail() {
           </Reanimated.View>
         )}
 
-        {viewMode === "bookcase" && (
-          <Reanimated.View
-            entering={FadeIn.duration(150)}
-            style={styles.viewContainer}
-          >
-            <BookcaseView
-              items={filteredItems}
-              onItemPress={handleItemPress}
-              showcaseName="Showcase"
-              onBookmarkPress={() => setControlsVisible(prev => !prev)}
-            />
-          </Reanimated.View>
-        )}
       </View>
 
       {/* Search and Filter Controls - Positioned above Tab Bar */}
@@ -296,9 +297,7 @@ export default function ShowcaseDetail() {
           styles.searchContainer,
           {
             bottom: bottomOffset,
-            transform: [
-              { translateY: Animated.add(controlsTranslateY, keyboardOffset) },
-            ],
+            transform: [{ translateY: keyboardOffset }],
           },
         ]}
       >
@@ -328,13 +327,7 @@ export default function ShowcaseDetail() {
           onPress={handleToggleView}
         >
           <Ionicons
-            name={
-              viewMode === "grid"
-                ? "albums"
-                : viewMode === "carousel"
-                  ? "library"
-                  : "grid"
-            }
+            name={viewMode === "grid" ? "albums" : "grid"}
             size={18}
             color="#9B5DE5"
           />
@@ -352,6 +345,12 @@ export default function ShowcaseDetail() {
         visible={modalVisible}
         item={selectedItem}
         onClose={handleCloseModal}
+      />
+
+      <PokemonCardTiltModal
+        visible={tiltVisible}
+        item={tiltItem}
+        onClose={handleCloseTilt}
       />
 
       {/* Filter Modal */}

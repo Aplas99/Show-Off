@@ -26,6 +26,8 @@ const WoodGrain = React.memo(({ intensity = 1 }: { intensity?: number }) => (
     </View>
 ));
 
+WoodGrain.displayName = "WoodGrain";
+
 const grainStyles = StyleSheet.create({
     container: {
         ...StyleSheet.absoluteFillObject,

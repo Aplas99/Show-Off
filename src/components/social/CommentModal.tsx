@@ -225,7 +225,7 @@ export default function CommentModal({
                             </View>
                         ) : isError ? (
                             <View style={styles.errorContainer}>
-                                <Text style={styles.errorTitle}>Couldn't load comments</Text>
+                                <Text style={styles.errorTitle}>Couldn&apos;t load comments</Text>
                                 <Text style={styles.errorSubtext}>
                                     {error instanceof Error ? error.message : "Please try again."}
                                 </Text>

@@ -35,18 +35,20 @@ export default function TabLayout() {
           tabBarLabel: "Discover",
         }}
       />
-      <Tabs.Screen
-        name="marketplace"
-        options={{
-          tabBarAccessibilityLabel: "Marketplace",
-          tabBarLabel: "Marketplace",
-        }}
-      />
+      {/* Hidden until the marketplace feature ships. */}
+      <Tabs.Screen name="marketplace" options={{ href: null }} />
       <Tabs.Screen
         name="create"
         options={{
           tabBarAccessibilityLabel: "Create new item",
           tabBarLabel: "Create",
+        }}
+      />
+      <Tabs.Screen
+        name="tcg-create"
+        options={{
+          href: null,
+          tabBarStyle: { display: "none" },
         }}
       />
       <Tabs.Screen
