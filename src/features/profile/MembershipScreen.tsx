@@ -1,4 +1,6 @@
 import {
+    FREE_TIER_LIMITS,
+    FREE_TIER_NAME,
     MEMBERSHIP_PLANS,
     useMembership,
     useOpenBillingPortal,
@@ -21,13 +23,21 @@ import {
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const COLLECTOR_PERKS = [
-    { icon: "cloud-upload-outline", label: "200MB image uploads (vs 5MB free)" },
-    { icon: "albums-outline", label: "Unlimited showcases" },
-    { icon: "scan-outline", label: "Priority card scanning" },
+const FREE_PLAN_LIMITS = [
+    { icon: "albums-outline", label: `Up to ${FREE_TIER_LIMITS.maxItems} items` },
+    { icon: "layers-outline", label: `${FREE_TIER_LIMITS.maxShowcases} showcase` },
+    { icon: "scan-outline", label: "10 card scans / day (watch an ad for more)" },
 ] as const;
 
 const CURATOR_PERKS = [
+    { icon: "infinite-outline", label: "Unlimited items & showcases" },
+    { icon: "cloud-upload-outline", label: "200MB image uploads (vs 5MB free)" },
+    {
+        icon: "flash-outline",
+        label:
+            "Faster, more accurate card recognition — our upgraded scan pipeline finds cards phones normally struggle with",
+    },
+    { icon: "infinite-outline", label: "Unlimited daily scans, no ads" },
     { icon: "stats-chart-outline", label: "Price history for your collection" },
     { icon: "share-social-outline", label: "Sharable public showcase links" },
     { icon: "ribbon-outline", label: "Curator badge & showcase customization" },
@@ -44,24 +54,20 @@ export default function MembershipScreen() {
     const startCheckout = useStartCheckout();
     const openPortal = useOpenBillingPortal();
     const [selectedPlan, setSelectedPlan] =
-        useState<MembershipPlanId>("founding_collector");
+        useState<MembershipPlanId>("curator_monthly");
 
+    // There is only one paid tier (Curator, at three price points), so
+    // isPaidUser and isCurator are equivalent in normal operation —
+    // isCurator only differs in the unlikely case of a subscription on
+    // an unseeded price_id (see subscriptions_with_tier's fail-safe
+    // default to 'collector' in that case).
     const isPaidUser = membership?.isPaidUser ?? false;
     const isCurator = membership?.isCurator ?? false;
     const subscription = membership?.subscription ?? null;
 
-    // Founding Collector members can only move up to Curator, not
-    // "re-buy" the tier they already have.
-    const availablePlans = isPaidUser
-        ? MEMBERSHIP_PLANS.filter((plan) => plan.tier === "curator")
-        : MEMBERSHIP_PLANS;
-    const effectivePlan = availablePlans.some((plan) => plan.id === selectedPlan)
-        ? selectedPlan
-        : availablePlans[0]?.id ?? selectedPlan;
-
     const handleUpgrade = async () => {
         try {
-            await startCheckout.mutateAsync(effectivePlan);
+            await startCheckout.mutateAsync(selectedPlan);
         } catch (error: any) {
             Alert.alert(
                 "Checkout unavailable",
@@ -122,11 +128,7 @@ export default function MembershipScreen() {
                             </View>
                             <View style={styles.statusTextContainer}>
                                 <Text style={styles.statusTitle}>
-                                    {isCurator
-                                        ? "Curator Member"
-                                        : isPaidUser
-                                            ? "Founding Collector Member"
-                                            : "Free Plan"}
+                                    {isCurator ? "Curator Member" : `${FREE_TIER_NAME} (Free)`}
                                 </Text>
                                 <Text style={styles.statusSubtitle}>
                                     {isPaidUser
@@ -139,33 +141,35 @@ export default function MembershipScreen() {
                         </View>
                     </Animated.View>
 
-                    {/* Perks */}
-                    <Animated.View entering={FadeInDown.delay(150).springify()}>
-                        <View style={styles.sectionHeader}>
-                            <Ionicons name="gift-outline" size={20} color={colors.primary} />
-                            <Text style={styles.sectionTitle}>Collector Perks</Text>
-                        </View>
-                        <View style={styles.card}>
-                            {COLLECTOR_PERKS.map((perk, index) => (
-                                <View
-                                    key={perk.label}
-                                    style={[
-                                        styles.perkRow,
-                                        index === COLLECTOR_PERKS.length - 1 && {
-                                            borderBottomWidth: 0,
-                                        },
-                                    ]}
-                                >
-                                    <Ionicons
-                                        name={perk.icon as any}
-                                        size={20}
-                                        color={colors.primary}
-                                    />
-                                    <Text style={styles.perkText}>{perk.label}</Text>
-                                </View>
-                            ))}
-                        </View>
-                    </Animated.View>
+                    {/* Free plan limits — only relevant to free users */}
+                    {!isPaidUser && (
+                        <Animated.View entering={FadeInDown.delay(150).springify()}>
+                            <View style={styles.sectionHeader}>
+                                <Ionicons name="gift-outline" size={20} color={colors.primary} />
+                                <Text style={styles.sectionTitle}>{FREE_TIER_NAME} Plan</Text>
+                            </View>
+                            <View style={styles.card}>
+                                {FREE_PLAN_LIMITS.map((perk, index) => (
+                                    <View
+                                        key={perk.label}
+                                        style={[
+                                            styles.perkRow,
+                                            index === FREE_PLAN_LIMITS.length - 1 && {
+                                                borderBottomWidth: 0,
+                                            },
+                                        ]}
+                                    >
+                                        <Ionicons
+                                            name={perk.icon as any}
+                                            size={20}
+                                            color={colors.primary}
+                                        />
+                                        <Text style={styles.perkText}>{perk.label}</Text>
+                                    </View>
+                                ))}
+                            </View>
+                        </Animated.View>
+                    )}
 
                     <Animated.View entering={FadeInDown.delay(175).springify()}>
                         <View style={styles.sectionHeader}>
@@ -216,7 +220,7 @@ export default function MembershipScreen() {
                         </Animated.View>
                     )}
 
-                    {!isCurator && (
+                    {!isPaidUser && (
                         <Animated.View entering={FadeInDown.delay(220).springify()}>
                             <View style={styles.sectionHeader}>
                                 <Ionicons
@@ -224,19 +228,17 @@ export default function MembershipScreen() {
                                     size={20}
                                     color={colors.primary}
                                 />
-                                <Text style={styles.sectionTitle}>
-                                    {isPaidUser ? "Upgrade to Curator" : "Choose a Plan"}
-                                </Text>
+                                <Text style={styles.sectionTitle}>Choose a Plan</Text>
                             </View>
                             <View style={styles.card}>
-                                {availablePlans.map((plan, index) => {
-                                    const isSelected = effectivePlan === plan.id;
+                                {MEMBERSHIP_PLANS.map((plan, index) => {
+                                    const isSelected = selectedPlan === plan.id;
                                     return (
                                         <TouchableOpacity
                                             key={plan.id}
                                             style={[
                                                 styles.planRow,
-                                                index === availablePlans.length - 1 && {
+                                                index === MEMBERSHIP_PLANS.length - 1 && {
                                                     borderBottomWidth: 0,
                                                 },
                                                 isSelected && {

@@ -3,14 +3,19 @@
 //
 // Deploy:  npx supabase functions deploy stripe-checkout
 // Secrets: npx supabase secrets set STRIPE_SECRET_KEY=sk_... \
-//            STRIPE_PRICE_ID_FOUNDING_COLLECTOR=price_... \
+//            STRIPE_PRICE_ID_FOUNDING_CURATOR=price_... \
 //            STRIPE_PRICE_ID_CURATOR_MONTHLY=price_... \
 //            STRIPE_PRICE_ID_CURATOR_ANNUAL=price_...
 //
-// After creating each Price in the Stripe Dashboard, also seed
-// public.membership_tiers with its id -> tier mapping (see migration
-// 20260714090000_add_membership_tiers.sql) so the app resolves the
-// correct tier for subscribers on that price.
+// "Collector" is the free tier's display name (50 items, 1 showcase) —
+// there is no paid Collector plan. All three prices above are the
+// Curator tier; Founding Curator is a permanent legacy rate for early
+// subscribers, not a time-limited intro price. After creating each Price
+// in the Stripe Dashboard, seed public.membership_tiers with its
+// id -> 'curator' mapping (see migration 20260714090000_add_membership_tiers.sql)
+// so the app resolves the correct tier for subscribers on that price.
+// When Founding Curator is retired to new signups, archive its Stripe
+// Price (existing subscribers keep billing at it) rather than deleting it.
 //
 // Optional secrets:
 //   MEMBERSHIP_SUCCESS_URL / MEMBERSHIP_CANCEL_URL / MEMBERSHIP_RETURN_URL
@@ -30,7 +35,7 @@ const corsHeaders = {
 };
 
 const PLAN_PRICE_ENV_VARS: Record<string, string> = {
-  founding_collector: "STRIPE_PRICE_ID_FOUNDING_COLLECTOR",
+  founding_curator: "STRIPE_PRICE_ID_FOUNDING_CURATOR",
   curator_monthly: "STRIPE_PRICE_ID_CURATOR_MONTHLY",
   curator_annual: "STRIPE_PRICE_ID_CURATOR_ANNUAL",
 };
@@ -126,7 +131,7 @@ Deno.serve(async (req) => {
     }
 
     const plan =
-      typeof body?.plan === "string" ? body.plan : "founding_collector";
+      typeof body?.plan === "string" ? body.plan : "curator_monthly";
     const priceEnvVar = PLAN_PRICE_ENV_VARS[plan];
     const priceId = priceEnvVar ? Deno.env.get(priceEnvVar) : undefined;
 

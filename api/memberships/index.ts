@@ -26,7 +26,7 @@ export const subscriptionRowSchema = z.object({
 export type SubscriptionRow = z.infer<typeof subscriptionRowSchema>;
 
 export type MembershipPlanId =
-  | "founding_collector"
+  | "founding_curator"
   | "curator_monthly"
   | "curator_annual";
 
@@ -39,31 +39,46 @@ export interface MembershipPlan {
   description: string;
 }
 
+/**
+ * "Collector" is the free tier's display name — not a purchasable plan.
+ * Every purchasable plan below is the Curator tier at a different price
+ * point; there is no separate paid Collector tier anymore.
+ */
+export const FREE_TIER_NAME = "Collector";
+export const FREE_TIER_LIMITS = {
+  maxItems: 50,
+  maxShowcases: 1,
+} as const;
+
 // Placeholder copy — keep in sync with the Stripe Prices configured via
-// STRIPE_PRICE_ID_FOUNDING_COLLECTOR / STRIPE_PRICE_ID_CURATOR_MONTHLY /
-// STRIPE_PRICE_ID_CURATOR_ANNUAL on the Edge Function.
+// STRIPE_PRICE_ID_FOUNDING_CURATOR / STRIPE_PRICE_ID_CURATOR_MONTHLY /
+// STRIPE_PRICE_ID_CURATOR_ANNUAL on the Edge Function. Founding Curator is
+// a permanently-priced legacy rate for early subscribers — once retired,
+// archive its Stripe Price (existing subscribers keep billing at it;
+// new checkouts can no longer select it) rather than deleting it.
 export const MEMBERSHIP_PLANS: MembershipPlan[] = [
   {
-    id: "founding_collector",
-    tier: "collector",
-    name: "Founding Collector",
+    id: "founding_curator",
+    tier: "curator",
+    name: "Founding Curator",
     priceLabel: "$3.99 / month",
-    description: "Larger uploads, unlimited showcases, and priority scanning.",
+    description:
+      "Full Curator access at a permanent founding-member rate for early subscribers.",
   },
   {
     id: "curator_monthly",
     tier: "curator",
-    name: "Curator Monthly",
+    name: "Curator",
     priceLabel: "$5.99 / month",
     description:
-      "Everything in Founding Collector, plus price history, sharable showcases, and set-completion tracking.",
+      "Full premium membership: price history, sharable showcases, set-completion tracking, and faster card recognition.",
   },
   {
     id: "curator_annual",
     tier: "curator",
-    name: "Curator Annual",
+    name: "Annual Curator",
     priceLabel: "$59.99 / year",
-    description: "Everything in Curator Monthly, at an annual discount.",
+    description: "Everything in Curator, at roughly two months free.",
   },
 ];
 
