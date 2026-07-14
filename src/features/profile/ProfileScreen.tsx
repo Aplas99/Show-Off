@@ -1,4 +1,5 @@
 import { useSignOut } from "@/api/auth";
+import { useMembership } from "@/api/memberships";
 import { useGetCurrentUserProfile } from "@/api/profile/index";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { useThemeStore } from "@/hooks/useThemeStore";
@@ -20,6 +21,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function ProfileScreen() {
   const { data, isLoading, error } = useGetCurrentUserProfile();
+  const { data: membership } = useMembership();
   const { mutateAsync: signOut } = useSignOut();
   const insets = useSafeAreaInsets();
   const colors = useColors();
