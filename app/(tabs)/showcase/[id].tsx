@@ -5,6 +5,7 @@ import { PokemonCardGridView } from "@/src/features/showcase/PokemonCardGridView
 import PokemonCardTiltModal from "@/src/features/showcase/PokemonCardTiltModal";
 import ShowcaseCarousel from "@/src/features/showcase/ShowcaseCarousel";
 import ShowcaseListItem from "@/src/features/showcase/ShowcaseListItem";
+import { useShowcaseFilters } from "@/src/features/showcase/useShowcaseFilters";
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useLocalSearchParams } from "expo-router";
 import React, {
@@ -22,10 +23,12 @@ import {
   Modal,
   Platform,
   RefreshControl,
+  ScrollView,
   StyleSheet,
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View
 } from "react-native";
 import Reanimated, { FadeIn } from "react-native-reanimated";
@@ -34,13 +37,24 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 export default function ShowcaseDetail() {
   const params = useLocalSearchParams();
   const insets = useSafeAreaInsets();
+  const { height: windowHeight } = useWindowDimensions();
   const showcaseId = typeof params.id === "string" ? params.id : params.id?.[0];
 
   // Search and filter state
   const [searchQuery, setSearchQuery] = useState("");
   const [filterModalOpen, setFilterModalOpen] = useState(false);
-  const [sortBy, setSortBy] = useState<"name" | "price" | "date">("date");
-  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+  const {
+    sortBy,
+    sortOrder,
+    selectedTypes,
+    selectedSetIds,
+    setSortBy,
+    setSortOrder,
+    toggleType,
+    toggleSet,
+    reset: resetFilters,
+    activeFilterCount,
+  } = useShowcaseFilters();
 
   // View mode state
   const [viewMode, setViewMode] = useState<"grid" | "carousel">("grid");
@@ -123,6 +137,44 @@ export default function ShowcaseDetail() {
   } = useGetItemsWithProductData(showcaseId!);
 
 
+  // Distinct type/set options actually present in this showcase — narrower
+  // than the full catalog so a filter never yields an empty grid.
+  const availableTypes = useMemo(() => {
+    const types = new Set<string>();
+    for (const item of items ?? []) {
+      for (const type of item.pokemonTypes ?? []) types.add(type);
+    }
+    return Array.from(types).sort();
+  }, [items]);
+
+  const availableSets = useMemo(() => {
+    const sets = new Map<string, string>();
+    for (const item of items ?? []) {
+      if (item.pokemonSetId) {
+        sets.set(
+          item.pokemonSetId,
+          item.products?.searchableDescription?.split(" • ")[0] ||
+            item.pokemonSetId,
+        );
+      }
+    }
+    return Array.from(sets.entries()).map(([id, name]) => ({ id, name }));
+  }, [items]);
+
+  // Duplicate count per card, computed off the unfiltered list so the badge
+  // always reflects true showcase-wide duplication regardless of active filters.
+  const duplicateCounts = useMemo(() => {
+    const counts = new Map<string, number>();
+    for (const item of items ?? []) {
+      if (!item.pokemon_tcg_card_id) continue;
+      counts.set(
+        item.pokemon_tcg_card_id,
+        (counts.get(item.pokemon_tcg_card_id) ?? 0) + 1,
+      );
+    }
+    return counts;
+  }, [items]);
+
   // Filter and sort
   const filteredItems = useMemo(() => {
     if (!items) return [];
@@ -137,6 +189,19 @@ export default function ShowcaseDetail() {
             .includes(searchLower) ||
           item.user_description?.toLowerCase().includes(searchLower);
         if (!matchesSearch) return false;
+      }
+
+      if (selectedTypes.length > 0) {
+        const itemTypes = item.pokemonTypes ?? [];
+        if (!selectedTypes.some((type) => itemTypes.includes(type))) {
+          return false;
+        }
+      }
+
+      if (selectedSetIds.length > 0) {
+        if (!item.pokemonSetId || !selectedSetIds.includes(item.pokemonSetId)) {
+          return false;
+        }
       }
 
       return true;
@@ -163,7 +228,7 @@ export default function ShowcaseDetail() {
     });
 
     return filtered;
-  }, [items, searchQuery, sortBy, sortOrder]);
+  }, [items, searchQuery, sortBy, sortOrder, selectedTypes, selectedSetIds]);
 
   // A showcase made entirely of Pokémon cards renders as a TCG Pocket-style
   // collection grid instead of the generic item grid.
@@ -223,6 +288,8 @@ export default function ShowcaseDetail() {
               bottomPadding={bottomOffset + 80}
               refreshing={isRefetching}
               onRefresh={refetch}
+              totalCount={items?.length ?? 0}
+              duplicateCounts={duplicateCounts}
             />
           </Reanimated.View>
         )}
@@ -338,6 +405,11 @@ export default function ShowcaseDetail() {
           onPress={() => setFilterModalOpen(true)}
         >
           <Ionicons name="options" size={18} color="#9B5DE5" />
+          {activeFilterCount > 0 && (
+            <View style={styles.filterCountBadge}>
+              <Text style={styles.filterCountBadgeText}>{activeFilterCount}</Text>
+            </View>
+          )}
         </TouchableOpacity>
       </Animated.View>
 
@@ -361,84 +433,158 @@ export default function ShowcaseDetail() {
         onRequestClose={() => setFilterModalOpen(false)}
       >
         <View style={styles.modalBackdrop}>
-          <View style={styles.modalCard}>
+          <View
+            style={[styles.modalCard, { maxHeight: windowHeight * 0.8 }]}
+          >
             <Text style={styles.modalTitle}>Filter & Sort</Text>
 
-            <Text style={styles.sectionLabel}>Sort by</Text>
-            <View style={styles.sortOptions}>
-              {[
-                { key: "date", label: "Date Added" },
-                { key: "name", label: "Name" },
-                { key: "price", label: "Price" },
-              ].map((option) => (
+            <ScrollView
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={styles.modalScrollContent}
+            >
+              <Text style={styles.sectionLabel}>Sort by</Text>
+              <View style={styles.sortOptions}>
+                {[
+                  { key: "date", label: "Date Added" },
+                  { key: "name", label: "Name" },
+                  { key: "price", label: "Price" },
+                ].map((option) => (
+                  <TouchableOpacity
+                    key={option.key}
+                    style={[
+                      styles.sortOption,
+                      sortBy === option.key && styles.sortOptionSelected,
+                    ]}
+                    onPress={() => setSortBy(option.key as any)}
+                  >
+                    <Text
+                      style={[
+                        styles.sortOptionText,
+                        sortBy === option.key && styles.sortOptionTextSelected,
+                      ]}
+                      numberOfLines={1}
+                    >
+                      {option.label}
+                    </Text>
+                  </TouchableOpacity>
+                ))}
+              </View>
+
+              <Text style={styles.sectionLabel}>Sort order</Text>
+              <View style={styles.sortOrderContainer}>
                 <TouchableOpacity
-                  key={option.key}
                   style={[
-                    styles.sortOption,
-                    sortBy === option.key && styles.sortOptionSelected,
+                    styles.sortOrderOption,
+                    sortOrder === "asc" && styles.sortOrderOptionSelected,
                   ]}
-                  onPress={() => setSortBy(option.key as any)}
+                  onPress={() => setSortOrder("asc")}
                 >
+                  <Ionicons
+                    name="arrow-up"
+                    size={16}
+                    color={sortOrder === "asc" ? "#FFF" : "#666"}
+                  />
                   <Text
                     style={[
-                      styles.sortOptionText,
-                      sortBy === option.key && styles.sortOptionTextSelected,
+                      styles.sortOrderText,
+                      sortOrder === "asc" && styles.sortOrderTextSelected,
                     ]}
+                    numberOfLines={1}
                   >
-                    {option.label}
+                    Ascending
                   </Text>
                 </TouchableOpacity>
-              ))}
-            </View>
 
-            <Text style={styles.sectionLabel}>Sort order</Text>
-            <View style={styles.sortOrderContainer}>
-              <TouchableOpacity
-                style={[
-                  styles.sortOrderOption,
-                  sortOrder === "asc" && styles.sortOrderOptionSelected,
-                ]}
-                onPress={() => setSortOrder("asc")}
-              >
-                <Ionicons
-                  name="arrow-up"
-                  size={16}
-                  color={sortOrder === "asc" ? "#FFF" : "#666"}
-                />
-                <Text
+                <TouchableOpacity
                   style={[
-                    styles.sortOrderText,
-                    sortOrder === "asc" && styles.sortOrderTextSelected,
+                    styles.sortOrderOption,
+                    sortOrder === "desc" && styles.sortOrderOptionSelected,
                   ]}
+                  onPress={() => setSortOrder("desc")}
                 >
-                  Ascending
-                </Text>
-              </TouchableOpacity>
+                  <Ionicons
+                    name="arrow-down"
+                    size={16}
+                    color={sortOrder === "desc" ? "#FFF" : "#666"}
+                  />
+                  <Text
+                    style={[
+                      styles.sortOrderText,
+                      sortOrder === "desc" && styles.sortOrderTextSelected,
+                    ]}
+                    numberOfLines={1}
+                  >
+                    Descending
+                  </Text>
+                </TouchableOpacity>
+              </View>
 
-              <TouchableOpacity
-                style={[
-                  styles.sortOrderOption,
-                  sortOrder === "desc" && styles.sortOrderOptionSelected,
-                ]}
-                onPress={() => setSortOrder("desc")}
-              >
-                <Ionicons
-                  name="arrow-down"
-                  size={16}
-                  color={sortOrder === "desc" ? "#FFF" : "#666"}
-                />
-                <Text
-                  style={[
-                    styles.sortOrderText,
-                    sortOrder === "desc" && styles.sortOrderTextSelected,
-                  ]}
-                >
-                  Descending
-                </Text>
-              </TouchableOpacity>
-            </View>
+              {availableTypes.length > 0 && (
+                <>
+                  <Text style={styles.sectionLabel}>Type</Text>
+                  <View style={styles.sortOptions}>
+                    {availableTypes.map((type) => (
+                      <TouchableOpacity
+                        key={type}
+                        style={[
+                          styles.sortOption,
+                          selectedTypes.includes(type) && styles.sortOptionSelected,
+                        ]}
+                        onPress={() => toggleType(type)}
+                      >
+                        <Text
+                          style={[
+                            styles.sortOptionText,
+                            selectedTypes.includes(type) &&
+                              styles.sortOptionTextSelected,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {type}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </>
+              )}
+
+              {availableSets.length > 0 && (
+                <>
+                  <Text style={styles.sectionLabel}>Set</Text>
+                  <View style={styles.sortOptions}>
+                    {availableSets.map((set) => (
+                      <TouchableOpacity
+                        key={set.id}
+                        style={[
+                          styles.sortOption,
+                          selectedSetIds.includes(set.id) &&
+                            styles.sortOptionSelected,
+                        ]}
+                        onPress={() => toggleSet(set.id)}
+                      >
+                        <Text
+                          style={[
+                            styles.sortOptionText,
+                            selectedSetIds.includes(set.id) &&
+                              styles.sortOptionTextSelected,
+                          ]}
+                          numberOfLines={1}
+                        >
+                          {set.name}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                </>
+              )}
+            </ScrollView>
 
             <View style={styles.modalActions}>
+              {activeFilterCount > 0 && (
+                <TouchableOpacity style={styles.resetButton} onPress={resetFilters}>
+                  <Text style={styles.resetButtonText}>Reset</Text>
+                </TouchableOpacity>
+              )}
               <TouchableOpacity
                 style={styles.cancelButton}
                 onPress={() => setFilterModalOpen(false)}
@@ -539,6 +685,9 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "#333",
   },
+  modalScrollContent: {
+    flexGrow: 1,
+  },
   modalTitle: {
     color: "#FFF",
     fontSize: 20,
@@ -551,7 +700,7 @@ const styles = StyleSheet.create({
     fontWeight: "600",
     marginBottom: 12,
   },
-  sortOptions: { flexDirection: "row", gap: 8, marginBottom: 20 },
+  sortOptions: { flexDirection: "row", flexWrap: "wrap", gap: 8, marginBottom: 20 },
   sortOption: {
     paddingHorizontal: 12,
     paddingVertical: 8,
@@ -587,7 +736,32 @@ const styles = StyleSheet.create({
   sortOrderText: { color: "#666", fontSize: 14, fontWeight: "500" },
   sortOrderTextSelected: { color: "#FFF", fontWeight: "600" },
 
-  modalActions: { flexDirection: "row", justifyContent: "flex-end" },
+  modalActions: {
+    flexDirection: "row",
+    justifyContent: "flex-end",
+    alignItems: "center",
+    gap: 12,
+    marginTop: 12,
+  },
   cancelButton: { padding: 10 },
   cancelButtonText: { color: "#9B5DE5", fontSize: 16, fontWeight: "600" },
+  resetButton: { padding: 10 },
+  resetButtonText: { color: "#999", fontSize: 16, fontWeight: "600" },
+  filterCountBadge: {
+    position: "absolute",
+    top: -4,
+    right: -4,
+    backgroundColor: "#9B5DE5",
+    borderRadius: 999,
+    minWidth: 16,
+    height: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    paddingHorizontal: 3,
+  },
+  filterCountBadgeText: {
+    color: "#FFF",
+    fontSize: 10,
+    fontWeight: "800",
+  },
 });

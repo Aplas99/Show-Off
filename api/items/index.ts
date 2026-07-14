@@ -3,6 +3,7 @@ import {
   searchPokemonCardsCacheFirst,
   type PokemonTcgCard,
 } from "@/api/pokemon";
+import { extractMarketPrice } from "@/api/pokemon/ocrPostprocessing";
 import {
   CreateItemPayload,
   validateCreateItem,
@@ -80,6 +81,13 @@ export interface ItemWithProduct {
   custom_brand?: string | null;
   custom_publisher?: string | null;
   custom_category?: string | null;
+  /** Populated only for Pokémon TCG items, from the pokemon_tcg_cards cache. */
+  pokemonTypes?: string[];
+  pokemonSetId?: string | null;
+  pokemonSetSeries?: string | null;
+  pokemonSetPrintedTotal?: number | null;
+  /** Current cached market price (distinct from `price`, which is the snapshot saved at item-creation time). */
+  pokemonMarketPrice?: number | null;
 }
 
 const BarcodeLookupAPIKey =
@@ -545,7 +553,8 @@ export function useGetItemsWithProductData(showcaseId: string) {
                             ean, searchableTitle, searchableDescription, searchableBrand, data
                         ),
                         pokemon_tcg_cards (
-                            id, name, set_name, number, rarity, image_small, image_large, raw_data
+                            id, name, set_name, number, rarity, image_small, image_large, raw_data,
+                            types, set_id, set_series, set_printed_total, tcgplayer
                         )
                     )
                 `,
@@ -582,6 +591,13 @@ export function useGetItemsWithProductData(showcaseId: string) {
             custom_publisher: item.custom_publisher,
             custom_category: item.custom_category,
             showcase_id: row.showcase_id,
+            pokemonTypes: pokemonCard?.types ?? undefined,
+            pokemonSetId: pokemonCard?.set_id ?? null,
+            pokemonSetSeries: pokemonCard?.set_series ?? null,
+            pokemonSetPrintedTotal: pokemonCard?.set_printed_total ?? null,
+            pokemonMarketPrice: pokemonCard
+              ? extractMarketPrice(pokemonCard.tcgplayer?.prices)
+              : null,
             products: product
               ? {
                 ...product,

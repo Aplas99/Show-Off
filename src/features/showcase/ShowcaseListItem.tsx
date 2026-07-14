@@ -73,7 +73,11 @@ function ShowcaseListItem({ item, onPress, style }: Props) {
           </Text>
         ) : null}
 
-        {brand && <Text style={styles.brand}>{brand}</Text>}
+        {brand && (
+          <Text style={styles.brand} numberOfLines={1}>
+            {brand}
+          </Text>
+        )}
 
         <View style={styles.footer}>
           {formattedPrice && <Text style={styles.price}>{formattedPrice}</Text>}
@@ -86,7 +90,9 @@ function ShowcaseListItem({ item, onPress, style }: Props) {
         </View>
 
         {item.condition && (
-          <Text style={styles.condition}>{item.condition}</Text>
+          <Text style={styles.condition} numberOfLines={1}>
+            {item.condition}
+          </Text>
         )}
       </View>
     </View>
