@@ -289,6 +289,12 @@ export default function ItemDetailModal({ visible, item, onClose }: Props) {
                       </View>
                     )}
                   </View>
+                  {displayItem?.pokemon_tcg_card_id && price != null && (
+                    <Text style={styles.priceDisclaimer}>
+                      Market price estimate — may not be 100% accurate and
+                      varies with grading, style, and condition.
+                    </Text>
+                  )}
                 </Animated.View>
 
                 {/* 2. Bento Grid */}
@@ -630,6 +636,14 @@ const styles = StyleSheet.create({
     color: COLORS.outline,
     fontSize: 20,
     fontWeight: "600",
+  },
+  // Pulls up into priceRow's bottom margin so it hugs the price it qualifies.
+  priceDisclaimer: {
+    color: COLORS.onSurfaceVariant,
+    fontSize: 11,
+    lineHeight: 15,
+    marginTop: -24,
+    marginBottom: 32,
   },
   saleBadge: {
     backgroundColor: COLORS.primary,

@@ -6,6 +6,7 @@ import {
   levenshtein,
   normalizeName,
   normalizeOcrDigits,
+  repairCollectorNumberGaps,
   similarityRatio,
   isPokemonFoilCard,
   isPokemonPromoCard,
@@ -128,6 +129,28 @@ describe("OCR postprocessing utilities", () => {
     it("handles apostrophes and hyphens", () => {
       expect(normalizeName("Farfetch'd")).toBe("farfetchd");
       expect(normalizeName("Ho-Oh")).toBe("hooh");
+    });
+  });
+
+  describe("repairCollectorNumberGaps", () => {
+    it("merges a gap inside the total after the slash", () => {
+      expect(repairCollectorNumberGaps("E 043/2 64")).toBe("E 043/264");
+    });
+
+    it("merges a gap inside the number before the slash", () => {
+      expect(repairCollectorNumberGaps("04 3/264")).toBe("043/264");
+    });
+
+    it("leaves lines without a slash untouched", () => {
+      expect(repairCollectorNumberGaps("220 210")).toBe("220 210");
+    });
+
+    it("does not merge digit groups that would exceed a collector number", () => {
+      expect(repairCollectorNumberGaps("123/456 2021")).toBe("123/456 2021");
+    });
+
+    it("leaves well-formed collector numbers untouched", () => {
+      expect(repairCollectorNumberGaps("SCR EN 111/142")).toBe("SCR EN 111/142");
     });
   });
 

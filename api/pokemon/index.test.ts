@@ -192,6 +192,12 @@ describe("Pokémon TCG cache-first provider", () => {
     );
   });
 
+  it("strips leading zeros from padded collector numbers", () => {
+    expect(buildPokemonCardQuery("Greavard", "042/091", "Paldean Fates", 91)).toBe(
+      'name:"Greavard" number:"42" set.name:"Paldean Fates" set.printedTotal:91',
+    );
+  });
+
   it("supports collection and number lookup when OCR misses the name", () => {
     expect(buildPokemonCardQuery("", "111", "Stellar Crown")).toBe(
       'number:"111" set.name:"Stellar Crown"',

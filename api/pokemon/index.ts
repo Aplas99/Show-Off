@@ -161,9 +161,12 @@ export function buildPokemonCardQuery(
   setCode?: string,
 ) {
   const nameQuery = query.trim() ? buildPokemonNameQuery(query) : null;
+  // Strip leading zeros ("042" → "42") — cards print padded numbers but the
+  // catalog stores them unpadded, and the API matches the string exactly.
   const normalizedNumber = number
     ?.split(/[\/.]/, 1)[0]
     .replace(/[^a-z0-9]/gi, "")
+    .replace(/^0+(?=\d)/, "")
     .trim();
   const normalizedCollection = collection?.replace(/\s+/g, " ").trim();
   const escapedCollection = normalizedCollection?.replace(/([\\"])/g, "\\$1");
@@ -440,20 +443,26 @@ export function useCreatePokemonCardBatch() {
     mutationFn: async (input: {
       showcaseId: string;
       cardIds: string[];
+      /** Current market price per card (USD), aligned with `cardIds`. */
+      prices?: (number | null)[];
     }) => {
       if (input.cardIds.length === 0) {
         throw new Error("Scan at least one card before saving");
+      }
+      if (input.prices && input.prices.length !== input.cardIds.length) {
+        throw new Error("Price list must match card list");
       }
 
       const { data, error } = await supabase.rpc("create_pokemon_tcg_batch", {
         p_showcase_id: input.showcaseId,
         p_card_ids: input.cardIds,
+        p_prices: input.prices ?? null,
       });
 
       if (error && error.code !== "PGRST202") throw new Error(error.message);
       if (error) {
         console.warn(
-          "[Pokémon TCG] Batch RPC is unavailable; using client fallback. Apply migration 20260704143000 for atomic saves.",
+          "[Pokémon TCG] Batch RPC is unavailable; using client fallback. Apply migration 20260713100000 for atomic saves.",
         );
         const {
           data: { user },
@@ -462,13 +471,18 @@ export function useCreatePokemonCardBatch() {
 
         const { data: items, error: insertError } = await supabase
           .from("items")
-          .insert(input.cardIds.map((cardId) => ({
-            user_id: user.id,
-            pokemon_tcg_card_id: cardId,
-            is_verified: true,
-            condition: null,
-            for_sale: false,
-          })))
+          .insert(input.cardIds.map((cardId, index) => {
+            const price = input.prices?.[index] ?? null;
+            return {
+              user_id: user.id,
+              pokemon_tcg_card_id: cardId,
+              is_verified: true,
+              condition: null,
+              for_sale: false,
+              price,
+              currency_code: price != null ? "USD" : null,
+            };
+          }))
           .select("id, pokemon_tcg_card_id");
         if (insertError) throw new Error(insertError.message);
 

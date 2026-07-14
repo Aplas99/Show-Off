@@ -5,7 +5,6 @@ import {
 import {
   identifyPokemonCardImage,
   type PokemonCardIdentifiers,
-  type PokemonCardScanFrame,
   type RecognizedPokemonCard,
 } from "@/api/pokemon/recognition";
 import {
@@ -43,15 +42,17 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
-  type LayoutRectangle,
   useWindowDimensions,
   View,
 } from "react-native";
 import Animated, {
+  cancelAnimation,
+  Easing,
   FadeIn,
   FadeInDown,
   useAnimatedStyle,
   useSharedValue,
+  withRepeat,
   withTiming,
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -109,11 +110,11 @@ export default function TcgCreateScreen() {
     async (matches: RecognizedPokemonCard[]) => {
       const topMatch = matches[0];
       if (!topMatch) throw new Error("No matching Pokémon card found");
-      if (topMatch.score < MIN_REVIEW_SCORE) {
-        throw new Error("The card match was too uncertain. Try another photo.");
-      }
 
-      const confirmed = isConfidentMatch(matches);
+      // Below MIN_REVIEW_SCORE the match is too weak to auto-confirm, but
+      // rather than discard it and force a re-scan, surface it (and any
+      // other closest matches) in the candidate modal for a manual pick.
+      const confirmed = topMatch.score >= MIN_REVIEW_SCORE && isConfidentMatch(matches);
       cardScanDebug("queue.match-evaluated", {
         autoConfirmed: confirmed,
         minimumReviewScore: MIN_REVIEW_SCORE,
@@ -182,13 +183,17 @@ export default function TcgCreateScreen() {
     }
 
     const cardIds = entries.map((entry) => entry.card.id);
+    const prices = entries.map((entry) =>
+      extractMarketPrice(entry.card.tcgplayer?.prices),
+    );
     cardScanDebug("queue.save-started", {
       showcaseId,
       cardCount: cardIds.length,
       cardIds,
+      prices,
     });
     try {
-      await createBatch.mutateAsync({ showcaseId, cardIds });
+      await createBatch.mutateAsync({ showcaseId, cardIds, prices });
     } catch (error) {
       cardScanError("queue.save-failed", error);
       return;
@@ -433,8 +438,6 @@ function ScannerStep({
 }) {
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
-  const previewLayoutRef = useRef<LayoutRectangle | null>(null);
-  const frameLayoutRef = useRef<LayoutRectangle | null>(null);
   const [isReady, setIsReady] = useState(false);
   const [isIdentifying, setIsIdentifying] = useState(false);
   const [scanStatus, setScanStatus] = useState("Reading card text...");
@@ -448,33 +451,26 @@ function ScannerStep({
   const [foilHint, setFoilHint] = useState(false);
   const [promoHint, setPromoHint] = useState(false);
   const [lastIdentifiers, setLastIdentifiers] = useState<PokemonCardIdentifiers | null>(null);
+  const [capturedUri, setCapturedUri] = useState<string | null>(null);
   const progress = useSharedValue(0);
+  const scanLineProgress = useSharedValue(0);
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const haptics = useHaptics();
   const styles = useMemo(() => getStyles(colors), [colors]);
-  const frameWidth = Math.min(width - 48, 340);
+  // Keep the guide close to the actual OCR crop, which is a centered
+  // card-shaped region spanning ~90% of the captured photo.
+  const frameWidth = Math.min(width * 0.9, 400);
   const frameHeight = frameWidth * (88 / 63);
-
-  const getScanFrame = (): PokemonCardScanFrame | undefined => {
-    const preview = previewLayoutRef.current;
-    const frame = frameLayoutRef.current;
-    if (!preview || !frame) return undefined;
-    return {
-      previewWidth: preview.width,
-      previewHeight: preview.height,
-      frameX: frame.x,
-      frameY: frame.y,
-      frameWidth: frame.width,
-      frameHeight: frame.height,
-    };
-  };
 
   const horizontalProgressStyle = useAnimatedStyle(() => ({
     width: frameWidth * progress.value,
   }));
   const verticalProgressStyle = useAnimatedStyle(() => ({
     height: frameHeight * progress.value,
+  }));
+  const scanLineStyle = useAnimatedStyle(() => ({
+    transform: [{ translateY: scanLineProgress.value * frameHeight }],
   }));
 
   const capture = async () => {
@@ -490,8 +486,11 @@ function ScannerStep({
     progress.value = withTiming(0.88, { duration: 5000 });
 
     const attemptScan = async (attempt: number) => {
+      // Foil glare benefits from less JPEG compression, but quality 1 produced
+      // huge files that slowed decode + OCR; 0.85 keeps the detail that matters
+      // since crops are downscaled to the OCR target width anyway.
       const picture = await cameraRef.current!.takePictureAsync({
-        quality: foilHint ? 1 : 0.75,
+        quality: foilHint ? 0.85 : 0.75,
       });
       if (!picture?.uri) throw new Error("Camera did not return an image");
       cardScanDebug("camera.captured", {
@@ -499,13 +498,17 @@ function ScannerStep({
         width: picture.width,
         height: picture.height,
       });
-      const scanFrame = getScanFrame();
-      cardScanDebug("camera.scan-frame", { attempt, scanFrame: scanFrame ?? null });
+      setCapturedUri(picture.uri);
+      scanLineProgress.value = 0;
+      scanLineProgress.value = withRepeat(
+        withTiming(1, { duration: 1100, easing: Easing.inOut(Easing.quad) }),
+        -1,
+        true,
+      );
       setScanStatus("Reading card text...");
       return identifyPokemonCardImage(
         picture.uri,
         undefined,
-        scanFrame,
         (identifiers) => {
           setLastIdentifiers(identifiers);
           setScanStatus("Searching card database...");
@@ -559,6 +562,10 @@ function ScannerStep({
       }
       await haptics.error();
     } finally {
+      cancelAnimation(scanLineProgress);
+      scanLineProgress.value = withTiming(0, { duration: 150 });
+      // Return to the live preview so the next card can be lined up.
+      setCapturedUri(null);
       setIsIdentifying(false);
     }
   };
@@ -582,16 +589,12 @@ function ScannerStep({
   }
 
   return (
-    <View
-      style={styles.cameraPage}
-      onLayout={(event) => {
-        previewLayoutRef.current = event.nativeEvent.layout;
-      }}
-    >
+    <View style={styles.cameraPage}>
       <CameraView
         ref={cameraRef}
         style={StyleSheet.absoluteFill}
         facing="back"
+        ratio="4:3"
         enableTorch={torchOn}
         onCameraReady={() => setIsReady(true)}
       />
@@ -621,18 +624,21 @@ function ScannerStep({
             borderState === "error" && styles.cardFrameError,
             borderState === "success" && styles.cardFrameSuccess,
           ]}
-          onLayout={(event) => {
-            frameLayoutRef.current = event.nativeEvent.layout;
-          }}
         >
+          {capturedUri && (
+            <Image source={{ uri: capturedUri }} style={StyleSheet.absoluteFill} contentFit="cover" />
+          )}
           <Animated.View style={[styles.progressTop, horizontalProgressStyle, borderState === "success" && styles.progressSuccess]} />
           <Animated.View style={[styles.progressBottom, horizontalProgressStyle, borderState === "success" && styles.progressSuccess]} />
           <Animated.View style={[styles.progressLeft, verticalProgressStyle, borderState === "success" && styles.progressSuccess]} />
           <Animated.View style={[styles.progressRight, verticalProgressStyle, borderState === "success" && styles.progressSuccess]} />
           {isIdentifying && (
-            <View style={styles.identifyingOverlay}>
-              <ActivityIndicator color="#FFF" size="large" />
-              <Text style={styles.identifyingText}>{scanStatus}</Text>
+            <View style={styles.identifyingOverlay} pointerEvents="none">
+              <Animated.View style={[styles.scanLine, scanLineStyle]} />
+              <View style={styles.identifyingStatus}>
+                <ActivityIndicator color="#FFF" size="small" />
+                <Text style={styles.identifyingText}>{scanStatus}</Text>
+              </View>
             </View>
           )}
         </View>
@@ -1087,7 +1093,7 @@ function CandidateModal({
           <View style={styles.modalHeader}>
             <View>
               <Text style={styles.modalTitle}>Confirm the card</Text>
-              <Text style={styles.modalSubtitle}>The top matches were too close to call.</Text>
+              <Text style={styles.modalSubtitle}>Pick the closest match, or try another photo.</Text>
             </View>
             <TouchableOpacity onPress={onClose}>
               <Ionicons name="close" size={24} color={colors.text} />
@@ -1197,7 +1203,9 @@ const getStyles = (colors: ThemeColors) =>
     progressLeft: { position: "absolute", bottom: 0, left: -2, width: 5, borderRadius: 3, backgroundColor: colors.primary },
     progressRight: { position: "absolute", top: 0, right: -2, width: 5, borderRadius: 3, backgroundColor: colors.primary },
     progressSuccess: { backgroundColor: "#22c55e" },
-    identifyingOverlay: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, backgroundColor: "rgba(0,0,0,0.48)" },
+    identifyingOverlay: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "flex-end", paddingBottom: 16, backgroundColor: "rgba(0,0,0,0.15)" },
+    scanLine: { position: "absolute", left: 0, right: 0, top: 0, height: 3, backgroundColor: colors.primary, shadowColor: colors.primary, shadowOpacity: 0.9, shadowRadius: 8, shadowOffset: { width: 0, height: 0 }, elevation: 6 },
+    identifyingStatus: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: "rgba(0,0,0,0.6)" },
     identifyingText: { color: "#FFF", fontSize: 14, fontWeight: "700" },
     scannerHint: { color: "rgba(255,255,255,0.84)", fontSize: 13, textAlign: "center", marginTop: 18 },
     scanHintChecks: { flexDirection: "row", gap: 10, marginTop: 12 },

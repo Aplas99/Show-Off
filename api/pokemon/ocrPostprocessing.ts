@@ -122,6 +122,25 @@ export function formatPrice(value: number): string {
   return `$${value.toFixed(2)}`;
 }
 
+/**
+ * Repair OCR-injected spaces inside a collector number (e.g. "043/2 64" →
+ * "043/264"). Only digit groups touching the slash are merged, and only when
+ * the merged run still fits a plausible collector number, so unrelated digits
+ * on the same line (years, HP values) are left alone.
+ */
+export function repairCollectorNumberGaps(line: string): string {
+  if (!line.includes("/")) return line;
+  return line
+    // Gap inside the total, after the slash: "043/2 64" → "043/264"
+    .replace(/(\/\s*)(\d{1,3}) (\d{1,3})\b/g, (match, slash, a, b) =>
+      (a + b).length <= 4 ? `${slash}${a}${b}` : match,
+    )
+    // Gap inside the number, before the slash: "04 3/264" → "043/264"
+    .replace(/\b(\d{1,3}) (\d{1,3})(\s*\/)/g, (match, a, b, slash) =>
+      (a + b).length <= 4 ? `${a}${b}${slash}` : match,
+    );
+}
+
 const POKEMON_PROMO_SET_IDS = new Set([
   "basep", "bwp", "dpp", "hsp", "np", "smp", "svp", "swshp", "xyp",
 ]);

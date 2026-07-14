@@ -224,12 +224,6 @@ function ShowcaseCarousel({ data, onItemPress, onIndexChange }: Props) {
               ? productData.images[0]
               : undefined);
 
-          const displayTitle =
-            actualItem.custom_title ||
-            actualItem.products?.searchableTitle ||
-            "Untitled";
-
-
           return (
             <Animated.View
               style={[
@@ -256,19 +250,6 @@ function ShowcaseCarousel({ data, onItemPress, onIndexChange }: Props) {
                     priority="high"
                     recyclingKey={actualItem.id.toString()}
                   />
-                  {/* Bottom fade gradient */}
-                  <LinearGradient
-                    colors={["transparent", "rgba(0,0,0,0.8)"]}
-                    locations={[0.3, 1]}
-                    style={styles.posterFade}
-                  />
-                  {/* Glassmorphic Overlay */}
-                  <View style={styles.glassOverlay}>
-                    {/* Title */}
-                    <Text style={styles.cardTitle} numberOfLines={1}>
-                      {displayTitle}
-                    </Text>
-                  </View>
                 </View>
               </TouchableOpacity>
             </Animated.View>
@@ -366,32 +347,6 @@ const styles = StyleSheet.create({
     height: "100%",
     backgroundColor: COLORS.surfaceContainerHigh,
   },
-  // --- Poster fade gradient ---
-  posterFade: {
-    position: "absolute",
-    left: 0,
-    right: 0,
-    bottom: 0,
-    height: "50%",
-  },
-  // --- Glassmorphic Overlay ---
-  glassOverlay: {
-    position: "absolute",
-    bottom: 16,
-    left: 16,
-    right: 16,
-    backgroundColor: "rgba(0,0,0,0.4)",
-    borderRadius: 12,
-    padding: 20,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.05)",
-  },
-  cardTitle: {
-    fontSize: 22,
-    fontWeight: "700",
-    color: "#FFF",
-  },
-  // ---
   emptyContainer: {
     flex: 1,
     justifyContent: "center",

@@ -178,6 +178,38 @@ const ocrFixtures: OcrFixture[] = [
     expectedTotal: 142,
     expectedSetCode: null,
   },
+  {
+    label: "SM Black Star Promo card (concatenated prefix+number, no total)",
+    ocrText:
+      "BASIC\nPopplio\nSing\nYour opponent's Active Pokémon is now Asleep.\nweakness x2\nNO. 728 Sea Lion Pokémon HT: 1'04 WT. 16.5 lbs.\nSM03\n2016 Pokémon\nresistance\nw60\nretreat",
+    expectedName: "Popplio",
+    expectedNumber: "sm03",
+    expectedTotal: null,
+    expectedSetCode: null,
+  },
+  {
+    // Real failed scan: OCR invented set code "FS" from footer noise and read
+    // the padded number "o42/091". The bogus code must be rejected (only
+    // catalog ptcgoCodes are trusted) while number and total survive.
+    label: "card with hallucinated set code and padded collector number",
+    ocrText:
+      "Greavard\nNO 97Ghost Dog Aokémon H2W22 lbs\nGraveyard Gamboling\nessx2 resistance -30\nFs o42/091\nis attack does 10 damage for each Pokémon in your\ncard pile.\n70 O\nretreat\n10x",
+    expectedName: "Greavard",
+    expectedNumber: "042",
+    expectedTotal: 91,
+    expectedSetCode: null,
+  },
+  {
+    // Real failed scan: fused "CinderaceV" name and an OCR space inside the
+    // collector total ("043/2 64" instead of "043/264").
+    label: "V card with fused name suffix and gapped collector total",
+    ocrText:
+      "BASIC\nCinderaceV\nDiscard 2 O Energy from this Pokêmon,\nweakness x2\nMus. Sban Graphics\nBlaze Kick\nE 043/2 64\nresistance\nVrule\nretreat\nHP\nyour opponent takes 2 Prize cards.\n2021 Pokemon / Nintendo I Creatures/ GAME FREAK\n220\n210\nWhen your Pokémon V is Knocked Qut,",
+    expectedName: "Cinderace V",
+    expectedNumber: "043",
+    expectedTotal: 264,
+    expectedSetCode: null,
+  },
 ];
 
 // ---------------------------------------------------------------------------
@@ -186,28 +218,23 @@ const ocrFixtures: OcrFixture[] = [
 
 describe("Pokémon card image recognition", () => {
   describe("calculatePokemonCardCrop", () => {
-    it("maps the visible card guide into a cover-scaled camera image", () => {
-      const crop = calculatePokemonCardCrop(3000, 4000, {
-        previewWidth: 390,
-        previewHeight: 844,
-        frameX: 25,
-        frameY: 170,
-        frameWidth: 340,
-        frameHeight: 475,
-      });
+    it("produces a centered card-shaped crop", () => {
+      const crop = calculatePokemonCardCrop(3000, 4000);
 
-      expect(crop).toEqual({
-        originX: 694,
-        originY: 806,
-        width: 1611,
-        height: 2251,
-      });
+      // Card aspect ratio preserved.
+      expect(crop.width / crop.height).toBeCloseTo(63 / 88, 5);
+      // Centered within the photo.
+      expect(crop.originX).toBeCloseTo((3000 - crop.width) / 2, 5);
+      expect(crop.originY).toBeCloseTo((4000 - crop.height) / 2, 5);
+      // Stays inside the image bounds.
+      expect(crop.originX + crop.width).toBeLessThanOrEqual(3000);
+      expect(crop.originY + crop.height).toBeLessThanOrEqual(4000);
     });
 
-    it("centers a default crop when no scan frame is provided", () => {
-      const crop = calculatePokemonCardCrop(2000, 3000);
+    it("clamps the crop for short, wide images", () => {
+      const crop = calculatePokemonCardCrop(2000, 1000);
       expect(crop.width).toBeGreaterThan(0);
-      expect(crop.height).toBeGreaterThan(0);
+      expect(crop.height).toBeCloseTo(1000, 5);
       expect(crop.originX).toBeGreaterThanOrEqual(0);
       expect(crop.originY).toBeGreaterThanOrEqual(0);
     });
@@ -256,6 +283,17 @@ describe("Pokémon card image recognition", () => {
 
       expect(identifiers.nameCandidates).toHaveLength(1);
       expect(identifiers.nameCandidates[0]).toBe("Charizard");
+    });
+
+    it("adds split and base-name candidates for fused rarity suffixes", () => {
+      const identifiers = parsePokemonCardText({
+        text: "BASIC\nCinderaceV\n043/264",
+      });
+
+      expect(identifiers.nameCandidates[0]).toBe("Cinderace V");
+      expect(identifiers.nameCandidates).toEqual(
+        expect.arrayContaining(["Cinderace"]),
+      );
     });
 
     it("repairs a common VMAX foil OCR error", () => {

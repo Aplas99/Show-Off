@@ -12,7 +12,6 @@ import {
   preparePokemonCardZones,
   scoreCardMatch,
   type PokemonCardIdentifiers,
-  type PokemonCardScanFrame,
   type PokemonOcrResult,
   type RecognizedPokemonCard,
 } from "./recognition";
@@ -135,16 +134,13 @@ const defaultDependencies: StillPhotoRecognitionDependencies = {
 
 export async function identifyPokemonCardStillPhoto(
   imageUri: string,
-  scanFrame?: PokemonCardScanFrame,
   dependencies: StillPhotoRecognitionDependencies = defaultDependencies,
 ): Promise<StillPhotoRecognitionResult> {
   const startedAt = Date.now();
-  cardScanDebug("still-photo.started", {
-    hasScanFrame: !!scanFrame,
-  });
+  cardScanDebug("still-photo.started");
 
   try {
-    const zones = await preparePokemonCardZones(imageUri, scanFrame);
+    const zones = await preparePokemonCardZones(imageUri);
     cardScanDebug("still-photo.zones-ready", zones);
 
     const [nameZoneOcr, footerZoneOcr, fullCardOcr] = await Promise.all([
