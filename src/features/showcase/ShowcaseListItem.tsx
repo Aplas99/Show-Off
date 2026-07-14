@@ -1,6 +1,9 @@
 import { ItemWithProduct } from "@/api/items";
 import { useColors, type ThemeColors } from "@/constants/theme";
+import { useHaptics } from "@/hooks/useHaptics";
+import { Ionicons } from "@expo/vector-icons";
 import { Image } from "expo-image";
+import { LinearGradient } from "expo-linear-gradient";
 import { Link } from "expo-router";
 import React, { useMemo } from "react";
 import {
@@ -23,6 +26,7 @@ type Props = {
 function ShowcaseListItem({ item, onPress, style }: Props) {
   const colors = useColors();
   const styles = useMemo(() => getStyles(colors), [colors]);
+  const haptics = useHaptics();
 
   const product = item.products;
   const title = item.custom_title || product?.searchableTitle || "Unknown Item";
@@ -47,16 +51,42 @@ function ShowcaseListItem({ item, onPress, style }: Props) {
     }).format(price);
   }, [currency, price]);
 
-  const content = (
-    <View style={styles.card}>
-      <Image
-        source={imageUrl ? { uri: imageUrl } : PLACEHOLDER_IMAGE}
-        style={styles.image}
-        contentFit="cover"
-        cachePolicy="memory-disk"
-        recyclingKey={String(item.id)}
-        transition={0}
-      />
+  const handlePress = () => {
+    haptics.selection();
+    onPress?.(item);
+  };
+
+  const renderContent = (pressed: boolean) => (
+    <View style={[styles.card, pressed && styles.cardPressed]}>
+      <View style={styles.imageWrap}>
+        <Image
+          source={imageUrl ? { uri: imageUrl } : PLACEHOLDER_IMAGE}
+          style={styles.image}
+          contentFit="cover"
+          cachePolicy="memory-disk"
+          recyclingKey={String(item.id)}
+          transition={150}
+        />
+        <LinearGradient
+          colors={["transparent", "rgba(0,0,0,0.55)"]}
+          start={{ x: 0, y: 0.4 }}
+          end={{ x: 0, y: 1 }}
+          style={styles.imageScrim}
+        />
+
+        {item.for_sale && (
+          <View style={styles.saleBadge}>
+            <Ionicons name="pricetag" size={10} color="#FFF" />
+            <Text style={styles.saleText}>For Sale</Text>
+          </View>
+        )}
+
+        {formattedPrice && (
+          <View style={styles.pricePill}>
+            <Text style={styles.pricePillText}>{formattedPrice}</Text>
+          </View>
+        )}
+      </View>
 
       <View style={styles.info}>
         <Text style={styles.title} numberOfLines={1}>
@@ -73,45 +103,37 @@ function ShowcaseListItem({ item, onPress, style }: Props) {
           </Text>
         ) : null}
 
-        {brand && (
-          <Text style={styles.brand} numberOfLines={1}>
-            {brand}
-          </Text>
-        )}
-
-        <View style={styles.footer}>
-          {formattedPrice && <Text style={styles.price}>{formattedPrice}</Text>}
-
-          {item.for_sale && (
-            <View style={styles.saleBadge}>
-              <Text style={styles.saleText}>For Sale</Text>
+        <View style={styles.metaRow}>
+          {brand && (
+            <Text style={styles.brand} numberOfLines={1}>
+              {brand}
+            </Text>
+          )}
+          {item.condition && (
+            <View style={styles.conditionPill}>
+              <Text style={styles.conditionText} numberOfLines={1}>
+                {item.condition}
+              </Text>
             </View>
           )}
         </View>
-
-        {item.condition && (
-          <Text style={styles.condition} numberOfLines={1}>
-            {item.condition}
-          </Text>
-        )}
       </View>
     </View>
   );
 
   if (onPress) {
     return (
-      <Pressable
-        onPress={() => onPress(item)}
-        style={[styles.container, style]}
-      >
-        {content}
+      <Pressable onPress={handlePress} style={[styles.container, style]}>
+        {({ pressed }) => renderContent(pressed)}
       </Pressable>
     );
   }
 
   return (
     <Link href={`/(tabs)/showcase/${item.showcase_id}` as any} asChild>
-      <Pressable style={[styles.container, style]}>{content}</Pressable>
+      <Pressable onPress={() => haptics.selection()} style={[styles.container, style]}>
+        {({ pressed }) => renderContent(pressed)}
+      </Pressable>
     </Link>
   );
 }
@@ -125,15 +147,31 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
   },
   card: {
     flex: 1,
-    backgroundColor: colors.surface,
-    borderRadius: 12,
+    backgroundColor: colors.surfaceContainer,
+    borderRadius: 18,
     overflow: "hidden",
     borderWidth: 1,
-    borderColor: colors.border,
+    borderColor: colors.outlineVariant,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.12,
+    shadowRadius: 8,
+    elevation: 3,
+  },
+  cardPressed: {
+    opacity: 0.92,
+    transform: [{ scale: 0.98 }],
+  },
+  imageWrap: {
+    width: "100%",
+    height: 150,
   },
   image: {
     width: "100%",
-    height: 140,
+    height: "100%",
+  },
+  imageScrim: {
+    ...StyleSheet.absoluteFillObject,
   },
   imagePlaceholder: {
     width: "100%",
@@ -142,54 +180,75 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
     justifyContent: "center",
     backgroundColor: colors.surfaceLight,
   },
+  saleBadge: {
+    position: "absolute",
+    top: 8,
+    right: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    backgroundColor: "#4CAF50",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  saleText: {
+    color: "#FFF",
+    fontSize: 10,
+    fontWeight: "700",
+  },
+  pricePill: {
+    position: "absolute",
+    left: 8,
+    bottom: 8,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  pricePillText: {
+    color: "#FFF",
+    fontSize: 12,
+    fontWeight: "800",
+  },
   info: {
-    padding: 10,
+    padding: 12,
+    gap: 4,
   },
   title: {
     color: colors.text,
     fontSize: 14,
-    fontWeight: "600",
-    marginBottom: 4,
+    fontWeight: "700",
   },
   description: {
-    color: colors.textDim,
+    color: colors.onSurfaceVariant,
     fontSize: 11,
-    marginBottom: 6,
     lineHeight: 14,
+  },
+  metaRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+    marginTop: 4,
+    gap: 8,
   },
   brand: {
     color: colors.primary,
     fontSize: 11,
-    fontWeight: "500",
-    marginBottom: 2,
+    fontWeight: "600",
+    flexShrink: 1,
   },
-  footer: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginTop: 4,
-  },
-  price: {
-    color: colors.text,
-    fontSize: 13,
-    fontWeight: "bold",
-  },
-  saleBadge: {
-    backgroundColor: "rgba(76, 175, 80, 0.2)",
-    paddingHorizontal: 6,
+  conditionPill: {
+    backgroundColor: colors.surfaceContainerHigh,
+    borderRadius: 999,
+    paddingHorizontal: 8,
     paddingVertical: 2,
-    borderRadius: 4,
+    borderWidth: 1,
+    borderColor: colors.outlineVariant,
   },
-  saleText: {
-    color: "#4CAF50",
+  conditionText: {
+    color: colors.onSurfaceVariant,
     fontSize: 10,
     fontWeight: "600",
-  },
-  condition: {
-    color: colors.textDim,
-    fontSize: 10,
-    marginTop: 6,
-    fontStyle: "italic",
-    textAlign: "right",
   },
 });
