@@ -16,6 +16,10 @@ jest.mock("expo-image-manipulator", () => ({
   SaveFormat: { JPEG: "jpeg" },
 }));
 
+jest.mock("expo-file-system/legacy", () => ({
+  getInfoAsync: jest.fn(),
+}));
+
 jest.mock("@/lib/supabase", () => ({
   supabase: {},
 }));

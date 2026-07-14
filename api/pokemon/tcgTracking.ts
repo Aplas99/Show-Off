@@ -1,8 +1,17 @@
 import { z } from "zod";
+import { getTcgProductDetail, scanTcgCardImage } from "@/api/tcg/catalog";
 import type { PokemonTcgCard } from "./index";
 
 const TCG_TRACKING_URL = "https://openapi.tcgtracking.com/v1";
 const POKEMON_CATEGORY_ID = 3;
+
+// A last-resort fallback (see scanPokemonCardViaTcgTracking below) — its
+// confidence scale isn't comparable to the text-OCR pipeline's 0-1
+// score, so every result is given a fixed score safely below
+// MIN_REVIEW_SCORE (0.6 in TcgCreateScreen.tsx), forcing manual
+// confirmation via the candidate picker rather than risking an
+// incorrect auto-accept.
+const IMAGE_SCAN_FALLBACK_SCORE = 0.5;
 
 const setSchema = z.object({
   id: z.number(),
@@ -114,6 +123,74 @@ function mapProduct(
       cardtraderId: product.cardtrader_id ?? undefined,
     },
   };
+}
+
+/** Maps the generic multi-game TcgCard shape (api/tcg/catalog.ts) into PokemonTcgCard. */
+function tcgCardToPokemonCard(card: {
+  productId: number;
+  name: string;
+  number: string | null;
+  rarity: string | null;
+  setId: number;
+  setName: string;
+  imageUrl: string | null;
+  tcgplayerUrl: string | null;
+}): PokemonTcgCard {
+  return {
+    id: `tcgtracking:${card.productId}`,
+    name: card.name,
+    supertype: "Pokémon",
+    subtypes: [],
+    types: [],
+    set: {
+      id: `tcgtracking:${card.setId}`,
+      name: card.setName || "Unknown set",
+    },
+    number: collectorNumber(card.number) ?? "unknown",
+    rarity: card.rarity ?? undefined,
+    nationalPokedexNumbers: [],
+    images: { small: card.imageUrl ?? "", large: card.imageUrl ?? "" },
+    tcgplayer: card.tcgplayerUrl ? { url: card.tcgplayerUrl } : undefined,
+    source: "tcgtracking",
+    externalIds: { tcgtrackingProductId: card.productId },
+  };
+}
+
+/**
+ * Last-resort image-based fallback for scans the text-OCR pipeline
+ * (on-device ML Kit, then the PaddleOCR server pass) couldn't resolve.
+ * Uploads the captured photo to TCGTracking's /v1/scan endpoint scoped
+ * to Pokemon and hydrates the top candidates. Curator-only — gated by
+ * the caller the same way the PaddleOCR fallback already is.
+ */
+export async function scanPokemonCardViaTcgTracking(
+  imageUri: string,
+  limit = 3,
+): Promise<{ card: PokemonTcgCard; score: number }[]> {
+  const results = await scanTcgCardImage(POKEMON_CATEGORY_ID, imageUri);
+  const top = results.slice(0, limit);
+
+  const hydrated = await Promise.all(
+    top.map(async (result) => {
+      try {
+        const detail = await getTcgProductDetail(
+          POKEMON_CATEGORY_ID,
+          result.productId,
+          "Pokemon",
+        );
+        return {
+          card: tcgCardToPokemonCard(detail),
+          score: IMAGE_SCAN_FALLBACK_SCORE,
+        };
+      } catch {
+        return null;
+      }
+    }),
+  );
+
+  return hydrated.filter(
+    (entry): entry is { card: PokemonTcgCard; score: number } => entry !== null,
+  );
 }
 
 export async function searchTcgTrackingPokemonCards(
