@@ -27,12 +27,15 @@ export default function AuthInitializer({ children }: { children: React.ReactNod
     if (loading || !navigationState?.key) return;
 
     const inAuthGroup = segments[0] === "(auth)";
+    // Public showcase links (app/s/[id].tsx) must stay reachable by
+    // signed-out visitors — they sit outside every auth-gated segment.
+    const inPublicGroup = segments[0] === "s";
     // Recovery links sign the user in but must stay on the reset screen.
     const isResettingPassword = (segments as string[])[1] === "reset-password";
 
     if (session && inAuthGroup && !isResettingPassword) {
       router.replace("/(tabs)/discover");
-    } else if (!session && !inAuthGroup) {
+    } else if (!session && !inAuthGroup && !inPublicGroup) {
       router.replace("/(auth)/signin");
     }
   }, [session, loading, navigationState]);

@@ -143,6 +143,37 @@ export function useGetShowcase(id: string) {
 }
 
 /**
+ * Toggles whether a showcase is publicly viewable (via `app/s/[id].tsx`,
+ * unauthenticated). Reuses the existing `is_public` column/RLS policy —
+ * it already grants `anon` read on the showcase row when true. Callers
+ * must gate this on `isCurator` themselves (see CuratorGate); this
+ * mutation only enforces ownership, via "update_own_showcase" RLS.
+ */
+export function useSetShowcasePublic() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: { showcaseId: string; isPublic: boolean }) => {
+      const { data, error } = await supabase
+        .from("showcase")
+        .update({ is_public: input.isPublic })
+        .eq("id", input.showcaseId)
+        .select(SHOWCASE_SELECT)
+        .single();
+
+      if (error) throw new Error(error.message);
+      return data as ShowcaseRow;
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.showcase.visible() });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.showcase.byId(vars.showcaseId),
+      });
+    },
+  });
+}
+
+/**
  * Update a showcase's Curator-only customization (accent color / banner
  * image). Callers must gate the entry point on `isCurator` themselves
  * (see CuratorGate) — this mutation relies on the existing

@@ -1,5 +1,8 @@
 import { ItemWithProduct, useGetItemsWithProductData } from "@/api/items";
+import { useMembership } from "@/api/memberships";
+import { useSetShowcasePublic } from "@/api/showcase";
 import { TAB_BAR_HEIGHT } from "@/constants/layoutConfig";
+import { CuratorGateModal } from "@/src/features/membership/CuratorGate";
 import ItemDetailModal from "@/src/features/showcase/ItemDetailModal";
 import { PokemonCardGridView } from "@/src/features/showcase/PokemonCardGridView";
 import PokemonCardTiltModal from "@/src/features/showcase/PokemonCardTiltModal";
@@ -17,6 +20,7 @@ import React, {
 } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Animated,
   FlatList,
   Keyboard,
@@ -24,6 +28,7 @@ import {
   Platform,
   RefreshControl,
   ScrollView,
+  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -58,6 +63,32 @@ export default function ShowcaseDetail() {
 
   // View mode state
   const [viewMode, setViewMode] = useState<"grid" | "carousel">("grid");
+
+  // Sharable public link (Curator feature)
+  const { data: membership } = useMembership();
+  const isCurator = membership?.isCurator ?? false;
+  const setShowcasePublic = useSetShowcasePublic();
+  const [sharePaywallVisible, setSharePaywallVisible] = useState(false);
+
+  const handleShare = useCallback(async () => {
+    if (!showcaseId) return;
+    if (!isCurator) {
+      setSharePaywallVisible(true);
+      return;
+    }
+    try {
+      await setShowcasePublic.mutateAsync({ showcaseId, isPublic: true });
+      await Share.share({
+        message: `Check out my showcase on Show-Off: showoff://s/${showcaseId}`,
+        url: `showoff://s/${showcaseId}`,
+      });
+    } catch (error: any) {
+      Alert.alert(
+        "Couldn't share",
+        error?.message ?? "Please try again.",
+      );
+    }
+  }, [showcaseId, isCurator, setShowcasePublic]);
 
   // Modal state
   const [selectedItem, setSelectedItem] = useState<ItemWithProduct | null>(
@@ -401,6 +432,14 @@ export default function ShowcaseDetail() {
         </TouchableOpacity>
 
         <TouchableOpacity
+          style={styles.viewToggleButton}
+          onPress={handleShare}
+          disabled={setShowcasePublic.isPending}
+        >
+          <Ionicons name="share-social-outline" size={18} color="#9B5DE5" />
+        </TouchableOpacity>
+
+        <TouchableOpacity
           style={styles.filterButton}
           onPress={() => setFilterModalOpen(true)}
         >
@@ -595,6 +634,13 @@ export default function ShowcaseDetail() {
           </View>
         </View>
       </Modal>
+
+      <CuratorGateModal
+        visible={sharePaywallVisible}
+        feature="Sharable showcase links"
+        description="Let anyone view this showcase with a link, no account required, with Curator."
+        onDismiss={() => setSharePaywallVisible(false)}
+      />
     </View>
   );
 }
