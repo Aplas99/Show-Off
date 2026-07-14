@@ -3,7 +3,14 @@
 //
 // Deploy:  npx supabase functions deploy stripe-checkout
 // Secrets: npx supabase secrets set STRIPE_SECRET_KEY=sk_... \
-//            STRIPE_PRICE_ID_MONTHLY=price_... STRIPE_PRICE_ID_ANNUAL=price_...
+//            STRIPE_PRICE_ID_FOUNDING_COLLECTOR=price_... \
+//            STRIPE_PRICE_ID_CURATOR_MONTHLY=price_... \
+//            STRIPE_PRICE_ID_CURATOR_ANNUAL=price_...
+//
+// After creating each Price in the Stripe Dashboard, also seed
+// public.membership_tiers with its id -> tier mapping (see migration
+// 20260714090000_add_membership_tiers.sql) so the app resolves the
+// correct tier for subscribers on that price.
 //
 // Optional secrets:
 //   MEMBERSHIP_SUCCESS_URL / MEMBERSHIP_CANCEL_URL / MEMBERSHIP_RETURN_URL
@@ -23,8 +30,9 @@ const corsHeaders = {
 };
 
 const PLAN_PRICE_ENV_VARS: Record<string, string> = {
-  monthly: "STRIPE_PRICE_ID_MONTHLY",
-  annual: "STRIPE_PRICE_ID_ANNUAL",
+  founding_collector: "STRIPE_PRICE_ID_FOUNDING_COLLECTOR",
+  curator_monthly: "STRIPE_PRICE_ID_CURATOR_MONTHLY",
+  curator_annual: "STRIPE_PRICE_ID_CURATOR_ANNUAL",
 };
 
 const DEFAULT_SUCCESS_URL = "showoff://membership?checkout=success";
@@ -117,7 +125,8 @@ Deno.serve(async (req) => {
       return json({ url: session.url });
     }
 
-    const plan = typeof body?.plan === "string" ? body.plan : "monthly";
+    const plan =
+      typeof body?.plan === "string" ? body.plan : "founding_collector";
     const priceEnvVar = PLAN_PRICE_ENV_VARS[plan];
     const priceId = priceEnvVar ? Deno.env.get(priceEnvVar) : undefined;
 

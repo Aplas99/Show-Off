@@ -5,6 +5,8 @@ import { z } from "zod";
 
 // --- Types & schemas ---
 
+export type MembershipTier = "collector" | "curator";
+
 export const subscriptionRowSchema = z.object({
   id: z.string().min(1),
   user_id: z.string().min(1),
@@ -14,14 +16,23 @@ export const subscriptionRowSchema = z.object({
   current_period_end: z.string().nullable(),
   created_at: z.string(),
   updated_at: z.string(),
+  // Both default rather than required: rows read before the tiers
+  // migration/view is in place (or via the raw `subscriptions` table)
+  // should still parse, falling back to the base paid tier.
+  tier: z.enum(["collector", "curator"]).default("collector"),
+  provider: z.string().default("stripe"),
 });
 
 export type SubscriptionRow = z.infer<typeof subscriptionRowSchema>;
 
-export type MembershipPlanId = "monthly" | "annual";
+export type MembershipPlanId =
+  | "founding_collector"
+  | "curator_monthly"
+  | "curator_annual";
 
 export interface MembershipPlan {
   id: MembershipPlanId;
+  tier: MembershipTier;
   name: string;
   /** Display-only. Real amounts live on the Stripe Price objects. */
   priceLabel: string;
@@ -29,19 +40,30 @@ export interface MembershipPlan {
 }
 
 // Placeholder copy — keep in sync with the Stripe Prices configured via
-// STRIPE_PRICE_ID_MONTHLY / STRIPE_PRICE_ID_ANNUAL on the Edge Function.
+// STRIPE_PRICE_ID_FOUNDING_COLLECTOR / STRIPE_PRICE_ID_CURATOR_MONTHLY /
+// STRIPE_PRICE_ID_CURATOR_ANNUAL on the Edge Function.
 export const MEMBERSHIP_PLANS: MembershipPlan[] = [
   {
-    id: "monthly",
-    name: "Collector Monthly",
-    priceLabel: "$4.99 / month",
+    id: "founding_collector",
+    tier: "collector",
+    name: "Founding Collector",
+    priceLabel: "$3.99 / month",
     description: "Larger uploads, unlimited showcases, and priority scanning.",
   },
   {
-    id: "annual",
-    name: "Collector Annual",
-    priceLabel: "$39.99 / year",
-    description: "Everything in Monthly, two months free.",
+    id: "curator_monthly",
+    tier: "curator",
+    name: "Curator Monthly",
+    priceLabel: "$5.99 / month",
+    description:
+      "Everything in Founding Collector, plus price history, sharable showcases, and set-completion tracking.",
+  },
+  {
+    id: "curator_annual",
+    tier: "curator",
+    name: "Curator Annual",
+    priceLabel: "$59.99 / year",
+    description: "Everything in Curator Monthly, at an annual discount.",
   },
 ];
 
@@ -88,9 +110,9 @@ async function fetchCurrentSubscription(): Promise<SubscriptionRow | null> {
   if (!user) return null;
 
   const { data, error } = await supabase
-    .from("subscriptions")
+    .from("subscriptions_with_tier")
     .select(
-      "id, user_id, status, price_id, cancel_at_period_end, current_period_end, created_at, updated_at",
+      "id, user_id, status, price_id, cancel_at_period_end, current_period_end, created_at, updated_at, tier, provider",
     )
     .eq("user_id", user.id)
     .order("updated_at", { ascending: false })
@@ -121,17 +143,26 @@ async function invokeStripeSession(body: {
 // --- Hooks ---
 
 /**
- * Current user's membership state. `isPaidUser` is the flag feature gates
- * should consume.
+ * Current user's membership state.
+ *
+ * `isPaidUser` is kept as the flag pre-existing feature gates (upload
+ * limits, the membership screen) already consume — it means "any active
+ * paid tier," collector or curator. New Curator-only features should gate
+ * on `isCurator` instead.
  */
 export function useMembership() {
   return useQuery({
     queryKey: membershipKeys.current(),
     queryFn: async () => {
       const subscription = await fetchCurrentSubscription();
+      const isPaidUser = isActiveMembershipStatus(subscription?.status);
+      const isCurator = isPaidUser && subscription?.tier === "curator";
       return {
         subscription,
-        isPaidUser: isActiveMembershipStatus(subscription?.status),
+        tier: isPaidUser ? (subscription?.tier ?? "collector") : null,
+        isPaidUser,
+        isCollectorOrAbove: isPaidUser,
+        isCurator,
       };
     },
     staleTime: 60 * 1000,

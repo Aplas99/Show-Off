@@ -21,11 +21,17 @@ import {
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const PERKS = [
+const COLLECTOR_PERKS = [
     { icon: "cloud-upload-outline", label: "200MB image uploads (vs 5MB free)" },
     { icon: "albums-outline", label: "Unlimited showcases" },
     { icon: "scan-outline", label: "Priority card scanning" },
-    { icon: "sparkles-outline", label: "Early access to new features" },
+] as const;
+
+const CURATOR_PERKS = [
+    { icon: "stats-chart-outline", label: "Price history for your collection" },
+    { icon: "share-social-outline", label: "Sharable public showcase links" },
+    { icon: "ribbon-outline", label: "Curator badge & showcase customization" },
+    { icon: "list-outline", label: "Missing-items tracking per set" },
 ] as const;
 
 export default function MembershipScreen() {
@@ -37,14 +43,25 @@ export default function MembershipScreen() {
     const { data: membership, isLoading } = useMembership();
     const startCheckout = useStartCheckout();
     const openPortal = useOpenBillingPortal();
-    const [selectedPlan, setSelectedPlan] = useState<MembershipPlanId>("monthly");
+    const [selectedPlan, setSelectedPlan] =
+        useState<MembershipPlanId>("founding_collector");
 
     const isPaidUser = membership?.isPaidUser ?? false;
+    const isCurator = membership?.isCurator ?? false;
     const subscription = membership?.subscription ?? null;
+
+    // Founding Collector members can only move up to Curator, not
+    // "re-buy" the tier they already have.
+    const availablePlans = isPaidUser
+        ? MEMBERSHIP_PLANS.filter((plan) => plan.tier === "curator")
+        : MEMBERSHIP_PLANS;
+    const effectivePlan = availablePlans.some((plan) => plan.id === selectedPlan)
+        ? selectedPlan
+        : availablePlans[0]?.id ?? selectedPlan;
 
     const handleUpgrade = async () => {
         try {
-            await startCheckout.mutateAsync(selectedPlan);
+            await startCheckout.mutateAsync(effectivePlan);
         } catch (error: any) {
             Alert.alert(
                 "Checkout unavailable",
@@ -105,7 +122,11 @@ export default function MembershipScreen() {
                             </View>
                             <View style={styles.statusTextContainer}>
                                 <Text style={styles.statusTitle}>
-                                    {isPaidUser ? "Collector Member" : "Free Plan"}
+                                    {isCurator
+                                        ? "Curator Member"
+                                        : isPaidUser
+                                            ? "Founding Collector Member"
+                                            : "Free Plan"}
                                 </Text>
                                 <Text style={styles.statusSubtitle}>
                                     {isPaidUser
@@ -122,15 +143,17 @@ export default function MembershipScreen() {
                     <Animated.View entering={FadeInDown.delay(150).springify()}>
                         <View style={styles.sectionHeader}>
                             <Ionicons name="gift-outline" size={20} color={colors.primary} />
-                            <Text style={styles.sectionTitle}>Member Perks</Text>
+                            <Text style={styles.sectionTitle}>Collector Perks</Text>
                         </View>
                         <View style={styles.card}>
-                            {PERKS.map((perk, index) => (
+                            {COLLECTOR_PERKS.map((perk, index) => (
                                 <View
                                     key={perk.label}
                                     style={[
                                         styles.perkRow,
-                                        index === PERKS.length - 1 && { borderBottomWidth: 0 },
+                                        index === COLLECTOR_PERKS.length - 1 && {
+                                            borderBottomWidth: 0,
+                                        },
                                     ]}
                                 >
                                     <Ionicons
@@ -144,8 +167,35 @@ export default function MembershipScreen() {
                         </View>
                     </Animated.View>
 
+                    <Animated.View entering={FadeInDown.delay(175).springify()}>
+                        <View style={styles.sectionHeader}>
+                            <Ionicons name="ribbon-outline" size={20} color={colors.tertiary} />
+                            <Text style={styles.sectionTitle}>Curator Perks</Text>
+                        </View>
+                        <View style={styles.card}>
+                            {CURATOR_PERKS.map((perk, index) => (
+                                <View
+                                    key={perk.label}
+                                    style={[
+                                        styles.perkRow,
+                                        index === CURATOR_PERKS.length - 1 && {
+                                            borderBottomWidth: 0,
+                                        },
+                                    ]}
+                                >
+                                    <Ionicons
+                                        name={perk.icon as any}
+                                        size={20}
+                                        color={colors.tertiary}
+                                    />
+                                    <Text style={styles.perkText}>{perk.label}</Text>
+                                </View>
+                            ))}
+                        </View>
+                    </Animated.View>
+
                     {/* Plans + actions */}
-                    {isPaidUser ? (
+                    {isPaidUser && (
                         <Animated.View entering={FadeInDown.delay(200).springify()}>
                             <TouchableOpacity
                                 style={styles.primaryButton}
@@ -164,25 +214,29 @@ export default function MembershipScreen() {
                                 Stripe billing portal.
                             </Text>
                         </Animated.View>
-                    ) : (
-                        <Animated.View entering={FadeInDown.delay(200).springify()}>
+                    )}
+
+                    {!isCurator && (
+                        <Animated.View entering={FadeInDown.delay(220).springify()}>
                             <View style={styles.sectionHeader}>
                                 <Ionicons
                                     name="pricetag-outline"
                                     size={20}
                                     color={colors.primary}
                                 />
-                                <Text style={styles.sectionTitle}>Choose a Plan</Text>
+                                <Text style={styles.sectionTitle}>
+                                    {isPaidUser ? "Upgrade to Curator" : "Choose a Plan"}
+                                </Text>
                             </View>
                             <View style={styles.card}>
-                                {MEMBERSHIP_PLANS.map((plan, index) => {
-                                    const isSelected = selectedPlan === plan.id;
+                                {availablePlans.map((plan, index) => {
+                                    const isSelected = effectivePlan === plan.id;
                                     return (
                                         <TouchableOpacity
                                             key={plan.id}
                                             style={[
                                                 styles.planRow,
-                                                index === MEMBERSHIP_PLANS.length - 1 && {
+                                                index === availablePlans.length - 1 && {
                                                     borderBottomWidth: 0,
                                                 },
                                                 isSelected && {

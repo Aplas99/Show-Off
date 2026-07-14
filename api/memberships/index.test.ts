@@ -71,4 +71,30 @@ describe("subscriptionRowSchema", () => {
       }).success,
     ).toBe(false);
   });
+
+  it("defaults tier to collector and provider to stripe when absent", () => {
+    const result = subscriptionRowSchema.safeParse(validRow);
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.tier).toBe("collector");
+      expect(result.data.provider).toBe("stripe");
+    }
+  });
+
+  it("accepts an explicit curator tier", () => {
+    const result = subscriptionRowSchema.safeParse({
+      ...validRow,
+      tier: "curator",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.tier).toBe("curator");
+    }
+  });
+
+  it("rejects an unrecognized tier", () => {
+    expect(
+      subscriptionRowSchema.safeParse({ ...validRow, tier: "platinum" }).success,
+    ).toBe(false);
+  });
 });
