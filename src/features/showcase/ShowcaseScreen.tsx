@@ -1,15 +1,20 @@
+import { useMembership } from "@/api/memberships";
 import { ShowcaseRow, useGetVisibleShowcases } from "@/api/showcase";
 import { useColors, type ThemeColors } from "@/constants/theme";
+import { CuratorGateModal } from "@/src/features/membership/CuratorGate";
+import ShowcaseCustomizeModal from "@/src/features/showcase/ShowcaseCustomizeModal";
 import { Ionicons } from "@expo/vector-icons";
+import { Image } from "expo-image";
 import { LinearGradient } from "expo-linear-gradient";
 import { Link } from "expo-router";
-import React from "react";
+import React, { useState } from "react";
 import {
   ActivityIndicator,
   FlatList,
   Pressable,
   StyleSheet,
   Text,
+  TouchableOpacity,
   View,
 } from "react-native";
 import Animated, { FadeInDown } from "react-native-reanimated";
@@ -38,11 +43,27 @@ export default function ShowcaseScreen() {
   const styles = getStyles(colors);
   const accents = getAccents(colors);
   const { data: showcases, isLoading, error } = useGetVisibleShowcases();
+  const { data: membership } = useMembership();
+  const isCurator = membership?.isCurator ?? false;
+
+  const [customizeTarget, setCustomizeTarget] = useState<ShowcaseRow | null>(
+    null,
+  );
+  const [paywallVisible, setPaywallVisible] = useState(false);
 
   const showcaseCount = showcases?.length ?? 0;
 
+  const handleCustomizePress = (item: ShowcaseRow) => {
+    if (isCurator) {
+      setCustomizeTarget(item);
+    } else {
+      setPaywallVisible(true);
+    }
+  };
+
   const renderItem = ({ item, index }: { item: ShowcaseRow; index: number }) => {
     const accent = accents[index % accents.length];
+    const accentColor = item.accent_color || accent.gradient[0];
 
     return (
       <Animated.View entering={FadeInDown.delay(index * 60).duration(400)}>
@@ -56,29 +77,41 @@ export default function ShowcaseScreen() {
           <Pressable
             style={({ pressed }) => [
               styles.card,
-              { borderColor: `${accent.gradient[0]}40` },
+              { borderColor: `${accentColor}40` },
               pressed && styles.cardPressed,
             ]}
           >
             {/* Soft accent wash across the card */}
             <LinearGradient
-              colors={[`${accent.gradient[0]}14`, "transparent"]}
+              colors={[`${accentColor}14`, "transparent"]}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
               style={StyleSheet.absoluteFill}
             />
 
             {/* Thumbnail */}
-            <LinearGradient
-              colors={accent.gradient}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.thumbnail}
-            >
-              <View style={styles.thumbnailBubble} />
-              <View style={styles.thumbnailBubbleSmall} />
-              <Ionicons name={accent.icon} size={34} color="#FFF" />
-            </LinearGradient>
+            {item.banner_image_url ? (
+              <Image
+                source={{ uri: item.banner_image_url }}
+                style={styles.thumbnail}
+                contentFit="cover"
+              />
+            ) : (
+              <LinearGradient
+                colors={
+                  item.accent_color
+                    ? [item.accent_color, accent.gradient[1]]
+                    : accent.gradient
+                }
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.thumbnail}
+              >
+                <View style={styles.thumbnailBubble} />
+                <View style={styles.thumbnailBubbleSmall} />
+                <Ionicons name={accent.icon} size={34} color="#FFF" />
+              </LinearGradient>
+            )}
 
             {/* Info */}
             <View style={styles.cardInfo}>
@@ -105,25 +138,31 @@ export default function ShowcaseScreen() {
                   style={[
                     styles.defaultBadge,
                     {
-                      backgroundColor: `${accent.gradient[0]}22`,
-                      borderColor: `${accent.gradient[0]}55`,
+                      backgroundColor: `${accentColor}22`,
+                      borderColor: `${accentColor}55`,
                     },
                   ]}
                 >
-                  <Ionicons name="star" size={10} color={accent.gradient[0]} />
-                  <Text
-                    style={[styles.defaultBadgeText, { color: accent.gradient[0] }]}
-                  >
+                  <Ionicons name="star" size={10} color={accentColor} />
+                  <Text style={[styles.defaultBadgeText, { color: accentColor }]}>
                     DEFAULT
                   </Text>
                 </View>
               )}
             </View>
 
+            <TouchableOpacity
+              onPress={() => handleCustomizePress(item)}
+              style={styles.customizeButton}
+              hitSlop={8}
+            >
+              <Ionicons name="color-palette-outline" size={18} color={colors.onSurfaceVariant} />
+            </TouchableOpacity>
+
             <Ionicons
               name="chevron-forward"
               size={20}
-              color={`${accent.gradient[0]}AA`}
+              color={`${accentColor}AA`}
             />
           </Pressable>
         </Link>
@@ -206,6 +245,23 @@ export default function ShowcaseScreen() {
             </Text>
           </View>
         }
+      />
+
+      {customizeTarget && (
+        <ShowcaseCustomizeModal
+          visible={!!customizeTarget}
+          showcaseId={customizeTarget.id}
+          initialAccentColor={customizeTarget.accent_color}
+          initialBannerImageUrl={customizeTarget.banner_image_url}
+          onDismiss={() => setCustomizeTarget(null)}
+        />
+      )}
+
+      <CuratorGateModal
+        visible={paywallVisible}
+        feature="Showcase customization"
+        description="Give your showcase a custom accent color and banner image with Curator."
+        onDismiss={() => setPaywallVisible(false)}
       />
     </View>
   );
@@ -374,6 +430,17 @@ const getStyles = (colors: ThemeColors) =>
       fontSize: 9,
       fontWeight: "800",
       letterSpacing: 1,
+    },
+    customizeButton: {
+      position: "absolute",
+      top: 10,
+      right: 10,
+      width: 28,
+      height: 28,
+      borderRadius: 14,
+      backgroundColor: `${colors.surfaceContainerLowest}99`,
+      alignItems: "center",
+      justifyContent: "center",
     },
     // --- States ---
     errorText: {
