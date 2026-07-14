@@ -133,7 +133,7 @@ export default function ShowcaseDetail() {
   }, [keyboardOffset]);
 
   const handleItemPress = useCallback((item: ItemWithProduct) => {
-    if (item.pokemon_tcg_card_id) {
+    if (item.pokemon_tcg_card_id || item.tcg_card_id) {
       setTiltItem(item);
       setTiltVisible(true);
       return;
@@ -197,11 +197,9 @@ export default function ShowcaseDetail() {
   const duplicateCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const item of items ?? []) {
-      if (!item.pokemon_tcg_card_id) continue;
-      counts.set(
-        item.pokemon_tcg_card_id,
-        (counts.get(item.pokemon_tcg_card_id) ?? 0) + 1,
-      );
+      const cardId = item.pokemon_tcg_card_id || item.tcg_card_id;
+      if (!cardId) continue;
+      counts.set(cardId, (counts.get(cardId) ?? 0) + 1);
     }
     return counts;
   }, [items]);
@@ -261,12 +259,16 @@ export default function ShowcaseDetail() {
     return filtered;
   }, [items, searchQuery, sortBy, sortOrder, selectedTypes, selectedSetIds]);
 
-  // A showcase made entirely of Pokémon cards renders as a TCG Pocket-style
-  // collection grid instead of the generic item grid.
-  const isPokemonShowcase = useMemo(
+  // A showcase made entirely of trading cards (Pokémon or a multi-game
+  // card via api/tcg) renders as a TCG Pocket-style collection grid
+  // instead of the generic item grid — every game shares the same
+  // physical card aspect ratio.
+  const isTradingCardShowcase = useMemo(
     () =>
       (items?.length ?? 0) > 0 &&
-      (items ?? []).every((item) => !!item.pokemon_tcg_card_id),
+      (items ?? []).every(
+        (item) => !!item.pokemon_tcg_card_id || !!item.tcg_card_id,
+      ),
     [items],
   );
 
@@ -308,7 +310,7 @@ export default function ShowcaseDetail() {
 
       {/* Content Area */}
       <View style={styles.contentWrapper}>
-        {viewMode === "grid" && isPokemonShowcase && (
+        {viewMode === "grid" && isTradingCardShowcase && (
           <Reanimated.View
             entering={FadeIn.duration(150)}
             style={styles.viewContainer}
@@ -325,7 +327,7 @@ export default function ShowcaseDetail() {
           </Reanimated.View>
         )}
 
-        {viewMode === "grid" && !isPokemonShowcase && (
+        {viewMode === "grid" && !isTradingCardShowcase && (
           <Reanimated.View
             entering={FadeIn.duration(150)}
             style={styles.viewContainer}

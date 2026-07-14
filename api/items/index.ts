@@ -81,6 +81,7 @@ export interface ItemWithProduct {
   custom_brand?: string | null;
   custom_publisher?: string | null;
   custom_category?: string | null;
+  tcg_card_id?: string | null;
   /** Populated only for Pokémon TCG items, from the pokemon_tcg_cards cache. */
   pokemonTypes?: string[];
   pokemonSetId?: string | null;
@@ -88,6 +89,10 @@ export interface ItemWithProduct {
   pokemonSetPrintedTotal?: number | null;
   /** Current cached market price (distinct from `price`, which is the snapshot saved at item-creation time). */
   pokemonMarketPrice?: number | null;
+  /** Populated only for multi-game (Magic/Yu-Gi-Oh/etc.) items, from the tcg_cards cache. */
+  tcgGameName?: string | null;
+  tcgSetName?: string | null;
+  tcgMarketPrice?: number | null;
 }
 
 const BarcodeLookupAPIKey =
@@ -548,13 +553,16 @@ export function useGetItemsWithProductData(showcaseId: string) {
                     item_id,
                     showcase_id,
                     items (
-                        id, user_id, product_ean, pokemon_tcg_card_id, created_at, image_url, condition, user_description, for_sale, price, currency_code, custom_title, custom_brand, custom_publisher, custom_category,
+                        id, user_id, product_ean, pokemon_tcg_card_id, tcg_card_id, created_at, image_url, condition, user_description, for_sale, price, currency_code, custom_title, custom_brand, custom_publisher, custom_category,
                         products (
                             ean, searchableTitle, searchableDescription, searchableBrand, data
                         ),
                         pokemon_tcg_cards (
                             id, name, set_name, number, rarity, image_small, image_large, raw_data,
                             types, set_id, set_series, set_printed_total, tcgplayer
+                        ),
+                        tcg_cards (
+                            id, game_name, name, set_name, number, rarity, image_url, market_price, raw_data
                         )
                     )
                 `,
@@ -569,6 +577,7 @@ export function useGetItemsWithProductData(showcaseId: string) {
           const item = row.items;
           const product = item.products;
           const pokemonCard = item.pokemon_tcg_cards;
+          const tcgCard = item.tcg_cards;
 
           // Parse data field if it's a string (legacy/db support)
           let parsedProductData: any = {};
@@ -598,6 +607,9 @@ export function useGetItemsWithProductData(showcaseId: string) {
             pokemonMarketPrice: pokemonCard
               ? extractMarketPrice(pokemonCard.tcgplayer?.prices)
               : null,
+            tcgGameName: tcgCard?.game_name ?? null,
+            tcgSetName: tcgCard?.set_name ?? null,
+            tcgMarketPrice: tcgCard?.market_price ?? null,
             products: product
               ? {
                 ...product,
@@ -624,7 +636,24 @@ export function useGetItemsWithProductData(showcaseId: string) {
                     ].filter(Boolean),
                   },
                 }
-              : null,
+                : tcgCard
+                  ? {
+                    ean: null,
+                    searchableTitle: tcgCard.name,
+                    searchableDescription: [
+                      tcgCard.set_name,
+                      tcgCard.number ? `#${tcgCard.number}` : null,
+                      tcgCard.rarity,
+                    ].filter(Boolean).join(" • "),
+                    searchableBrand: tcgCard.game_name,
+                    data: {
+                      ...(tcgCard.raw_data ?? {}),
+                      category: "TCG",
+                      publisher: tcgCard.game_name,
+                      images: [tcgCard.image_url].filter(Boolean),
+                    },
+                  }
+                  : null,
           } as ItemWithProduct;
         })
         .filter((item): item is ItemWithProduct => item !== null);
