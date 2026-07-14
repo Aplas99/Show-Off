@@ -1,5 +1,6 @@
-import { useSignUp } from "@/api/auth";
+import { useSignUp, useSignInWithOAuth } from "@/api/auth";
 import { signUpSchema } from "@/lib/authValidation";
+import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { Link, useRouter } from "expo-router";
 import React, { useState } from "react";
@@ -23,6 +24,18 @@ export default function SignUp() {
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const { mutateAsync: signUp, isPending } = useSignUp();
+  const signInWithOAuth = useSignInWithOAuth();
+
+  const handleOAuthSignIn = async (provider: "google" | "discord") => {
+    try {
+      await signInWithOAuth.mutateAsync(provider);
+    } catch (err: any) {
+      Alert.alert(
+        "Sign in failed",
+        err?.message || `Could not sign in with ${provider}.`
+      );
+    }
+  };
 
   const handleSignUp = async () => {
     try {
@@ -130,6 +143,38 @@ export default function SignUp() {
                 <Text style={styles.signUpButtonText}>Sign Up</Text>
               )}
             </TouchableOpacity>
+
+            <View style={styles.separatorContainer}>
+              <View style={styles.separator} />
+              <Text style={styles.orText}>OR</Text>
+              <View style={styles.separator} />
+            </View>
+
+            <View style={styles.providerIconsRow}>
+              <TouchableOpacity
+                style={styles.providerButton}
+                onPress={() => handleOAuthSignIn("google")}
+                disabled={signInWithOAuth.isPending}
+                accessibilityRole="button"
+                accessibilityLabel="Continue with Google"
+              >
+                <Image
+                  source={require("@/assets/images/google-icon.png")}
+                  style={styles.providerIcon}
+                  resizeMode="contain"
+                />
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.providerButton}
+                onPress={() => handleOAuthSignIn("discord")}
+                disabled={signInWithOAuth.isPending}
+                accessibilityRole="button"
+                accessibilityLabel="Continue with Discord"
+              >
+                <Ionicons name="logo-discord" size={26} color="#5865F2" />
+              </TouchableOpacity>
+            </View>
+
             {/* Already have an account? */}
             <Link href="/signin" asChild>
               <TouchableOpacity style={styles.haveAccountButton}>
