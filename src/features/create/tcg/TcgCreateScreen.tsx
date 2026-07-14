@@ -2,6 +2,7 @@ import {
   useCreatePokemonCardBatch,
   type PokemonTcgCard,
 } from "@/api/pokemon";
+import { useMembership } from "@/api/memberships";
 import {
   identifyPokemonCardImage,
   type PokemonCardIdentifiers,
@@ -20,6 +21,12 @@ import {
   extractMarketPrice,
   formatPrice,
 } from "@/api/pokemon/ocrPostprocessing";
+import {
+  useGrantBonusScans,
+  useRecordScanAttempt,
+  useScanQuotaStatus,
+} from "@/api/pokemon/scanQuota";
+import { useRewardedAd } from "@/api/ads";
 import {
   useCreateShowcase,
   useGetVisibleShowcases,
@@ -509,6 +516,14 @@ function ScannerStep({
   const [lastIdentifiers, setLastIdentifiers] = useState<PokemonCardIdentifiers | null>(null);
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
   const [frozenFrame, setFrozenFrame] = useState<FrozenFrameGeometry | null>(null);
+  const [quotaExceeded, setQuotaExceeded] = useState(false);
+  const { data: membership } = useMembership();
+  const isCurator = membership?.isCurator ?? false;
+  const { data: quotaStatus } = useScanQuotaStatus();
+  const recordScanAttempt = useRecordScanAttempt();
+  const grantBonusScans = useGrantBonusScans();
+  const rewardedAd = useRewardedAd();
+  const router = useRouter();
   const progress = useSharedValue(0);
   const scanLineProgress = useSharedValue(0);
   const insets = useSafeAreaInsets();
@@ -530,9 +545,33 @@ function ScannerStep({
     transform: [{ translateY: scanLineProgress.value * frameHeight }],
   }));
 
+  const handleWatchAdForBonusScans = async () => {
+    const result = await rewardedAd.show();
+    if (result === "earned") {
+      await grantBonusScans.mutateAsync(5);
+      await haptics.success();
+      setQuotaExceeded(false);
+    }
+  };
+
   const capture = async () => {
     const attempt = scanAttempt;
     if (!cameraRef.current || !isReady || isIdentifying) return;
+
+    if (!isCurator) {
+      try {
+        const quota = await recordScanAttempt.mutateAsync();
+        if (!quota.allowed) {
+          await haptics.error();
+          setQuotaExceeded(true);
+          return;
+        }
+      } catch {
+        // Fail open on a quota-check error — don't block scanning over
+        // a transient network hiccup.
+      }
+    }
+
     setIsIdentifying(true);
     setBorderState("idle");
     setError(null);
@@ -587,7 +626,9 @@ function ScannerStep({
       setScanStatus("Reading card text...");
       return identifyPokemonCardImage(
         picture.uri,
-        undefined,
+        // Backup server-side OCR is a Curator perk — free scans are
+        // on-device ML Kit only.
+        isCurator ? undefined : { fallbackRecognizeText: undefined },
         (identifiers) => {
           setLastIdentifiers(identifiers);
           setScanStatus("Searching card database...");
@@ -694,6 +735,15 @@ function ScannerStep({
           <Ionicons name="layers" size={18} color="#FFF" />
         </TouchableOpacity>
       </View>
+
+      {!isCurator && quotaStatus?.remaining != null && (
+        <View style={styles.scanQuotaPill} pointerEvents="none">
+          <Ionicons name="scan-outline" size={12} color="#FFF" />
+          <Text style={styles.scanQuotaPillText}>
+            {quotaStatus.remaining} scan{quotaStatus.remaining === 1 ? "" : "s"} left today
+          </Text>
+        </View>
+      )}
 
       <View style={styles.scannerCenter} pointerEvents="box-none">
         <View
@@ -829,6 +879,51 @@ function ScannerStep({
         }}
         colors={colors}
       />
+
+      <Modal
+        visible={quotaExceeded}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setQuotaExceeded(false)}
+      >
+        <View style={styles.quotaBackdrop}>
+          <View style={styles.quotaCard}>
+            <Ionicons name="hourglass-outline" size={28} color={colors.tertiary} />
+            <Text style={styles.quotaTitle}>Out of free scans for today</Text>
+            <Text style={styles.quotaDescription}>
+              Free accounts get 10 card scans a day. Watch a short ad for 5
+              more, or upgrade to Curator for unlimited scans.
+            </Text>
+            <TouchableOpacity
+              style={styles.quotaPrimaryButton}
+              onPress={handleWatchAdForBonusScans}
+              disabled={rewardedAd.isLoading || grantBonusScans.isPending}
+            >
+              {rewardedAd.isLoading || grantBonusScans.isPending ? (
+                <ActivityIndicator color="#000" size="small" />
+              ) : (
+                <Text style={styles.quotaPrimaryButtonText}>
+                  Watch ad for +5 scans
+                </Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.quotaSecondaryButton}
+              onPress={() => {
+                setQuotaExceeded(false);
+                router.push("/(tabs)/profile/membership" as any);
+              }}
+            >
+              <Text style={styles.quotaSecondaryButtonText}>
+                Upgrade to Curator
+              </Text>
+            </TouchableOpacity>
+            <TouchableOpacity onPress={() => setQuotaExceeded(false)}>
+              <Text style={styles.quotaDismissText}>Not now</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
 
     </View>
   );
@@ -1341,6 +1436,17 @@ const getStyles = (colors: ThemeColors) =>
     cameraControls: { position: "absolute", left: 0, right: 0, bottom: 0, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 28, paddingTop: 18, backgroundColor: "rgba(0,0,0,0.32)" },
     manualControlButton: { width: 88, height: 46, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, borderRadius: 23, backgroundColor: "rgba(0,0,0,0.62)" },
     manualControlText: { color: "#FFF", fontSize: 12, fontWeight: "700" },
+    scanQuotaPill: { position: "absolute", top: 108, alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: "rgba(0,0,0,0.55)" },
+    scanQuotaPillText: { color: "#FFF", fontSize: 11, fontWeight: "700" },
+    quotaBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", padding: 24 },
+    quotaCard: { alignItems: "center", gap: 8, padding: 24, borderRadius: 20, backgroundColor: colors.surfaceContainer, borderWidth: 1, borderColor: colors.outlineVariant },
+    quotaTitle: { color: colors.text, fontSize: 17, fontWeight: "700", textAlign: "center" },
+    quotaDescription: { color: colors.onSurfaceVariant, fontSize: 13, textAlign: "center", lineHeight: 18 },
+    quotaPrimaryButton: { marginTop: 8, backgroundColor: colors.tertiary, borderRadius: 999, paddingHorizontal: 20, paddingVertical: 12, minWidth: 200, alignItems: "center" },
+    quotaPrimaryButtonText: { color: "#000", fontSize: 14, fontWeight: "800" },
+    quotaSecondaryButton: { marginTop: 4, backgroundColor: colors.primary, borderRadius: 999, paddingHorizontal: 20, paddingVertical: 12, minWidth: 200, alignItems: "center" },
+    quotaSecondaryButtonText: { color: "#FFF", fontSize: 14, fontWeight: "800" },
+    quotaDismissText: { marginTop: 4, padding: 8, color: colors.grey, fontSize: 13, fontWeight: "600" },
     shutterOuter: { width: 78, height: 78, borderRadius: 39, alignItems: "center", justifyContent: "center", borderWidth: 4, borderColor: "#FFF" },
     shutterInner: { width: 62, height: 62, borderRadius: 31, backgroundColor: "#FFF" },
     reviewButton: { width: 88, height: 46, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 4, borderRadius: 23, backgroundColor: "rgba(0,0,0,0.62)" },

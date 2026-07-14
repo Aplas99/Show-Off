@@ -36,6 +36,8 @@ npx jest --watch                                    # watch mode
 | `EXPO_PUBLIC_OCR_FALLBACK_URL` | Optional PaddleOCR fallback service URL (`server/paddleocr`); unset disables the server second pass |
 | `EXPO_PUBLIC_OCR_FALLBACK_TOKEN` | Bearer token for the OCR fallback service (`OCR_SERVICE_TOKEN`) |
 | `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Stripe publishable key (reserved for future native SDK use) |
+| `EXPO_PUBLIC_ADMOB_BANNER_UNIT_ID` | AdMob banner ad unit id; unset falls back to Google's test unit |
+| `EXPO_PUBLIC_ADMOB_REWARDED_UNIT_ID` | AdMob rewarded ad unit id (grants bonus scans); unset falls back to Google's test unit |
 
 Stripe server secrets (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_MONTHLY`, `STRIPE_PRICE_ID_ANNUAL`) live in Supabase Edge Function secrets, not app env — see `docs/stripe-memberships.md`.
 

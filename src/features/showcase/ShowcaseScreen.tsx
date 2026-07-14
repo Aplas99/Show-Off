@@ -1,6 +1,7 @@
 import { useMembership } from "@/api/memberships";
 import { ShowcaseRow, useGetVisibleShowcases } from "@/api/showcase";
 import { useColors, type ThemeColors } from "@/constants/theme";
+import BannerAdView from "@/src/components/ads/BannerAdView";
 import { CuratorGateModal } from "@/src/features/membership/CuratorGate";
 import ShowcaseCustomizeModal from "@/src/features/showcase/ShowcaseCustomizeModal";
 import { Ionicons } from "@expo/vector-icons";
@@ -245,6 +246,13 @@ export default function ShowcaseScreen() {
             </Text>
           </View>
         }
+        ListFooterComponent={
+          showcaseCount > 0 ? (
+            <View style={styles.adFooter}>
+              <BannerAdView />
+            </View>
+          ) : null
+        }
       />
 
       {customizeTarget && (
@@ -474,5 +482,9 @@ const getStyles = (colors: ThemeColors) =>
       color: colors.onSurfaceVariant,
       fontSize: 14,
       marginTop: 8,
+    },
+    adFooter: {
+      marginTop: 12,
+      alignItems: "center",
     },
   });
