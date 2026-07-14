@@ -25,7 +25,7 @@ import {
   useGrantBonusScans,
   useRecordScanAttempt,
   useScanQuotaStatus,
-} from "@/api/pokemon/scanQuota";
+} from "@/api/scanning";
 import { useRewardedAd } from "@/api/ads";
 import {
   useCreateShowcase,

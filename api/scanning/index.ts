@@ -1,6 +1,13 @@
 import { supabase } from "@/lib/supabase";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+/**
+ * Shared daily scan quota — covers both the Pokémon TCG camera scanner
+ * and the barcode scanner, since both draw from the same per-user daily
+ * counter (`scan_usage` / the `record_scan_attempt` RPC don't
+ * distinguish scan type). Free ("Collector") users get 10/day plus
+ * optional rewarded-ad bonuses; Curator members are unlimited.
+ */
 export interface ScanQuotaStatus {
   isCurator: boolean;
   remaining: number | null;
@@ -42,9 +49,10 @@ export function useScanQuotaStatus() {
 }
 
 /**
- * Atomically checks and consumes one scan. Call once per OCR attempt on
- * a captured frame, not per shutter press. Curator users always pass
- * (isCurator: true, remaining/dailyLimit: null = unlimited).
+ * Atomically checks and consumes one scan. Call once per scan attempt
+ * (one Pokémon card capture, or one successfully-decoded barcode) — not
+ * per camera frame. Curator users always pass (isCurator: true,
+ * remaining/dailyLimit: null = unlimited).
  */
 export function useRecordScanAttempt() {
   const queryClient = useQueryClient();
