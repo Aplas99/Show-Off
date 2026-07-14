@@ -1,4 +1,5 @@
 import {
+  containsKnownPokemonName,
   correctPokemonNameCandidate,
   fuzzyMatchPokemonName,
 } from "./nameCorrection";
@@ -34,6 +35,28 @@ describe("Pokémon name correction", () => {
     it("ignores very short strings", () => {
       expect(fuzzyMatchPokemonName("HP")).toBeNull();
       expect(fuzzyMatchPokemonName("Mew")).toBeNull();
+    });
+  });
+
+  describe("containsKnownPokemonName", () => {
+    it("accepts species names, with or without rarity suffixes", () => {
+      expect(containsKnownPokemonName("Gyarados")).toBe(true);
+      expect(containsKnownPokemonName("Gyarados VMAX")).toBe(true);
+      expect(containsKnownPokemonName("Galarian Moltres V")).toBe(true);
+    });
+
+    it("accepts slightly garbled species names", () => {
+      expect(containsKnownPokemonName("Cinderaee V")).toBe(true);
+    });
+
+    it("rejects attack and ability names", () => {
+      expect(containsKnownPokemonName("Hyper Beam")).toBe(false);
+      expect(containsKnownPokemonName("Blaze Kick")).toBe(false);
+      expect(containsKnownPokemonName("Graveyard Gamboling")).toBe(false);
+    });
+
+    it("rejects trainer names so trainer cards keep their raw candidates", () => {
+      expect(containsKnownPokemonName("Iono")).toBe(false);
     });
   });
 

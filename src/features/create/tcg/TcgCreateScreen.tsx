@@ -70,6 +70,62 @@ interface ScanEntry {
 const MIN_REVIEW_SCORE = 0.6;
 const MIN_CONFIDENT_SCORE = 0.8;
 
+/**
+ * Snapshot of the on-screen geometry at capture time, used ONLY to render the
+ * freeze-frame so it shows exactly what the live preview showed inside the
+ * outline. Recognition never uses this — the OCR crop stays the generous
+ * centered region — so a mapping error here is purely cosmetic.
+ */
+interface FrozenFrameGeometry {
+  photoWidth: number;
+  photoHeight: number;
+  previewX: number;
+  previewY: number;
+  previewWidth: number;
+  previewHeight: number;
+  frameX: number;
+  frameY: number;
+}
+
+function measureViewInWindow(
+  ref: React.RefObject<View | null>,
+): Promise<{ x: number; y: number; width: number; height: number } | null> {
+  return new Promise((resolve) => {
+    const node = ref.current;
+    if (!node) return resolve(null);
+    node.measureInWindow((x, y, width, height) => {
+      if (!Number.isFinite(x) || !Number.isFinite(y) || !(width > 0) || !(height > 0)) {
+        resolve(null);
+        return;
+      }
+      resolve({ x, y, width, height });
+    });
+  });
+}
+
+/**
+ * Position the captured photo inside the frame window the same way the
+ * camera preview displayed it: cover-fit the photo to the preview bounds,
+ * then shift so the frame's region is what shows through.
+ */
+function getFreezeFrameStyle(frozen: FrozenFrameGeometry) {
+  const scale = Math.max(
+    frozen.previewWidth / frozen.photoWidth,
+    frozen.previewHeight / frozen.photoHeight,
+  );
+  const displayedWidth = frozen.photoWidth * scale;
+  const displayedHeight = frozen.photoHeight * scale;
+  const overflowX = (displayedWidth - frozen.previewWidth) / 2;
+  const overflowY = (displayedHeight - frozen.previewHeight) / 2;
+  return {
+    position: "absolute" as const,
+    width: displayedWidth,
+    height: displayedHeight,
+    left: -(frozen.frameX - frozen.previewX + overflowX),
+    top: -(frozen.frameY - frozen.previewY + overflowY),
+  };
+}
+
 function isConfidentMatch(matches: RecognizedPokemonCard[]) {
   const first = matches[0];
   if (!first) return false;
@@ -438,6 +494,8 @@ function ScannerStep({
 }) {
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
+  const previewRef = useRef<View>(null);
+  const frameRef = useRef<View>(null);
   const [isReady, setIsReady] = useState(false);
   const [isIdentifying, setIsIdentifying] = useState(false);
   const [scanStatus, setScanStatus] = useState("Reading card text...");
@@ -448,19 +506,18 @@ function ScannerStep({
   const [scanAttempt, setScanAttempt] = useState(1);
   const [borderState, setBorderState] = useState<"idle" | "error" | "success">("idle");
   const [torchOn, setTorchOn] = useState(false);
-  const [foilHint, setFoilHint] = useState(false);
-  const [promoHint, setPromoHint] = useState(false);
   const [lastIdentifiers, setLastIdentifiers] = useState<PokemonCardIdentifiers | null>(null);
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
+  const [frozenFrame, setFrozenFrame] = useState<FrozenFrameGeometry | null>(null);
   const progress = useSharedValue(0);
   const scanLineProgress = useSharedValue(0);
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const haptics = useHaptics();
   const styles = useMemo(() => getStyles(colors), [colors]);
-  // Keep the guide close to the actual OCR crop, which is a centered
-  // card-shaped region spanning ~90% of the captured photo.
-  const frameWidth = Math.min(width * 0.9, 400);
+  // Compact centered guide — the OCR crop is a generous centered superset of
+  // this region, so a card aligned here is always fully inside the crop.
+  const frameWidth = Math.min(width * 0.7, 320);
   const frameHeight = frameWidth * (88 / 63);
 
   const horizontalProgressStyle = useAnimatedStyle(() => ({
@@ -486,11 +543,10 @@ function ScannerStep({
     progress.value = withTiming(0.88, { duration: 5000 });
 
     const attemptScan = async (attempt: number) => {
-      // Foil glare benefits from less JPEG compression, but quality 1 produced
-      // huge files that slowed decode + OCR; 0.85 keeps the detail that matters
-      // since crops are downscaled to the OCR target width anyway.
+      // 0.8 keeps enough detail for foil glare while staying fast to decode —
+      // crops are downscaled to the OCR target width anyway.
       const picture = await cameraRef.current!.takePictureAsync({
-        quality: foilHint ? 0.85 : 0.75,
+        quality: 0.8,
       });
       if (!picture?.uri) throw new Error("Camera did not return an image");
       cardScanDebug("camera.captured", {
@@ -498,6 +554,29 @@ function ScannerStep({
         width: picture.width,
         height: picture.height,
       });
+      const [previewRect, frameRect] = await Promise.all([
+        measureViewInWindow(previewRef),
+        measureViewInWindow(frameRef),
+      ]);
+      // Android may report pre-rotation (landscape) dimensions while the
+      // image displays upright via EXIF — orient dims to match the preview.
+      const swapPhotoDims =
+        previewRect &&
+        picture.width > picture.height !== previewRect.width > previewRect.height;
+      setFrozenFrame(
+        previewRect && frameRect && picture.width && picture.height
+          ? {
+              photoWidth: swapPhotoDims ? picture.height : picture.width,
+              photoHeight: swapPhotoDims ? picture.width : picture.height,
+              previewX: previewRect.x,
+              previewY: previewRect.y,
+              previewWidth: previewRect.width,
+              previewHeight: previewRect.height,
+              frameX: frameRect.x,
+              frameY: frameRect.y,
+            }
+          : null,
+      );
       setCapturedUri(picture.uri);
       scanLineProgress.value = 0;
       scanLineProgress.value = withRepeat(
@@ -520,7 +599,6 @@ function ScannerStep({
             setCode: identifiers.setCode,
           });
         },
-        { foil: foilHint, promo: promoHint },
       );
     };
 
@@ -566,6 +644,7 @@ function ScannerStep({
       scanLineProgress.value = withTiming(0, { duration: 150 });
       // Return to the live preview so the next card can be lined up.
       setCapturedUri(null);
+      setFrozenFrame(null);
       setIsIdentifying(false);
     }
   };
@@ -589,7 +668,7 @@ function ScannerStep({
   }
 
   return (
-    <View style={styles.cameraPage}>
+    <View ref={previewRef} collapsable={false} style={styles.cameraPage}>
       <CameraView
         ref={cameraRef}
         style={StyleSheet.absoluteFill}
@@ -618,6 +697,8 @@ function ScannerStep({
 
       <View style={styles.scannerCenter} pointerEvents="box-none">
         <View
+          ref={frameRef}
+          collapsable={false}
           style={[
             styles.cardFrame,
             { width: frameWidth, height: frameHeight },
@@ -625,13 +706,29 @@ function ScannerStep({
             borderState === "success" && styles.cardFrameSuccess,
           ]}
         >
-          {capturedUri && (
+          {capturedUri && frozenFrame ? (
+            // Freeze-frame that matches what the live preview showed here.
+            <Image
+              source={{ uri: capturedUri }}
+              style={getFreezeFrameStyle(frozenFrame)}
+              contentFit="fill"
+            />
+          ) : capturedUri ? (
             <Image source={{ uri: capturedUri }} style={StyleSheet.absoluteFill} contentFit="cover" />
-          )}
+          ) : null}
           <Animated.View style={[styles.progressTop, horizontalProgressStyle, borderState === "success" && styles.progressSuccess]} />
           <Animated.View style={[styles.progressBottom, horizontalProgressStyle, borderState === "success" && styles.progressSuccess]} />
           <Animated.View style={[styles.progressLeft, verticalProgressStyle, borderState === "success" && styles.progressSuccess]} />
           <Animated.View style={[styles.progressRight, verticalProgressStyle, borderState === "success" && styles.progressSuccess]} />
+
+          {/* OCR zone guides — mirror NAME_ZONE / FOOTER_ZONE fractions in
+              api/pokemon/recognition.ts so users align the text that matters. */}
+          <View style={styles.zoneGuideTop} pointerEvents="none">
+            <Text style={styles.zoneGuideLabel}>Card name</Text>
+          </View>
+          <View style={styles.zoneGuideBottom} pointerEvents="none">
+            <Text style={styles.zoneGuideLabel}>Number / set</Text>
+          </View>
           {isIdentifying && (
             <View style={styles.identifyingOverlay} pointerEvents="none">
               <Animated.View style={[styles.scanLine, scanLineStyle]} />
@@ -642,12 +739,16 @@ function ScannerStep({
             </View>
           )}
         </View>
+        <View style={styles.distanceNotice}>
+          <Ionicons name="resize-outline" size={14} color="#FFF" />
+          <Text style={styles.distanceNoticeText}>
+            Keep the card at least 2 in (5 cm) from the camera
+          </Text>
+        </View>
         <Text style={styles.scannerHint}>
           {borderState === "error"
             ? "Please try again — re-center the card and keep the name and number sharp."
-            : foilHint
-              ? "Tilt the foil card slightly until glare clears the name and number."
-              : "Fill the frame with one card and keep the name and number sharp."}
+            : "Fill the frame with one card and keep the name and number sharp."}
         </Text>
         <View style={styles.scanHintChecks}>
           <TouchableOpacity
@@ -659,29 +760,6 @@ function ScannerStep({
           >
             <Ionicons name={torchOn ? "flashlight" : "flashlight-outline"} size={20} color={torchOn ? colors.primary : "#FFF"} />
             <Text style={styles.scanHintCheckText}>Torch</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.scanHintCheck, foilHint && styles.scanHintCheckActive]}
-            onPress={() => {
-              setFoilHint((current) => {
-                if (!current) setTorchOn(false);
-                return !current;
-              });
-            }}
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: foilHint }}
-          >
-            <Ionicons name={foilHint ? "checkbox" : "square-outline"} size={20} color={foilHint ? colors.primary : "#FFF"} />
-            <Text style={styles.scanHintCheckText}>Foil</Text>
-          </TouchableOpacity>
-          <TouchableOpacity
-            style={[styles.scanHintCheck, promoHint && styles.scanHintCheckActive]}
-            onPress={() => setPromoHint((current) => !current)}
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: promoHint }}
-          >
-            <Ionicons name={promoHint ? "checkbox" : "square-outline"} size={20} color={promoHint ? colors.primary : "#FFF"} />
-            <Text style={styles.scanHintCheckText}>Promo</Text>
           </TouchableOpacity>
         </View>
         {borderState === "error" && error && (
@@ -1203,11 +1281,54 @@ const getStyles = (colors: ThemeColors) =>
     progressLeft: { position: "absolute", bottom: 0, left: -2, width: 5, borderRadius: 3, backgroundColor: colors.primary },
     progressRight: { position: "absolute", top: 0, right: -2, width: 5, borderRadius: 3, backgroundColor: colors.primary },
     progressSuccess: { backgroundColor: "#22c55e" },
+    // OCR zone guides (name zone = top 18%, footer zone = bottom 13%)
+    zoneGuideTop: {
+      position: "absolute",
+      top: 8,
+      left: 8,
+      right: 8,
+      height: "16%",
+      borderWidth: 1.5,
+      borderColor: "rgba(255,255,255,0.55)",
+      borderStyle: "dashed",
+      borderRadius: 10,
+      padding: 6,
+      justifyContent: "flex-start",
+      alignItems: "flex-start",
+    },
+    zoneGuideBottom: {
+      position: "absolute",
+      bottom: 8,
+      left: 8,
+      right: 8,
+      height: "11%",
+      borderWidth: 1.5,
+      borderColor: "rgba(255,255,255,0.55)",
+      borderStyle: "dashed",
+      borderRadius: 10,
+      padding: 6,
+      justifyContent: "flex-end",
+      alignItems: "flex-start",
+    },
+    zoneGuideLabel: {
+      color: "rgba(255,255,255,0.9)",
+      fontSize: 10,
+      fontWeight: "700",
+      letterSpacing: 1.2,
+      textTransform: "uppercase",
+      backgroundColor: "rgba(0,0,0,0.5)",
+      paddingHorizontal: 7,
+      paddingVertical: 3,
+      borderRadius: 5,
+      overflow: "hidden",
+    },
     identifyingOverlay: { ...StyleSheet.absoluteFillObject, alignItems: "center", justifyContent: "flex-end", paddingBottom: 16, backgroundColor: "rgba(0,0,0,0.15)" },
     scanLine: { position: "absolute", left: 0, right: 0, top: 0, height: 3, backgroundColor: colors.primary, shadowColor: colors.primary, shadowOpacity: 0.9, shadowRadius: 8, shadowOffset: { width: 0, height: 0 }, elevation: 6 },
     identifyingStatus: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: "rgba(0,0,0,0.6)" },
     identifyingText: { color: "#FFF", fontSize: 14, fontWeight: "700" },
-    scannerHint: { color: "rgba(255,255,255,0.84)", fontSize: 13, textAlign: "center", marginTop: 18 },
+    distanceNotice: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 14, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, backgroundColor: "rgba(0,0,0,0.55)", borderWidth: 1, borderColor: "rgba(255,255,255,0.22)" },
+    distanceNoticeText: { color: "rgba(255,255,255,0.92)", fontSize: 11, fontWeight: "600" },
+    scannerHint: { color: "rgba(255,255,255,0.84)", fontSize: 13, textAlign: "center", marginTop: 12 },
     scanHintChecks: { flexDirection: "row", gap: 10, marginTop: 12 },
     scanHintCheck: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 14, borderWidth: 1, borderColor: "rgba(255,255,255,0.38)", backgroundColor: "rgba(0,0,0,0.52)" },
     scanHintCheckActive: { borderColor: colors.primary, backgroundColor: "rgba(0,0,0,0.72)" },

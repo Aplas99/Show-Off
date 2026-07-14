@@ -45,6 +45,22 @@ export function fuzzyMatchPokemonName(value: string): string | null {
 }
 
 /**
+ * Whether a candidate plausibly names a Pokémon — the whole base (minus any
+ * rarity suffix) or any single word fuzzy-matches a species. Attack and
+ * ability lines ("Hyper Beam") fail this check, letting the search skip them.
+ */
+export function containsKnownPokemonName(candidate: string): boolean {
+  const words = candidate.trim().split(/\s+/).filter(Boolean);
+  if (words.length === 0) return false;
+  const base =
+    words.length > 1 && SUFFIX_TOKENS.has(words[words.length - 1].toLowerCase())
+      ? words.slice(0, -1)
+      : words;
+  if (fuzzyMatchPokemonName(base.join(" "))) return true;
+  return base.some((word) => fuzzyMatchPokemonName(word) !== null);
+}
+
+/**
  * Correct an OCR name candidate ("Cinderaee V" → "Cinderace V") using the
  * bundled species list. Returns the corrected candidate, or null when the
  * candidate is already correct or no species is a plausible match.

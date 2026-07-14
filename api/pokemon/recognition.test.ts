@@ -188,6 +188,18 @@ const ocrFixtures: OcrFixture[] = [
     expectedSetCode: null,
   },
   {
+    // Real PaddleOCR output from a phone photo of a full-art card in a
+    // toploader with glare: rarity badge reads as its own "VMAX" line and the
+    // regulation mark fuses onto the collector number ("E029/203").
+    label: "full-art card in toploader (glare, fused regulation mark)",
+    ocrText:
+      "VMAX\nGyarados\nVMAX\n3300\nEvolves from Gyarados V\nDynamax\nHyper Beam\n120\nDiscard an Energy from your opponent's Active Pokémon.\nMaxTyrant\n240\nweakness\n×2\nresistance\nretreat\n****\nIllus. Shin Nagasawa\nVMAX rule\nWhen your Pokémon VMAX\nE029/203\nis Knocked Out, your opponent takes 3 Prize cards.\n©2021 Pokémon/Nintendo/Creatures/GAME FREAK",
+    expectedName: "Gyarados",
+    expectedNumber: "029",
+    expectedTotal: 203,
+    expectedSetCode: null,
+  },
+  {
     // Real failed scan: OCR invented set code "FS" from footer noise and read
     // the padded number "o42/091". The bogus code must be rejected (only
     // catalog ptcgoCodes are trusted) while number and total survive.
@@ -283,6 +295,15 @@ describe("Pokémon card image recognition", () => {
 
       expect(identifiers.nameCandidates).toHaveLength(1);
       expect(identifiers.nameCandidates[0]).toBe("Charizard");
+    });
+
+    it("filters standalone rarity badges from name candidates", () => {
+      const identifiers = parsePokemonCardText({
+        text: "VMAX\nGyarados\n029/203",
+      });
+
+      expect(identifiers.nameCandidates).not.toContain("VMAX");
+      expect(identifiers.nameCandidates[0]).toBe("Gyarados");
     });
 
     it("adds split and base-name candidates for fused rarity suffixes", () => {
@@ -499,6 +520,56 @@ describe("Pokémon card image recognition", () => {
 
       expect(matches).toEqual([]);
       expect(dependencies.searchCards).not.toHaveBeenCalled();
+    });
+
+    it("invokes the fallback OCR service when on-device OCR yields nothing", async () => {
+      const dependencies: PokemonRecognitionDependencies = {
+        prepareImage: jest.fn().mockResolvedValue("file:///cropped.jpg"),
+        recognizeText: jest.fn().mockResolvedValue({ text: "" }),
+        fallbackRecognizeText: jest.fn().mockResolvedValue({
+          text: "BASIC\nRaging Bolt HP 130\nSCR EN 111/142",
+        }),
+        searchCards: jest.fn().mockResolvedValue([
+          { card: ragingBolt, score: 0.95 },
+        ]),
+      };
+
+      const matches = await identifyPokemonCardImage(
+        "file:///card.jpg",
+        dependencies,
+      );
+
+      expect(dependencies.fallbackRecognizeText).toHaveBeenCalledWith(
+        "file:///cropped.jpg",
+      );
+      expect(dependencies.searchCards).toHaveBeenCalledWith(
+        expect.objectContaining({
+          nameCandidates: expect.arrayContaining(["Raging Bolt"]),
+          number: "111",
+        }),
+      );
+      expect(matches).toHaveLength(1);
+    });
+
+    it("skips the fallback OCR service when the first pass matches", async () => {
+      const dependencies: PokemonRecognitionDependencies = {
+        prepareImage: jest.fn().mockResolvedValue("file:///cropped.jpg"),
+        recognizeText: jest.fn().mockResolvedValue({
+          text: "BASIC\nRaging Bolt HP 130\nSCR EN 111/142",
+        }),
+        fallbackRecognizeText: jest.fn(),
+        searchCards: jest.fn().mockResolvedValue([
+          { card: ragingBolt, score: 0.95 },
+        ]),
+      };
+
+      const matches = await identifyPokemonCardImage(
+        "file:///card.jpg",
+        dependencies,
+      );
+
+      expect(dependencies.fallbackRecognizeText).not.toHaveBeenCalled();
+      expect(matches).toHaveLength(1);
     });
 
     it("still searches when name is found but no number", async () => {

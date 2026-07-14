@@ -9,7 +9,11 @@ import {
   cardScanError,
   summarizePokemonCard,
 } from "./cardScanDebug";
-import { correctPokemonNameCandidate } from "./nameCorrection";
+import {
+  containsKnownPokemonName,
+  correctPokemonNameCandidate,
+} from "./nameCorrection";
+import { recognizeTextWithFallbackService } from "./ocrFallback";
 import {
   cleanOcrText,
   deduplicateLines,
@@ -50,6 +54,8 @@ export interface PokemonCardIdentifiers {
 export interface PokemonRecognitionDependencies {
   prepareImage: (imageUri: string) => Promise<string>;
   recognizeText: (imageUri: string) => Promise<PokemonOcrResult>;
+  /** Optional server-side second OCR pass, tried when the on-device pass yields no matches. */
+  fallbackRecognizeText?: (imageUri: string) => Promise<PokemonOcrResult | null>;
   searchCards: (
     identifiers: PokemonCardIdentifiers,
   ) => Promise<RecognizedPokemonCard[]>;
@@ -85,6 +91,9 @@ const OCR_METADATA_WORDS = new Set([
   "stadium",
   "supporter",
   "trainer",
+  // Rarity badges read as standalone lines on full-art cards
+  "vmax",
+  "vstar",
 ]);
 
 /**
@@ -370,6 +379,13 @@ export function parsePokemonCardText(
       const parsed = Number(totalText);
       printedTotal = Number.isFinite(parsed) && parsed > 0 ? parsed : null;
     }
+    // Strip a fused regulation mark ("E029/203" → "029"): modern cards print
+    // a single-letter mark right before the collector number and OCR often
+    // glues them together. Only when a printed total confirms the NNN/NNN
+    // form — promo numbers like "TG12" or "SM03" have 2+ letters and no total.
+    if (number && printedTotal && /^[d-i]\d{2,4}$/i.test(number)) {
+      number = number.slice(1);
+    }
   }
 
   // --- Set code extraction (from the number line prefix or footer) ---
@@ -608,9 +624,18 @@ async function searchCardsByIdentifiers(
     baseAttempt.setCode
   );
 
+  // Attack/ability lines ("Hyper Beam") burn API calls without ever matching
+  // a card name — only try candidates that plausibly name a Pokémon. When
+  // none do (Trainer/Item cards), fall back to the raw candidate list.
+  const speciesCandidates = identifiers.nameCandidates.filter(
+    containsKnownPokemonName,
+  );
+  const rankedCandidates =
+    speciesCandidates.length > 0 ? speciesCandidates : identifiers.nameCandidates;
+
   // Try name candidates in order until one of them returns catalog results;
   // a single garbled candidate should not sink the whole scan.
-  const namesToTry = identifiers.nameCandidates.slice(0, 3);
+  const namesToTry = rankedCandidates.slice(0, 3);
   if (namesToTry.length === 0) {
     if (!hasAnchors) return [];
     namesToTry.push("");
@@ -741,6 +766,7 @@ async function recognizeTextWithMlKit(imageUri: string) {
 const defaultDependencies: PokemonRecognitionDependencies = {
   prepareImage: preparePokemonCardImage,
   recognizeText: recognizeTextWithMlKit,
+  fallbackRecognizeText: recognizeTextWithFallbackService,
   searchCards: searchCardsByIdentifiers,
 };
 
@@ -752,9 +778,8 @@ export async function identifyPokemonCardImage(
 ): Promise<RecognizedPokemonCard[]> {
   const startedAt = Date.now();
   cardScanDebug("ocr.started");
-  try {
-    const preparedUri = await dependencies.prepareImage(imageUri);
-    const ocr = await dependencies.recognizeText(preparedUri);
+
+  const buildIdentifiers = (ocr: PokemonOcrResult) => {
     const identifiers = parsePokemonCardText(ocr);
     identifiers.scanHints = scanHints;
     if (scanHints.promo && (identifiers.collectionCandidates?.length ?? 0) === 0) {
@@ -762,6 +787,15 @@ export async function identifyPokemonCardImage(
         .filter((set) => /promo/i.test(set.name))
         .map((set) => set.name);
     }
+    return identifiers;
+  };
+  const hasSearchableIdentifiers = (identifiers: PokemonCardIdentifiers) =>
+    identifiers.nameCandidates.length > 0 || !!identifiers.number;
+
+  try {
+    const preparedUri = await dependencies.prepareImage(imageUri);
+    const ocr = await dependencies.recognizeText(preparedUri);
+    const identifiers = buildIdentifiers(ocr);
     onIdentifiers?.(identifiers);
     cardScanDebug("ocr.identifiers", {
       nameCandidates: identifiers.nameCandidates,
@@ -771,14 +805,38 @@ export async function identifyPokemonCardImage(
       rawText: identifiers.rawText,
     });
 
-    if (identifiers.nameCandidates.length === 0 && !identifiers.number) {
+    let matches: RecognizedPokemonCard[] = [];
+    if (hasSearchableIdentifiers(identifiers)) {
+      matches = await dependencies.searchCards(identifiers);
+    }
+
+    // Server-side second pass: only for scans the on-device OCR could not
+    // resolve, and only when a fallback service is configured.
+    if (matches.length === 0 && dependencies.fallbackRecognizeText) {
+      const fallbackOcr = await dependencies.fallbackRecognizeText(preparedUri);
+      if (fallbackOcr) {
+        const fallbackIdentifiers = buildIdentifiers(fallbackOcr);
+        cardScanDebug("ocr.fallback-identifiers", {
+          nameCandidates: fallbackIdentifiers.nameCandidates,
+          number: fallbackIdentifiers.number,
+          printedTotal: fallbackIdentifiers.printedTotal,
+          setCode: fallbackIdentifiers.setCode,
+          rawText: fallbackIdentifiers.rawText,
+        });
+        if (hasSearchableIdentifiers(fallbackIdentifiers)) {
+          onIdentifiers?.(fallbackIdentifiers);
+          matches = await dependencies.searchCards(fallbackIdentifiers);
+        }
+      }
+    }
+
+    if (matches.length === 0 && !hasSearchableIdentifiers(identifiers)) {
       cardScanDebug("ocr.incomplete", {
         durationMs: Date.now() - startedAt,
       });
       return [];
     }
 
-    const matches = await dependencies.searchCards(identifiers);
     cardScanDebug("ocr.completed", {
       durationMs: Date.now() - startedAt,
       matchCount: matches.length,
