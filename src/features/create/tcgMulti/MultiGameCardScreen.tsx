@@ -5,6 +5,7 @@ import {
   useCreateTcgCardBatch,
   useHydrateTcgCard,
   useScanTcgCardImage,
+  useSearchTcgCardsByName,
   useSearchTcgSets,
   useTcgSetCards,
   type TcgCard,
@@ -45,6 +46,7 @@ function useTabBarBottomOffset() {
 
 type Step = "destination" | "game" | "browse";
 type BrowseMode = "search" | "scan";
+type SearchScope = "name" | "set";
 
 export default function MultiGameCardScreen() {
   const colors = useColors();
@@ -305,12 +307,18 @@ function BrowseStep({
   const isCurator = membership?.isCurator ?? false;
 
   const [mode, setMode] = useState<BrowseMode>("search");
+  const [searchScope, setSearchScope] = useState<SearchScope>("name");
   const [paywallVisible, setPaywallVisible] = useState(false);
+  const [nameQuery, setNameQuery] = useState("");
   const [setQuery, setSetQuery] = useState("");
   const [selectedSet, setSelectedSet] = useState<TcgSet | null>(null);
   const [confirmCard, setConfirmCard] = useState<TcgCard | null>(null);
   const [addedCount, setAddedCount] = useState(0);
 
+  const { data: nameResults = [], isLoading: nameSearchLoading } = useSearchTcgCardsByName(
+    gameKey,
+    nameQuery,
+  );
   const { data: sets = [], isLoading: setsLoading } = useSearchTcgSets(gameKey, setQuery);
   const { data: setCards = [], isLoading: cardsLoading } = useTcgSetCards(
     gameKey,
@@ -383,7 +391,7 @@ function BrowseStep({
       <Stack.Screen options={{ headerShown: false }} />
       <FlowHeader
         title={TCG_CATEGORIES[gameKey].label}
-        subtitle={addedCount > 0 ? `${addedCount} card${addedCount === 1 ? "" : "s"} added` : "Search a set, or scan with Curator."}
+        subtitle={addedCount > 0 ? `${addedCount} card${addedCount === 1 ? "" : "s"} added` : "Search by card name or set, or scan with Curator."}
         onBack={selectedSet ? () => setSelectedSet(null) : onBack}
         colors={colors}
       />
@@ -408,39 +416,110 @@ function BrowseStep({
       {mode === "search" ? (
         !selectedSet ? (
           <>
-            <View style={styles.searchBar}>
-              <Ionicons name="search" size={16} color={colors.onSurfaceVariant} />
-              <TextInput
-                style={styles.searchInput}
-                value={setQuery}
-                onChangeText={setSetQuery}
-                placeholder="Search for a set (e.g. Kaladesh)"
-                placeholderTextColor={colors.grey}
-                autoCapitalize="words"
-              />
+            <View style={styles.scopeTabs}>
+              <TouchableOpacity
+                style={[styles.scopeTab, searchScope === "name" && styles.scopeTabActive]}
+                onPress={() => setSearchScope("name")}
+              >
+                <Text style={[styles.scopeTabText, searchScope === "name" && styles.scopeTabTextActive]}>
+                  Card name
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[styles.scopeTab, searchScope === "set" && styles.scopeTabActive]}
+                onPress={() => setSearchScope("set")}
+              >
+                <Text style={[styles.scopeTabText, searchScope === "set" && styles.scopeTabTextActive]}>
+                  Set
+                </Text>
+              </TouchableOpacity>
             </View>
-            {setsLoading ? (
-              <ActivityIndicator color={colors.primary} style={styles.centered} />
-            ) : (
-              <FlatList
-                data={sets}
-                keyExtractor={(item) => String(item.id)}
-                contentContainerStyle={styles.list}
-                renderItem={({ item }) => (
-                  <TouchableOpacity style={styles.rowCard} onPress={() => setSelectedSet(item)}>
-                    <Ionicons name="layers-outline" size={18} color={colors.primary} />
-                    <Text style={styles.rowCardText} numberOfLines={1}>{item.name}</Text>
-                    <Ionicons name="chevron-forward" size={18} color={colors.onSurfaceVariant} />
-                  </TouchableOpacity>
+
+            {searchScope === "name" ? (
+              <>
+                <View style={styles.searchBar}>
+                  <Ionicons name="search" size={16} color={colors.onSurfaceVariant} />
+                  <TextInput
+                    style={styles.searchInput}
+                    value={nameQuery}
+                    onChangeText={setNameQuery}
+                    placeholder="Search by card name"
+                    placeholderTextColor={colors.grey}
+                    autoCapitalize="words"
+                  />
+                </View>
+                {nameSearchLoading ? (
+                  <ActivityIndicator color={colors.primary} style={styles.centered} />
+                ) : (
+                  <FlatList
+                    data={nameResults}
+                    keyExtractor={(item) => item.id}
+                    numColumns={3}
+                    contentContainerStyle={styles.cardGrid}
+                    columnWrapperStyle={styles.cardGridRow}
+                    renderItem={({ item }) => (
+                      <TouchableOpacity style={styles.cardCell} onPress={() => handleSelectBrowsedCard(item)}>
+                        {item.imageUrl ? (
+                          <Image source={{ uri: item.imageUrl }} style={styles.cardCellImage} contentFit="contain" />
+                        ) : (
+                          <View style={styles.cardCellPlaceholder}>
+                            <Ionicons name="image-outline" size={20} color={colors.onSurfaceVariant} />
+                          </View>
+                        )}
+                        <Text style={styles.cardCellText} numberOfLines={2}>{item.name}</Text>
+                      </TouchableOpacity>
+                    )}
+                    ListEmptyComponent={
+                      nameQuery.trim().length > 1 ? (
+                        <Text style={styles.emptyText}>
+                          No previously-added cards match &quot;{nameQuery}&quot;. Card-name
+                          search only covers cards someone has already browsed by set —
+                          try Set search to find it and add it for everyone.
+                        </Text>
+                      ) : (
+                        <Text style={styles.emptyText}>Type at least 2 characters to search.</Text>
+                      )
+                    }
+                  />
                 )}
-                ListEmptyComponent={
-                  setQuery.trim().length > 1 ? (
-                    <Text style={styles.emptyText}>No sets found for &quot;{setQuery}&quot;.</Text>
-                  ) : (
-                    <Text style={styles.emptyText}>Type at least 2 characters to search sets.</Text>
-                  )
-                }
-              />
+              </>
+            ) : (
+              <>
+                <View style={styles.searchBar}>
+                  <Ionicons name="search" size={16} color={colors.onSurfaceVariant} />
+                  <TextInput
+                    style={styles.searchInput}
+                    value={setQuery}
+                    onChangeText={setSetQuery}
+                    placeholder="Search for a set (e.g. Kaladesh)"
+                    placeholderTextColor={colors.grey}
+                    autoCapitalize="words"
+                  />
+                </View>
+                {setsLoading ? (
+                  <ActivityIndicator color={colors.primary} style={styles.centered} />
+                ) : (
+                  <FlatList
+                    data={sets}
+                    keyExtractor={(item) => String(item.id)}
+                    contentContainerStyle={styles.list}
+                    renderItem={({ item }) => (
+                      <TouchableOpacity style={styles.rowCard} onPress={() => setSelectedSet(item)}>
+                        <Ionicons name="layers-outline" size={18} color={colors.primary} />
+                        <Text style={styles.rowCardText} numberOfLines={1}>{item.name}</Text>
+                        <Ionicons name="chevron-forward" size={18} color={colors.onSurfaceVariant} />
+                      </TouchableOpacity>
+                    )}
+                    ListEmptyComponent={
+                      setQuery.trim().length > 1 ? (
+                        <Text style={styles.emptyText}>No sets found for &quot;{setQuery}&quot;.</Text>
+                      ) : (
+                        <Text style={styles.emptyText}>Type at least 2 characters to search sets.</Text>
+                      )
+                    }
+                  />
+                )}
+              </>
             )}
           </>
         ) : cardsLoading ? (
@@ -735,6 +814,20 @@ const getStyles = (colors: ThemeColors) =>
     modeTabActive: { backgroundColor: colors.primary, borderColor: colors.primary },
     modeTabText: { color: colors.onSurfaceVariant, fontSize: 13, fontWeight: "700" },
     modeTabTextActive: { color: "#000" },
+    scopeTabs: {
+      flexDirection: "row",
+      gap: 16,
+      paddingHorizontal: 20,
+      marginBottom: 10,
+    },
+    scopeTab: {
+      paddingVertical: 6,
+      borderBottomWidth: 2,
+      borderBottomColor: "transparent",
+    },
+    scopeTabActive: { borderBottomColor: colors.primary },
+    scopeTabText: { color: colors.onSurfaceVariant, fontSize: 13, fontWeight: "600" },
+    scopeTabTextActive: { color: colors.text, fontWeight: "800" },
     searchBar: {
       flexDirection: "row",
       alignItems: "center",

@@ -17,7 +17,41 @@ export { TCG_CATEGORIES, type TcgCard, type TcgGameKey, type TcgScanResult, type
 export const tcgQueryKeys = {
   sets: (gameKey: TcgGameKey, query: string) => ["tcg", "sets", gameKey, query] as const,
   setCards: (gameKey: TcgGameKey, setId: number) => ["tcg", "setCards", gameKey, setId] as const,
+  cardSearch: (gameKey: TcgGameKey, query: string) =>
+    ["tcg", "cardSearch", gameKey, query] as const,
 };
+
+interface TcgCardCacheRow {
+  id: string;
+  game_category_id: number;
+  game_name: string;
+  product_id: number;
+  name: string;
+  number: string | null;
+  rarity: string | null;
+  set_id: number;
+  set_name: string;
+  image_url: string | null;
+  tcgplayer_url: string | null;
+  market_price: number | null;
+}
+
+function cacheRowToTcgCard(row: TcgCardCacheRow): TcgCard {
+  return {
+    id: row.id,
+    gameCategoryId: row.game_category_id,
+    gameName: row.game_name,
+    productId: row.product_id,
+    name: row.name,
+    number: row.number,
+    rarity: row.rarity,
+    setId: row.set_id,
+    setName: row.set_name,
+    imageUrl: row.image_url,
+    tcgplayerUrl: row.tcgplayer_url,
+    marketPrice: row.market_price,
+  };
+}
 
 function tcgCardToCacheRow(card: TcgCard) {
   return {
@@ -57,6 +91,31 @@ export function useSearchTcgSets(gameKey: TcgGameKey, query: string) {
     queryFn: () => searchTcgSets(categoryId, query),
     enabled: query.trim().length > 1,
     staleTime: 5 * 60 * 1000,
+  });
+}
+
+/**
+ * Card-name search — TCGTracking has no such endpoint, so this only
+ * ever searches OUR OWN cache (grown by useTcgSetCards/useHydrateTcgCard
+ * as users browse). Starts empty for an uncached game and fills in over
+ * time; browsing by set (useSearchTcgSets + useTcgSetCards) is still the
+ * only way to find a card nobody has looked at yet.
+ */
+export function useSearchTcgCardsByName(gameKey: TcgGameKey, query: string) {
+  const categoryId = TCG_CATEGORIES[gameKey].id;
+  return useQuery({
+    queryKey: tcgQueryKeys.cardSearch(gameKey, query),
+    queryFn: async () => {
+      const { data, error } = await supabase.rpc("search_tcg_cards", {
+        search_term: query,
+        p_game_category_id: categoryId,
+        result_limit: 30,
+      });
+      if (error) throw new Error(error.message);
+      return ((data ?? []) as TcgCardCacheRow[]).map(cacheRowToTcgCard);
+    },
+    enabled: query.trim().length > 1,
+    staleTime: 60 * 1000,
   });
 }
 
