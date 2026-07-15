@@ -38,6 +38,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  useWindowDimensions,
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -714,6 +715,12 @@ function ScanPanel({
   const cameraRef = useRef<CameraView>(null);
   const [results, setResults] = useState<TcgScanResult[] | null>(null);
   const haptics = useHaptics();
+  const { width } = useWindowDimensions();
+  // Matches calculateCardCrop's assumption in api/tcg/catalog.ts (centered,
+  // ~90% width, standard card aspect ratio) — without a guide the user has
+  // no idea where to hold the card, so the crop almost never lands on it.
+  const frameWidth = Math.min(width * 0.7, 320);
+  const frameHeight = frameWidth * (88 / 63);
 
   const handleCapture = async () => {
     if (!cameraRef.current) return;
@@ -772,6 +779,10 @@ function ScanPanel({
   return (
     <View style={styles.cameraWrap}>
       <CameraView ref={cameraRef} style={styles.camera} facing="back" ratio="4:3" />
+      <View style={styles.scannerCenter} pointerEvents="none">
+        <View style={[styles.scanCardFrame, { width: frameWidth, height: frameHeight }]} />
+        <Text style={styles.scanFrameHint}>Fill the frame with the card</Text>
+      </View>
       {scansRemaining != null && (
         <View style={styles.scanQuotaPill} pointerEvents="none">
           <Ionicons name="scan-outline" size={12} color="#FFF" />
@@ -949,6 +960,26 @@ const getStyles = (colors: ThemeColors) =>
     cardCellText: { color: colors.onSurfaceVariant, fontSize: 10, textAlign: "center" },
     cameraWrap: { flex: 1, marginHorizontal: 20, borderRadius: 18, overflow: "hidden" },
     camera: { flex: 1 },
+    scannerCenter: {
+      ...StyleSheet.absoluteFillObject,
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 12,
+    },
+    scanCardFrame: {
+      borderRadius: 16,
+      borderWidth: 2,
+      borderColor: "rgba(255,255,255,0.7)",
+    },
+    scanFrameHint: {
+      color: "#FFF",
+      fontSize: 12,
+      fontWeight: "700",
+      backgroundColor: "rgba(0,0,0,0.5)",
+      paddingHorizontal: 10,
+      paddingVertical: 4,
+      borderRadius: 999,
+    },
     scanQuotaPill: {
       position: "absolute",
       top: 12,
