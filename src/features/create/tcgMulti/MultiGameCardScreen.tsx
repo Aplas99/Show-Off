@@ -1,4 +1,10 @@
+import { useRewardedAd } from "@/api/ads";
 import { useMembership } from "@/api/memberships";
+import {
+  useGrantBonusScans,
+  useRecordScanAttempt,
+  useScanQuotaStatus,
+} from "@/api/scanning";
 import { useCreateShowcase, useGetVisibleShowcases, type ShowcaseRow } from "@/api/showcase";
 import {
   TCG_CATEGORIES,
@@ -16,7 +22,6 @@ import {
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { TAB_BAR_HEIGHT } from "@/constants/layoutConfig";
 import { useHaptics } from "@/hooks/useHaptics";
-import { CuratorGateModal } from "@/src/features/membership/CuratorGate";
 import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { Image } from "expo-image";
@@ -302,18 +307,19 @@ function BrowseStep({
 }) {
   const insets = useSafeAreaInsets();
   const tabBarOffset = useTabBarBottomOffset();
+  const router = useRouter();
   const haptics = useHaptics();
   const { data: membership } = useMembership();
   const isCurator = membership?.isCurator ?? false;
 
   const [mode, setMode] = useState<BrowseMode>("search");
   const [searchScope, setSearchScope] = useState<SearchScope>("name");
-  const [paywallVisible, setPaywallVisible] = useState(false);
   const [nameQuery, setNameQuery] = useState("");
   const [setQuery, setSetQuery] = useState("");
   const [selectedSet, setSelectedSet] = useState<TcgSet | null>(null);
   const [confirmCard, setConfirmCard] = useState<TcgCard | null>(null);
   const [addedCount, setAddedCount] = useState(0);
+  const [quotaExceeded, setQuotaExceeded] = useState(false);
 
   const { data: nameResults = [], isLoading: nameSearchLoading } = useSearchTcgCardsByName(
     gameKey,
@@ -328,14 +334,44 @@ function BrowseStep({
   const hydrateCard = useHydrateTcgCard();
   const scanImage = useScanTcgCardImage();
   const createBatch = useCreateTcgCardBatch();
+  const { data: quotaStatus } = useScanQuotaStatus();
+  const recordScanAttempt = useRecordScanAttempt();
+  const grantBonusScans = useGrantBonusScans();
+  const rewardedAd = useRewardedAd();
 
   const handlePickMode = (next: BrowseMode) => {
-    if (next === "scan" && !isCurator) {
-      setPaywallVisible(true);
-      return;
-    }
     setMode(next);
   };
+
+  // Camera scanning is available to everyone (Curator = unlimited),
+  // drawing from the same shared 10/day free-tier counter as the
+  // Pokemon scanner and barcode scanner.
+  const handleScan = useCallback(
+    async (imageUri: string): Promise<TcgScanResult[] | null> => {
+      if (!isCurator) {
+        const quota = await recordScanAttempt.mutateAsync();
+        if (!quota.allowed) {
+          await haptics.error();
+          setQuotaExceeded(true);
+          // null (not []) signals "blocked", distinct from "scanned but
+          // found nothing" — ScanPanel must not show a "no matches"
+          // alert on top of the quota-exceeded modal.
+          return null;
+        }
+      }
+      return scanImage.mutateAsync({ gameKey, imageUri });
+    },
+    [isCurator, recordScanAttempt, scanImage, gameKey, haptics],
+  );
+
+  const handleWatchAdForBonusScans = useCallback(async () => {
+    const result = await rewardedAd.show();
+    if (result === "earned") {
+      await grantBonusScans.mutateAsync(5);
+      await haptics.success();
+      setQuotaExceeded(false);
+    }
+  }, [rewardedAd, grantBonusScans, haptics]);
 
   const handleSelectBrowsedCard = useCallback(
     async (card: TcgCard) => {
@@ -391,7 +427,7 @@ function BrowseStep({
       <Stack.Screen options={{ headerShown: false }} />
       <FlowHeader
         title={TCG_CATEGORIES[gameKey].label}
-        subtitle={addedCount > 0 ? `${addedCount} card${addedCount === 1 ? "" : "s"} added` : "Search by card name or set, or scan with Curator."}
+        subtitle={addedCount > 0 ? `${addedCount} card${addedCount === 1 ? "" : "s"} added` : "Search by card name or set, or scan with your camera."}
         onBack={selectedSet ? () => setSelectedSet(null) : onBack}
         colors={colors}
       />
@@ -408,7 +444,7 @@ function BrowseStep({
           style={[styles.modeTab, mode === "scan" && styles.modeTabActive]}
           onPress={() => handlePickMode("scan")}
         >
-          <Ionicons name={isCurator ? "camera" : "lock-closed"} size={16} color={mode === "scan" ? "#000" : colors.onSurfaceVariant} />
+          <Ionicons name="camera" size={16} color={mode === "scan" ? "#000" : colors.onSurfaceVariant} />
           <Text style={[styles.modeTabText, mode === "scan" && styles.modeTabTextActive]}>Scan</Text>
         </TouchableOpacity>
       </View>
@@ -452,6 +488,7 @@ function BrowseStep({
                   <ActivityIndicator color={colors.primary} style={styles.centered} />
                 ) : (
                   <FlatList
+                    key="name-results-grid"
                     data={nameResults}
                     keyExtractor={(item) => item.id}
                     numColumns={3}
@@ -500,6 +537,7 @@ function BrowseStep({
                   <ActivityIndicator color={colors.primary} style={styles.centered} />
                 ) : (
                   <FlatList
+                    key="set-results-list"
                     data={sets}
                     keyExtractor={(item) => String(item.id)}
                     contentContainerStyle={styles.list}
@@ -526,6 +564,7 @@ function BrowseStep({
           <ActivityIndicator color={colors.primary} style={styles.centered} />
         ) : (
           <FlatList
+            key="set-cards-grid"
             data={setCards}
             keyExtractor={(item) => item.id}
             numColumns={3}
@@ -548,12 +587,10 @@ function BrowseStep({
       ) : (
         <ScanPanel
           gameKey={gameKey}
-          onScan={async (uri) => {
-            const results = await scanImage.mutateAsync({ gameKey, imageUri: uri });
-            return results;
-          }}
-          isScanning={scanImage.isPending}
+          onScan={handleScan}
+          isScanning={scanImage.isPending || recordScanAttempt.isPending}
           onSelectResult={handleSelectScanResult}
+          scansRemaining={isCurator ? null : quotaStatus?.remaining ?? null}
           colors={colors}
           styles={styles}
         />
@@ -601,30 +638,75 @@ function BrowseStep({
         </Pressable>
       </Modal>
 
-      <CuratorGateModal
-        visible={paywallVisible}
-        feature="Camera card scanning"
-        description="Point your camera at any Magic or Yu-Gi-Oh card and let Curator match it automatically."
-        onDismiss={() => setPaywallVisible(false)}
-      />
+      <Modal
+        visible={quotaExceeded}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setQuotaExceeded(false)}
+      >
+        <View style={styles.confirmBackdrop}>
+          <View style={styles.confirmCard}>
+            <Ionicons name="hourglass-outline" size={28} color={colors.primary} />
+            <Text style={styles.confirmTitle}>Out of free scans for today</Text>
+            <Text style={styles.confirmSubtitle}>
+              Free accounts get 10 scans a day (barcode + card scans
+              combined). Watch a short ad for 5 more, or upgrade to
+              Curator for unlimited scans.
+            </Text>
+            <View style={styles.confirmActions}>
+              <TouchableOpacity
+                style={styles.secondaryButton}
+                onPress={() => setQuotaExceeded(false)}
+              >
+                <Text style={styles.secondaryButtonText}>Not now</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={[
+                  styles.primarySmallButton,
+                  (rewardedAd.isLoading || grantBonusScans.isPending) && styles.disabled,
+                ]}
+                onPress={handleWatchAdForBonusScans}
+                disabled={rewardedAd.isLoading || grantBonusScans.isPending}
+              >
+                {rewardedAd.isLoading || grantBonusScans.isPending ? (
+                  <ActivityIndicator color="#000" size="small" />
+                ) : (
+                  <Text style={styles.primaryButtonText}>Watch ad for +5</Text>
+                )}
+              </TouchableOpacity>
+            </View>
+            <TouchableOpacity
+              onPress={() => {
+                setQuotaExceeded(false);
+                router.push("/(tabs)/profile/membership" as any);
+              }}
+            >
+              <Text style={styles.addRowText}>Upgrade to Curator for unlimited scans</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
     </View>
   );
 }
 
-// --- Scan panel (Curator) ---
+// --- Scan panel (everyone; shares the 10/day free-tier scan quota) ---
 
 function ScanPanel({
   gameKey: _gameKey,
   onScan,
   isScanning,
   onSelectResult,
+  scansRemaining,
   colors,
   styles,
 }: {
   gameKey: TcgGameKey;
-  onScan: (imageUri: string) => Promise<TcgScanResult[]>;
+  onScan: (imageUri: string) => Promise<TcgScanResult[] | null>;
   isScanning: boolean;
   onSelectResult: (result: TcgScanResult) => void;
+  /** null = unlimited (Curator). */
+  scansRemaining: number | null;
   colors: ThemeColors;
   styles: ReturnType<typeof getStyles>;
 }) {
@@ -640,6 +722,7 @@ function ScanPanel({
       if (!picture?.uri) return;
       await haptics.medium();
       const scanResults = await onScan(picture.uri);
+      if (scanResults === null) return; // blocked by quota — parent shows its own modal
       setResults(scanResults);
       if (scanResults.length === 0) {
         Alert.alert("No matches found", "Try again with better lighting and the card filling the frame.");
@@ -665,6 +748,7 @@ function ScanPanel({
   if (results) {
     return (
       <FlatList
+        key="scan-results"
         data={results}
         keyExtractor={(item) => String(item.productId)}
         contentContainerStyle={styles.list}
@@ -688,6 +772,14 @@ function ScanPanel({
   return (
     <View style={styles.cameraWrap}>
       <CameraView ref={cameraRef} style={styles.camera} facing="back" ratio="4:3" />
+      {scansRemaining != null && (
+        <View style={styles.scanQuotaPill} pointerEvents="none">
+          <Ionicons name="scan-outline" size={12} color="#FFF" />
+          <Text style={styles.scanQuotaPillText}>
+            {scansRemaining} scan{scansRemaining === 1 ? "" : "s"} left today
+          </Text>
+        </View>
+      )}
       <TouchableOpacity
         style={[styles.shutterButton, isScanning && styles.disabled]}
         onPress={handleCapture}
@@ -857,6 +949,19 @@ const getStyles = (colors: ThemeColors) =>
     cardCellText: { color: colors.onSurfaceVariant, fontSize: 10, textAlign: "center" },
     cameraWrap: { flex: 1, marginHorizontal: 20, borderRadius: 18, overflow: "hidden" },
     camera: { flex: 1 },
+    scanQuotaPill: {
+      position: "absolute",
+      top: 12,
+      alignSelf: "center",
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 5,
+      paddingHorizontal: 10,
+      paddingVertical: 5,
+      borderRadius: 999,
+      backgroundColor: "rgba(0,0,0,0.55)",
+    },
+    scanQuotaPillText: { color: "#FFF", fontSize: 11, fontWeight: "700" },
     shutterButton: {
       position: "absolute",
       bottom: 20,
