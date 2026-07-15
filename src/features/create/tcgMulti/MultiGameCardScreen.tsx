@@ -40,7 +40,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
  * absolute element needs this clearance, not just the safe-area inset. */
 function useTabBarBottomOffset() {
   const insets = useSafeAreaInsets();
-  return TAB_BAR_HEIGHT + insets.bottom + (Platform.OS === "android" ? 8 : 0) + 12;
+  return TAB_BAR_HEIGHT + insets.bottom + (Platform.OS === "android" ? 8 : 0) + 28;
 }
 
 type Step = "destination" | "game" | "browse";
