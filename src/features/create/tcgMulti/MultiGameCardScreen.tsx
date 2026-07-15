@@ -13,6 +13,7 @@ import {
   type TcgSet,
 } from "@/api/tcg";
 import { useColors, type ThemeColors } from "@/constants/theme";
+import { TAB_BAR_HEIGHT } from "@/constants/layoutConfig";
 import { useHaptics } from "@/hooks/useHaptics";
 import { CuratorGateModal } from "@/src/features/membership/CuratorGate";
 import { Ionicons } from "@expo/vector-icons";
@@ -25,6 +26,7 @@ import {
   Alert,
   FlatList,
   Modal,
+  Platform,
   Pressable,
   StyleSheet,
   Text,
@@ -33,6 +35,13 @@ import {
   View,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+
+/** Custom tab bar floats over screen content — every bottom-anchored
+ * absolute element needs this clearance, not just the safe-area inset. */
+function useTabBarBottomOffset() {
+  const insets = useSafeAreaInsets();
+  return TAB_BAR_HEIGHT + insets.bottom + (Platform.OS === "android" ? 8 : 0) + 12;
+}
 
 type Step = "destination" | "game" | "browse";
 type BrowseMode = "search" | "scan";
@@ -136,6 +145,7 @@ function DestinationStep({
   styles: ReturnType<typeof getStyles>;
 }) {
   const insets = useSafeAreaInsets();
+  const tabBarOffset = useTabBarBottomOffset();
   const [isAdding, setIsAdding] = useState(false);
   const [name, setName] = useState("");
   const [error, setError] = useState<string | null>(null);
@@ -223,7 +233,7 @@ function DestinationStep({
         />
       )}
 
-      <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 12 }]}>
+      <View style={[styles.bottomBar, { paddingBottom: tabBarOffset }]}>
         <TouchableOpacity
           style={[styles.primaryButton, !selectedId && styles.disabled]}
           onPress={onContinue}
@@ -289,6 +299,7 @@ function BrowseStep({
   styles: ReturnType<typeof getStyles>;
 }) {
   const insets = useSafeAreaInsets();
+  const tabBarOffset = useTabBarBottomOffset();
   const haptics = useHaptics();
   const { data: membership } = useMembership();
   const isCurator = membership?.isCurator ?? false;
@@ -470,7 +481,7 @@ function BrowseStep({
       )}
 
       {addedCount > 0 && (
-        <View style={[styles.bottomBar, { paddingBottom: insets.bottom + 12 }]}>
+        <View style={[styles.bottomBar, { paddingBottom: tabBarOffset }]}>
           <TouchableOpacity style={styles.primaryButton} onPress={onFinish}>
             <Text style={styles.primaryButtonText}>Done</Text>
             <Ionicons name="checkmark" size={20} color="#000" />
@@ -639,7 +650,7 @@ const getStyles = (colors: ThemeColors) =>
   StyleSheet.create({
     page: { flex: 1, backgroundColor: colors.background },
     centered: { flex: 1, alignItems: "center", justifyContent: "center", gap: 12, padding: 24 },
-    list: { paddingHorizontal: 20, paddingBottom: 120, gap: 10 },
+    list: { paddingHorizontal: 20, paddingBottom: 160, gap: 10 },
     rowCard: {
       flexDirection: "row",
       alignItems: "center",
@@ -738,7 +749,7 @@ const getStyles = (colors: ThemeColors) =>
       borderColor: colors.outlineVariant,
     },
     searchInput: { flex: 1, color: colors.text, fontSize: 14 },
-    cardGrid: { paddingHorizontal: 16, paddingBottom: 120, gap: 10 },
+    cardGrid: { paddingHorizontal: 16, paddingBottom: 160, gap: 10 },
     cardGridRow: { gap: 10 },
     cardCell: { flex: 1, alignItems: "center", gap: 6, padding: 6 },
     cardCellImage: { width: "100%", aspectRatio: 63 / 88, borderRadius: 6 },
