@@ -592,6 +592,7 @@ function BrowseStep({
           isScanning={scanImage.isPending || recordScanAttempt.isPending}
           onSelectResult={handleSelectScanResult}
           scansRemaining={isCurator ? null : quotaStatus?.remaining ?? null}
+          bottomOffset={tabBarOffset}
           colors={colors}
           styles={styles}
         />
@@ -699,6 +700,7 @@ function ScanPanel({
   isScanning,
   onSelectResult,
   scansRemaining,
+  bottomOffset,
   colors,
   styles,
 }: {
@@ -708,6 +710,9 @@ function ScanPanel({
   onSelectResult: (result: TcgScanResult) => void;
   /** null = unlimited (Curator). */
   scansRemaining: number | null;
+  /** Clearance for the floating tab bar — the shutter button sits at the
+   * very bottom of the camera view and is otherwise rendered underneath it. */
+  bottomOffset: number;
   colors: ThemeColors;
   styles: ReturnType<typeof getStyles>;
 }) {
@@ -777,7 +782,7 @@ function ScanPanel({
   }
 
   return (
-    <View style={styles.cameraWrap}>
+    <View style={[styles.cameraWrap, { marginBottom: bottomOffset }]}>
       <CameraView ref={cameraRef} style={styles.camera} facing="back" ratio="4:3" />
       <View style={styles.scannerCenter} pointerEvents="none">
         <View style={[styles.scanCardFrame, { width: frameWidth, height: frameHeight }]} />
