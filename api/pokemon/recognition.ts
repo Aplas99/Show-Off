@@ -14,7 +14,6 @@ import {
   correctPokemonNameCandidate,
 } from "./nameCorrection";
 import { recognizeTextWithFallbackService } from "./ocrFallback";
-import { scanPokemonCardViaTcgTracking } from "./tcgTracking";
 import {
   cleanOcrText,
   deduplicateLines,
@@ -60,12 +59,6 @@ export interface PokemonRecognitionDependencies {
   searchCards: (
     identifiers: PokemonCardIdentifiers,
   ) => Promise<RecognizedPokemonCard[]>;
-  /**
-   * Last-resort image-based match (TCGTracking's /v1/scan), tried when
-   * both text-OCR passes fail to find anything. Takes the ORIGINAL,
-   * uncropped image uri — it does its own crop/compress internally.
-   */
-  imageScanFallback?: (imageUri: string) => Promise<RecognizedPokemonCard[]>;
 }
 
 // ---------------------------------------------------------------------------
@@ -775,7 +768,6 @@ const defaultDependencies: PokemonRecognitionDependencies = {
   recognizeText: recognizeTextWithMlKit,
   fallbackRecognizeText: recognizeTextWithFallbackService,
   searchCards: searchCardsByIdentifiers,
-  imageScanFallback: (imageUri) => scanPokemonCardViaTcgTracking(imageUri),
 };
 
 export async function identifyPokemonCardImage(
@@ -842,30 +834,6 @@ export async function identifyPokemonCardImage(
           onIdentifiers?.(fallbackIdentifiers);
           matches = await dependencies.searchCards(fallbackIdentifiers);
         }
-      }
-    }
-
-    // Final fallback: both text-OCR passes failed to find anything —
-    // try image-based matching (TCGTracking /v1/scan) on the original,
-    // uncropped photo. Curator-gated by the caller (see TcgCreateScreen),
-    // same as fallbackRecognizeText above.
-    if (matches.length === 0 && dependencies.imageScanFallback) {
-      try {
-        const imageMatches = await dependencies.imageScanFallback(imageUri);
-        if (imageMatches.length > 0) {
-          cardScanDebug("ocr.image-scan-fallback", {
-            matchCount: imageMatches.length,
-            matches: imageMatches.map((match) => ({
-              score: match.score,
-              card: summarizePokemonCard(match.card),
-            })),
-          });
-          matches = imageMatches;
-        }
-      } catch (error) {
-        cardScanDebug("ocr.image-scan-fallback-failed", {
-          message: error instanceof Error ? error.message : String(error),
-        });
       }
     }
 

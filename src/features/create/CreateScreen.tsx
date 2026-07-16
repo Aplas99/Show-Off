@@ -268,27 +268,6 @@ export default function Create() {
             <Ionicons name="chevron-forward" size={22} color="#000" />
           </TouchableOpacity>
 
-          <TouchableOpacity
-            style={styles.multiGameEntryCard}
-            onPress={async () => {
-              await haptics.medium();
-              router.push("/(tabs)/tcg-multi-create" as never);
-            }}
-            activeOpacity={0.85}
-          >
-            <View style={styles.tcgEntryIcon}>
-              <Ionicons name="layers" size={22} color="#000" />
-            </View>
-            <View style={styles.tcgEntryCopy}>
-              <Text style={styles.tcgEntryEyebrow}>MAGIC & YU-GI-OH</Text>
-              <Text style={styles.tcgEntryTitle}>Add a trading card</Text>
-              <Text style={styles.tcgEntryDescription}>
-                Search by set for free, or scan with Curator.
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={22} color="#000" />
-          </TouchableOpacity>
-
           {/* Tab Selector */}
           <View style={styles.tabContainer}>
             <TouchableOpacity
@@ -834,18 +813,9 @@ const getStyles = (colors: ThemeColors) =>
       alignItems: "center",
       gap: 14,
       padding: 16,
-      marginBottom: 12,
-      borderRadius: 20,
-      backgroundColor: colors.primary,
-    },
-    multiGameEntryCard: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 14,
-      padding: 16,
       marginBottom: 18,
       borderRadius: 20,
-      backgroundColor: colors.secondary,
+      backgroundColor: colors.primary,
     },
     tcgEntryIcon: {
       width: 48,

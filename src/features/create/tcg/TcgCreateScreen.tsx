@@ -626,12 +626,9 @@ function ScannerStep({
       setScanStatus("Reading card text...");
       return identifyPokemonCardImage(
         picture.uri,
-        // Backup server-side OCR and the TCGTracking image-scan
-        // last-resort fallback are both Curator perks — free scans are
+        // Backup server-side OCR is a Curator perk — free scans are
         // on-device ML Kit only.
-        isCurator
-          ? undefined
-          : { fallbackRecognizeText: undefined, imageScanFallback: undefined },
+        isCurator ? undefined : { fallbackRecognizeText: undefined },
         (identifiers) => {
           setLastIdentifiers(identifiers);
           setScanStatus("Searching card database...");

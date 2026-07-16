@@ -1,14 +1,5 @@
 import { searchTcgTrackingPokemonCards } from "./tcgTracking";
 
-jest.mock("expo-image-manipulator", () => ({
-  ImageManipulator: {},
-  SaveFormat: { JPEG: "jpeg" },
-}));
-
-jest.mock("expo-file-system/legacy", () => ({
-  getInfoAsync: jest.fn(),
-}));
-
 describe("TCGTracking Pokémon adapter", () => {
   const fetchMock = jest.fn();
 
