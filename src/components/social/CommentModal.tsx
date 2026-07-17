@@ -1,8 +1,11 @@
 import {
     useCreateComment,
     useGetItemComments,
-    type Comment,
 } from "@/api/social/comments";
+import {
+    useCreatePostComment,
+    useGetPostComments,
+} from "@/api/social/posts";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { useThemeStore } from "@/hooks/useThemeStore";
 import { Ionicons } from "@expo/vector-icons";
@@ -39,13 +42,24 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 interface CommentModalProps {
     visible: boolean;
-    itemId: number;
+    /** Comment thread target — exactly one of itemId/postId. */
+    itemId?: number;
+    postId?: number;
     onClose: () => void;
+}
+
+/** Minimal shape shared by item comments and post comments. */
+interface AnyComment {
+    id: number;
+    content: string;
+    created_at: string;
+    profile?: { username: string; avatar_url: string | null };
 }
 
 export default function CommentModal({
     visible,
     itemId,
+    postId,
     onClose,
 }: CommentModalProps) {
     const insets = useSafeAreaInsets();
@@ -59,11 +73,19 @@ export default function CommentModal({
     const SWIPE_THRESHOLD = 100;
 
     const [commentText, setCommentText] = useState("");
-    const { data: comments = [], isLoading, isError, error, refetch } = useGetItemComments({
-        itemId,
+    const itemThread = useGetItemComments({
+        itemId: itemId ?? 0,
         enabled: visible && !!itemId,
     });
+    const postThread = useGetPostComments({
+        postId: postId ?? 0,
+        enabled: visible && !!postId,
+    });
+    const activeThread = postId ? postThread : itemThread;
+    const comments = (activeThread.data ?? []) as AnyComment[];
+    const { isLoading, isError, error, refetch } = activeThread;
     const createComment = useCreateComment();
+    const createPostComment = useCreatePostComment();
 
     // Animation values
     const translateY = useSharedValue(SCREEN_HEIGHT);
@@ -140,22 +162,29 @@ export default function CommentModal({
         if (!commentText.trim()) return;
 
         try {
-            await createComment.mutateAsync({
-                itemId,
-                content: commentText.trim(),
-            });
+            if (postId) {
+                await createPostComment.mutateAsync({
+                    postId,
+                    content: commentText.trim(),
+                });
+            } else if (itemId) {
+                await createComment.mutateAsync({
+                    itemId,
+                    content: commentText.trim(),
+                });
+            }
             setCommentText("");
         } catch (error) {
             console.error("Failed to create comment:", error);
         }
     };
 
-    const renderComment = ({ item, index }: { item: Comment; index: number }) => {
+    const renderComment = ({ item, index }: { item: AnyComment; index: number }) => {
         const username = item.profile?.username || "User";
         const dateObj = new Date(item.created_at);
         const day = dateObj.getDate();
         const month = dateObj.getMonth() + 1;
-        const year = dateObj.getFullYear().toString().slice(-2);
+        const year = dateObj.getFullYear();
         const dateLabel = `${day}/${month}/${year}`;
         return (
             <Animated.View
@@ -237,7 +266,7 @@ export default function CommentModal({
                             <FlatList
                                 data={comments}
                                 renderItem={renderComment}
-                                keyExtractor={(item) => item.id}
+                                keyExtractor={(item) => String(item.id)}
                                 contentContainerStyle={styles.commentsList}
                                 showsVerticalScrollIndicator={false}
                                 keyboardShouldPersistTaps="handled"

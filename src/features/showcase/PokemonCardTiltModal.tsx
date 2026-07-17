@@ -1,4 +1,9 @@
 import { ItemWithProduct } from "@/api/items";
+import { useMembership } from "@/api/memberships";
+import { usePriceHistory } from "@/api/prices";
+import { useColors } from "@/constants/theme";
+import PriceHistoryChart from "@/src/components/charts/PriceHistoryChart";
+import { CuratorInlineGate } from "@/src/features/membership/CuratorGate";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import React, { useCallback, useEffect, useState } from "react";
@@ -68,6 +73,16 @@ type Props = {
 export default function PokemonCardTiltModal({ visible, item, onClose }: Props) {
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
+  const colors = useColors();
+  const { data: membership } = useMembership();
+  const isCurator = membership?.isCurator ?? false;
+  const priceGame = item?.magic_card_id ? ("magic" as const) : ("pokemon" as const);
+  const priceCardId = item?.magic_card_id ?? item?.pokemon_tcg_card_id ?? null;
+  // Only fetch when the modal is open and the viewer can actually see it.
+  const { data: priceHistory } = usePriceHistory(
+    priceGame,
+    visible && isCurator ? priceCardId : null,
+  );
 
   const cardWidth = Math.min(width * 0.88, 400);
   const cardHeight = cardWidth / CARD_ASPECT;
@@ -265,7 +280,7 @@ export default function PokemonCardTiltModal({ visible, item, onClose }: Props) 
 
         {(title || subtitle) && (
           <View
-            pointerEvents="none"
+            pointerEvents="box-none"
             style={[styles.footer, { bottom: insets.bottom + 28 }]}
           >
             {title ? (
@@ -286,6 +301,29 @@ export default function PokemonCardTiltModal({ visible, item, onClose }: Props) 
                   with grading, style, and condition.
                 </Text>
               </>
+            ) : null}
+
+            {priceCardId ? (
+              <View
+                style={[
+                  styles.priceHistoryPanel,
+                  { backgroundColor: colors.surfaceContainerHighest },
+                ]}
+              >
+                <CuratorInlineGate
+                  feature="Price history"
+                  description="Track this card's market value over time with Curator."
+                >
+                  {priceHistory && priceHistory.length > 0 ? (
+                    <PriceHistoryChart points={priceHistory} />
+                  ) : (
+                    <Text style={[styles.priceHistoryEmpty, { color: colors.grey }]}>
+                      No price history yet — it builds automatically as market
+                      prices refresh.
+                    </Text>
+                  )}
+                </CuratorInlineGate>
+              </View>
             ) : null}
           </View>
         )}
@@ -380,6 +418,16 @@ const styles = StyleSheet.create({
     textAlign: "center",
     lineHeight: 14,
     marginTop: 2,
+  },
+  priceHistoryPanel: {
+    alignSelf: "stretch",
+    marginTop: 12,
+    padding: 14,
+    borderRadius: 16,
+  },
+  priceHistoryEmpty: {
+    fontSize: 12,
+    textAlign: "center",
   },
   closeButton: {
     position: "absolute",

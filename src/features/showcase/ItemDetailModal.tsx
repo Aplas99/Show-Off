@@ -1,7 +1,17 @@
-import { ItemWithProduct, useDeleteItem, useUpdateItemCondition } from "@/api/items";
+import {
+  ItemWithProduct,
+  useAddItemImages,
+  useDeleteItem,
+  useUpdateItemCondition,
+} from "@/api/items";
+import { useMembership } from "@/api/memberships";
 import { ITEM_CONDITIONS } from "@/constants/itemCondition";
 import { COLORS } from "@/constants/theme";
+import { useAuthStore } from "@/hooks/useAuthStore";
+import CyclingImage from "@/src/components/media/CyclingImage";
+import { CuratorGateModal } from "@/src/features/membership/CuratorGate";
 import { Ionicons } from "@expo/vector-icons";
+import * as ImagePicker from "expo-image-picker";
 
 import React, { useEffect, useRef, useState } from "react";
 import {
@@ -29,6 +39,52 @@ const { height: SCREEN_HEIGHT, width: SCREEN_WIDTH } = Dimensions.get("window");
 export default function ItemDetailModal({ visible, item, onClose }: Props) {
   const updateCondition = useUpdateItemCondition();
   const deleteItem = useDeleteItem();
+  const addItemImages = useAddItemImages();
+  const { session } = useAuthStore();
+  const { data: membership } = useMembership();
+  const isCurator = membership?.isCurator ?? false;
+  const isOwner = !!item && session?.user?.id === item.user_id;
+  const [galleryPaywallVisible, setGalleryPaywallVisible] = useState(false);
+
+  const galleryUrls =
+    item?.image_urls && item.image_urls.length > 0
+      ? item.image_urls
+      : item?.image_url
+        ? [item.image_url]
+        : [];
+
+  const handleAddPhotos = async () => {
+    if (!item) return;
+    if (!isCurator) {
+      setGalleryPaywallVisible(true);
+      return;
+    }
+    const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
+    if (!permission.granted) return;
+    const result = await ImagePicker.launchImageLibraryAsync({
+      mediaTypes: ["images"],
+      allowsMultipleSelection: true,
+      selectionLimit: 8,
+      quality: 0.85,
+    });
+    if (result.canceled || result.assets.length === 0) return;
+    try {
+      await addItemImages.mutateAsync({
+        itemId: item.id,
+        currentImageUrls: item.image_urls ?? [],
+        currentCoverUrl: item.image_url,
+        newImageUris: result.assets.map((asset) => ({
+          uri: asset.uri,
+          fileSize: asset.fileSize ?? undefined,
+        })),
+      });
+    } catch (error: any) {
+      Alert.alert(
+        "Couldn't add photos",
+        error?.message ?? "Please try again.",
+      );
+    }
+  };
 
   const handleDelete = () => {
     if (!item) return;
@@ -259,6 +315,40 @@ export default function ItemDetailModal({ visible, item, onClose }: Props) {
                   </View>
                 </View>
 
+                {/* Photo gallery — cycles with a fade when the item has
+                    multiple images (Curator perk); tap advances manually. */}
+                {(galleryUrls.length > 0 || isOwner) && (
+                  <View style={styles.galleryWrap}>
+                    {galleryUrls.length > 0 ? (
+                      <CyclingImage
+                        urls={galleryUrls}
+                        style={styles.galleryImage}
+                        contentFit="cover"
+                      />
+                    ) : (
+                      <View style={[styles.galleryImage, styles.galleryEmpty]}>
+                        <Ionicons name="images-outline" size={34} color="rgba(255,255,255,0.4)" />
+                      </View>
+                    )}
+                    {isOwner && (
+                      <TouchableOpacity
+                        style={styles.addPhotosButton}
+                        onPress={handleAddPhotos}
+                        disabled={addItemImages.isPending}
+                      >
+                        <Ionicons
+                          name={addItemImages.isPending ? "hourglass-outline" : "images"}
+                          size={14}
+                          color="#000"
+                        />
+                        <Text style={styles.addPhotosButtonText}>
+                          {addItemImages.isPending ? "Uploading..." : "Add photos"}
+                        </Text>
+                      </TouchableOpacity>
+                    )}
+                  </View>
+                )}
+
                 {/* 1. Header Section */}
                 <Animated.View
                   style={{
@@ -401,6 +491,12 @@ export default function ItemDetailModal({ visible, item, onClose }: Props) {
           </View>
         </Pressable>
       </Modal>
+      <CuratorGateModal
+        visible={galleryPaywallVisible}
+        feature="Multiple photos per item"
+        description="Show off every angle — attach a full photo gallery to each item with Curator."
+        onDismiss={() => setGalleryPaywallVisible(false)}
+      />
     </Modal>
   );
 }
@@ -471,6 +567,37 @@ const bentoStyles = StyleSheet.create({
 });
 
 const styles = StyleSheet.create({
+  galleryWrap: {
+    marginTop: 14,
+    marginBottom: 4,
+  },
+  galleryImage: {
+    width: "100%",
+    height: 240,
+    borderRadius: 18,
+    backgroundColor: "rgba(255,255,255,0.06)",
+  },
+  galleryEmpty: {
+    alignItems: "center",
+    justifyContent: "center",
+  },
+  addPhotosButton: {
+    position: "absolute",
+    right: 10,
+    bottom: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 999,
+    backgroundColor: COLORS.primary,
+  },
+  addPhotosButtonText: {
+    color: "#000",
+    fontSize: 12,
+    fontWeight: "800",
+  },
   overlay: {
     flex: 1,
     justifyContent: "flex-end",

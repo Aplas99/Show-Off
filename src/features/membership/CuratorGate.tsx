@@ -90,6 +90,15 @@ export function CuratorGateModal({
     >
       <Pressable style={styles.backdrop} onPress={onDismiss}>
         <Pressable style={styles.modalCard} onPress={(e) => e.stopPropagation()}>
+          <TouchableOpacity
+            style={styles.closeButton}
+            onPress={onDismiss}
+            accessibilityRole="button"
+            accessibilityLabel="Close membership popup"
+            hitSlop={8}
+          >
+            <Ionicons name="close" size={20} color={colors.onSurfaceVariant} />
+          </TouchableOpacity>
           <View style={styles.modalIconBg}>
             <Ionicons name="ribbon" size={26} color={colors.tertiary} />
           </View>
@@ -162,6 +171,18 @@ const getStyles = (colors: ThemeColors) =>
       backgroundColor: colors.surfaceContainer,
       borderWidth: 1,
       borderColor: colors.outlineVariant,
+    },
+    closeButton: {
+      position: "absolute",
+      top: 12,
+      right: 12,
+      width: 36,
+      height: 36,
+      borderRadius: 18,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: colors.surfaceContainerHigh,
+      zIndex: 1,
     },
     modalIconBg: {
       width: 52,

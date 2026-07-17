@@ -7,6 +7,7 @@ import ItemDetailModal from "@/src/features/showcase/ItemDetailModal";
 import { PokemonCardGridView } from "@/src/features/showcase/PokemonCardGridView";
 import PokemonCardTiltModal from "@/src/features/showcase/PokemonCardTiltModal";
 import ShowcaseCarousel from "@/src/features/showcase/ShowcaseCarousel";
+import SetCompletionModal from "@/src/features/showcase/SetCompletionModal";
 import ShowcaseListItem from "@/src/features/showcase/ShowcaseListItem";
 import { useShowcaseFilters } from "@/src/features/showcase/useShowcaseFilters";
 import { Ionicons } from "@expo/vector-icons";
@@ -39,6 +40,16 @@ import {
 import Reanimated, { FadeIn } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+// Scryfall color codes in canonical WUBRG order; "C" stands in for colorless.
+const MAGIC_COLOR_ORDER = [
+  { value: "W", label: "White" },
+  { value: "U", label: "Blue" },
+  { value: "B", label: "Black" },
+  { value: "R", label: "Red" },
+  { value: "G", label: "Green" },
+  { value: "C", label: "Colorless" },
+] as const;
+
 export default function ShowcaseDetail() {
   const params = useLocalSearchParams();
   const insets = useSafeAreaInsets();
@@ -57,6 +68,7 @@ export default function ShowcaseDetail() {
     setSortOrder,
     toggleType,
     toggleSet,
+    clearSelections,
     reset: resetFilters,
     activeFilterCount,
   } = useShowcaseFilters();
@@ -64,11 +76,21 @@ export default function ShowcaseDetail() {
   // View mode state
   const [viewMode, setViewMode] = useState<"grid" | "carousel">("grid");
 
+  // Game filter tabs, shown when a card showcase mixes multiple games
+  const [gameFilter, setGameFilter] = useState<"all" | "pokemon" | "magic">(
+    "all",
+  );
+
   // Sharable public link (Curator feature)
   const { data: membership } = useMembership();
   const isCurator = membership?.isCurator ?? false;
   const setShowcasePublic = useSetShowcasePublic();
   const [sharePaywallVisible, setSharePaywallVisible] = useState(false);
+
+  // Curator set-completion view
+  const [setCompletionVisible, setSetCompletionVisible] = useState(false);
+  const [setCompletionPaywallVisible, setSetCompletionPaywallVisible] =
+    useState(false);
 
   const handleShare = useCallback(async () => {
     if (!showcaseId) return;
@@ -133,7 +155,7 @@ export default function ShowcaseDetail() {
   }, [keyboardOffset]);
 
   const handleItemPress = useCallback((item: ItemWithProduct) => {
-    if (item.pokemon_tcg_card_id) {
+    if (item.pokemon_tcg_card_id || item.magic_card_id) {
       setTiltItem(item);
       setTiltVisible(true);
       return;
@@ -168,49 +190,105 @@ export default function ShowcaseDetail() {
   } = useGetItemsWithProductData(showcaseId!);
 
 
-  // Distinct type/set options actually present in this showcase — narrower
-  // than the full catalog so a filter never yields an empty grid.
-  const availableTypes = useMemo(() => {
-    const types = new Set<string>();
-    for (const item of items ?? []) {
-      for (const type of item.pokemonTypes ?? []) types.add(type);
-    }
-    return Array.from(types).sort();
-  }, [items]);
-
-  const availableSets = useMemo(() => {
-    const sets = new Map<string, string>();
-    for (const item of items ?? []) {
-      if (item.pokemonSetId) {
-        sets.set(
-          item.pokemonSetId,
-          item.products?.searchableDescription?.split(" • ")[0] ||
-            item.pokemonSetId,
-        );
-      }
-    }
-    return Array.from(sets.entries()).map(([id, name]) => ({ id, name }));
-  }, [items]);
-
   // Duplicate count per card, computed off the unfiltered list so the badge
   // always reflects true showcase-wide duplication regardless of active filters.
   const duplicateCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const item of items ?? []) {
-      if (!item.pokemon_tcg_card_id) continue;
-      counts.set(
-        item.pokemon_tcg_card_id,
-        (counts.get(item.pokemon_tcg_card_id) ?? 0) + 1,
-      );
+      const cardId = item.pokemon_tcg_card_id || item.magic_card_id;
+      if (!cardId) continue;
+      counts.set(cardId, (counts.get(cardId) ?? 0) + 1);
     }
     return counts;
   }, [items]);
+
+  const hasPokemonCards = useMemo(
+    () => (items ?? []).some((item) => !!item.pokemon_tcg_card_id),
+    [items],
+  );
+  const hasMagicCards = useMemo(
+    () => (items ?? []).some((item) => !!item.magic_card_id),
+    [items],
+  );
+  const showGameTabs = hasPokemonCards && hasMagicCards;
+
+  // Which game's filters apply: the selected tab, or — in a single-game
+  // showcase where tabs are hidden — that showcase's only game. A mixed
+  // showcase on the "All" tab gets generic sort-only filtering.
+  const effectiveGame: "all" | "pokemon" | "magic" = useMemo(() => {
+    if (gameFilter !== "all") return gameFilter;
+    if (hasPokemonCards && !hasMagicCards) return "pokemon";
+    if (hasMagicCards && !hasPokemonCards) return "magic";
+    return "all";
+  }, [gameFilter, hasPokemonCards, hasMagicCards]);
+
+  // Distinct type/color/set options actually present in this showcase for the
+  // active game — narrower than the full catalog so a filter never yields an
+  // empty grid.
+  const availableTypes = useMemo(() => {
+    if (effectiveGame === "pokemon") {
+      const types = new Set<string>();
+      for (const item of items ?? []) {
+        for (const type of item.pokemonTypes ?? []) types.add(type);
+      }
+      return Array.from(types)
+        .sort()
+        .map((type) => ({ value: type, label: type }));
+    }
+    if (effectiveGame === "magic") {
+      const codes = new Set<string>();
+      for (const item of items ?? []) {
+        if (!item.magic_card_id) continue;
+        const colors = item.magicColors ?? [];
+        if (colors.length === 0) codes.add("C");
+        for (const code of colors) codes.add(code);
+      }
+      return MAGIC_COLOR_ORDER.filter((entry) => codes.has(entry.value));
+    }
+    return [];
+  }, [items, effectiveGame]);
+
+  const availableSets = useMemo(() => {
+    const sets = new Map<string, string>();
+    if (effectiveGame === "pokemon") {
+      for (const item of items ?? []) {
+        if (item.pokemonSetId) {
+          sets.set(
+            item.pokemonSetId,
+            item.products?.searchableDescription?.split(" • ")[0] ||
+              item.pokemonSetId,
+          );
+        }
+      }
+    } else if (effectiveGame === "magic") {
+      for (const item of items ?? []) {
+        if (item.magic_card_id && item.magicSetCode) {
+          sets.set(item.magicSetCode, item.magicSetName || item.magicSetCode);
+        }
+      }
+    }
+    return Array.from(sets.entries()).map(([id, name]) => ({ id, name }));
+  }, [items, effectiveGame]);
+
+  // Header-pill count: total cards in the selected game tab, ignoring
+  // search/type/set filters (matches the pre-tabs "unfiltered count" behavior).
+  const gameFilteredCount = useMemo(() => {
+    if (gameFilter === "all") return items?.length ?? 0;
+    return (items ?? []).filter((item) =>
+      gameFilter === "pokemon"
+        ? !!item.pokemon_tcg_card_id
+        : !!item.magic_card_id,
+    ).length;
+  }, [items, gameFilter]);
 
   // Filter and sort
   const filteredItems = useMemo(() => {
     if (!items) return [];
 
     let filtered = items.filter((item) => {
+      if (gameFilter === "pokemon" && !item.pokemon_tcg_card_id) return false;
+      if (gameFilter === "magic" && !item.magic_card_id) return false;
+
       if (searchQuery) {
         const searchLower = searchQuery.toLowerCase();
         const matchesSearch =
@@ -223,14 +301,24 @@ export default function ShowcaseDetail() {
       }
 
       if (selectedTypes.length > 0) {
-        const itemTypes = item.pokemonTypes ?? [];
-        if (!selectedTypes.some((type) => itemTypes.includes(type))) {
-          return false;
+        if (effectiveGame === "magic") {
+          const colors = item.magicColors ?? [];
+          const codes = colors.length === 0 ? ["C"] : colors;
+          if (!selectedTypes.some((code) => codes.includes(code))) {
+            return false;
+          }
+        } else {
+          const itemTypes = item.pokemonTypes ?? [];
+          if (!selectedTypes.some((type) => itemTypes.includes(type))) {
+            return false;
+          }
         }
       }
 
       if (selectedSetIds.length > 0) {
-        if (!item.pokemonSetId || !selectedSetIds.includes(item.pokemonSetId)) {
+        const itemSetId =
+          effectiveGame === "magic" ? item.magicSetCode : item.pokemonSetId;
+        if (!itemSetId || !selectedSetIds.includes(itemSetId)) {
           return false;
         }
       }
@@ -259,14 +347,16 @@ export default function ShowcaseDetail() {
     });
 
     return filtered;
-  }, [items, searchQuery, sortBy, sortOrder, selectedTypes, selectedSetIds]);
+  }, [items, searchQuery, sortBy, sortOrder, selectedTypes, selectedSetIds, gameFilter, effectiveGame]);
 
-  // A showcase made entirely of Pokémon cards renders as a TCG Pocket-style
-  // collection grid instead of the generic item grid.
+  // A showcase made entirely of trading cards (Pokémon or Magic) renders as a
+  // TCG Pocket-style collection grid instead of the generic item grid.
   const isPokemonShowcase = useMemo(
     () =>
       (items?.length ?? 0) > 0 &&
-      (items ?? []).every((item) => !!item.pokemon_tcg_card_id),
+      (items ?? []).every(
+        (item) => !!item.pokemon_tcg_card_id || !!item.magic_card_id,
+      ),
     [items],
   );
 
@@ -319,8 +409,46 @@ export default function ShowcaseDetail() {
               bottomPadding={bottomOffset + 80}
               refreshing={isRefetching}
               onRefresh={refetch}
-              totalCount={items?.length ?? 0}
+              totalCount={gameFilteredCount}
               duplicateCounts={duplicateCounts}
+              headerAccessory={
+                showGameTabs ? (
+                  <View style={styles.gameTabs}>
+                    {(
+                      [
+                        { key: "all", label: "All" },
+                        { key: "pokemon", label: "Pokémon" },
+                        { key: "magic", label: "Magic" },
+                      ] as const
+                    ).map((tab) => (
+                      <TouchableOpacity
+                        key={tab.key}
+                        style={[
+                          styles.gameTab,
+                          gameFilter === tab.key && styles.gameTabActive,
+                        ]}
+                        onPress={() => {
+                          setGameFilter(tab.key);
+                          // Type/set picks from another game would zero out
+                          // the grid — drop them, keep the sort.
+                          clearSelections();
+                        }}
+                        accessibilityRole="tab"
+                        accessibilityState={{ selected: gameFilter === tab.key }}
+                      >
+                        <Text
+                          style={[
+                            styles.gameTabText,
+                            gameFilter === tab.key && styles.gameTabTextActive,
+                          ]}
+                        >
+                          {tab.label}
+                        </Text>
+                      </TouchableOpacity>
+                    ))}
+                  </View>
+                ) : null
+              }
             />
           </Reanimated.View>
         )}
@@ -438,6 +566,22 @@ export default function ShowcaseDetail() {
         >
           <Ionicons name="share-social-outline" size={18} color="#9B5DE5" />
         </TouchableOpacity>
+
+        {hasPokemonCards && (
+          <TouchableOpacity
+            style={styles.viewToggleButton}
+            onPress={() => {
+              if (isCurator) {
+                setSetCompletionVisible(true);
+              } else {
+                setSetCompletionPaywallVisible(true);
+              }
+            }}
+            accessibilityLabel="Set completion"
+          >
+            <Ionicons name="extension-puzzle-outline" size={18} color="#9B5DE5" />
+          </TouchableOpacity>
+        )}
 
         <TouchableOpacity
           style={styles.filterButton}
@@ -560,26 +704,29 @@ export default function ShowcaseDetail() {
 
               {availableTypes.length > 0 && (
                 <>
-                  <Text style={styles.sectionLabel}>Type</Text>
+                  <Text style={styles.sectionLabel}>
+                    {effectiveGame === "magic" ? "Color" : "Type"}
+                  </Text>
                   <View style={styles.sortOptions}>
                     {availableTypes.map((type) => (
                       <TouchableOpacity
-                        key={type}
+                        key={type.value}
                         style={[
                           styles.sortOption,
-                          selectedTypes.includes(type) && styles.sortOptionSelected,
+                          selectedTypes.includes(type.value) &&
+                            styles.sortOptionSelected,
                         ]}
-                        onPress={() => toggleType(type)}
+                        onPress={() => toggleType(type.value)}
                       >
                         <Text
                           style={[
                             styles.sortOptionText,
-                            selectedTypes.includes(type) &&
+                            selectedTypes.includes(type.value) &&
                               styles.sortOptionTextSelected,
                           ]}
                           numberOfLines={1}
                         >
-                          {type}
+                          {type.label}
                         </Text>
                       </TouchableOpacity>
                     ))}
@@ -641,6 +788,19 @@ export default function ShowcaseDetail() {
         description="Let anyone view this showcase with a link, no account required, with Curator."
         onDismiss={() => setSharePaywallVisible(false)}
       />
+
+      <CuratorGateModal
+        visible={setCompletionPaywallVisible}
+        feature="Set completion"
+        description="See exactly which cards you're missing from every set in this showcase, with Curator."
+        onDismiss={() => setSetCompletionPaywallVisible(false)}
+      />
+
+      <SetCompletionModal
+        visible={setCompletionVisible}
+        items={items ?? []}
+        onClose={() => setSetCompletionVisible(false)}
+      />
     </View>
   );
 }
@@ -655,6 +815,33 @@ const styles = StyleSheet.create({
   },
   viewContainer: {
     flex: 1,
+  },
+  gameTabs: {
+    flexDirection: "row",
+    alignSelf: "flex-start",
+    gap: 4,
+    padding: 4,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.3)",
+    marginBottom: 10,
+  },
+  gameTab: {
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 999,
+  },
+  gameTabActive: {
+    backgroundColor: "#FFF",
+  },
+  gameTabText: {
+    color: "#FFF",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  gameTabTextActive: {
+    color: "#000",
   },
   absoluteView: {
     position: "absolute",

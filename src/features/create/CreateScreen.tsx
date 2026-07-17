@@ -1,7 +1,10 @@
 import { useProductSearch, type Product } from "@/api/items";
+import { useMembership } from "@/api/memberships";
+import { useRecordSearchAttempt } from "@/api/scanning";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useThemeStore } from "@/hooks/useThemeStore";
+import SearchQuotaModal from "@/src/components/membership/SearchQuotaModal";
 import BarcodeScannerModal from "@/src/components/items/BarcodeScannerModal";
 import CreateItemWizard from "@/src/components/items/CreateItemWizard";
 import ManualCreateItemWizard from "@/src/components/items/ManualCreateItemWizard";
@@ -34,11 +37,11 @@ import Animated, {
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-type InputMode = "barcode" | "manual" | "search";
+type InputMode = "barcode" | "manual" | "search" | "tcg";
 
 const CATEGORIES = [
   "TCG",
-   "Books",
+  "Books",
   "Music",
   "Movies",
   "Figures",
@@ -47,8 +50,6 @@ const CATEGORIES = [
   "Home",
   "Automotive",
   "Beyond Comprehension",
- 
-
 ];
 
 export default function Create() {
@@ -81,6 +82,11 @@ export default function Create() {
 
   const [scannerOpen, setScannerOpen] = useState(false);
   const [selectedProduct, setSelectedProduct] = useState<Product | undefined>();
+  const [searchQuotaExceeded, setSearchQuotaExceeded] = useState(false);
+
+  const { data: membership } = useMembership();
+  const isCurator = membership?.isCurator ?? false;
+  const recordSearchAttempt = useRecordSearchAttempt();
 
   const {
     data,
@@ -141,16 +147,30 @@ export default function Create() {
   }, [barcodeInput, haptics]);
 
   const handleSearchSubmit = useCallback(async () => {
-    if (searchInput.trim()) {
-      await haptics.medium();
-      setSearchParams({
-        query: searchInput.trim(),
-        brand: brandInput.trim(),
-        manufacturer: manufacturerInput.trim(),
-        category: categoryInput.trim(),
-      });
+    if (!searchInput.trim()) return;
+
+    if (!isCurator) {
+      try {
+        const quota = await recordSearchAttempt.mutateAsync();
+        if (!quota.allowed) {
+          await haptics.error();
+          setSearchQuotaExceeded(true);
+          return;
+        }
+      } catch {
+        // Fail open on a quota-check error — don't block searching over
+        // a transient network hiccup.
+      }
     }
-  }, [searchInput, brandInput, manufacturerInput, categoryInput, haptics]);
+
+    await haptics.medium();
+    setSearchParams({
+      query: searchInput.trim(),
+      brand: brandInput.trim(),
+      manufacturer: manufacturerInput.trim(),
+      category: categoryInput.trim(),
+    });
+  }, [searchInput, brandInput, manufacturerInput, categoryInput, haptics, isCurator, recordSearchAttempt]);
 
   const handleProductSelect = useCallback(
     async (product: Product) => {
@@ -247,41 +267,21 @@ export default function Create() {
             </Text>
           </View>
 
-          <TouchableOpacity
-            style={styles.tcgEntryCard}
-            onPress={async () => {
-              await haptics.medium();
-              router.push("/(tabs)/tcg-create" as never);
-            }}
-            activeOpacity={0.85}
-          >
-            <View style={styles.tcgEntryIcon}>
-              <Ionicons name="scan" size={24} color="#000" />
-            </View>
-            <View style={styles.tcgEntryCopy}>
-              <Text style={styles.tcgEntryEyebrow}>TRADING CARDS</Text>
-              <Text style={styles.tcgEntryTitle}>Scan a card stack</Text>
-              <Text style={styles.tcgEntryDescription}>
-                Pick a showcase once, then keep scanning.
-              </Text>
-            </View>
-            <Ionicons name="chevron-forward" size={22} color="#000" />
-          </TouchableOpacity>
-
           {/* Tab Selector */}
           <View style={styles.tabContainer}>
             <TouchableOpacity
-              style={[styles.tab, inputMode === "barcode" && styles.activeTab]}
-              onPress={() => handleModeSwitch("barcode")}
+              style={[styles.tab, inputMode === "tcg" && styles.activeTab]}
+              onPress={() => handleModeSwitch("tcg")}
               activeOpacity={0.8}
             >
               <Text
                 style={[
                   styles.tabText,
-                  inputMode === "barcode" && styles.activeTabText,
+                  inputMode === "tcg" && styles.activeTabText,
                 ]}
+                numberOfLines={1}
               >
-                Barcode
+                TCG
               </Text>
             </TouchableOpacity>
 
@@ -297,6 +297,21 @@ export default function Create() {
                 ]}
               >
                 Manual
+              </Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity
+              style={[styles.tab, inputMode === "barcode" && styles.activeTab]}
+              onPress={() => handleModeSwitch("barcode")}
+              activeOpacity={0.8}
+            >
+              <Text
+                style={[
+                  styles.tabText,
+                  inputMode === "barcode" && styles.activeTabText,
+                ]}
+              >
+                Barcode
               </Text>
             </TouchableOpacity>
 
@@ -319,6 +334,57 @@ export default function Create() {
 
         {/* Scrollable Content */}
         <View style={styles.flexContent}>
+          {inputMode === "tcg" && (
+            <ScrollView
+              contentContainerStyle={styles.scrollPadding}
+              showsVerticalScrollIndicator={false}
+            >
+              <View style={styles.formSection}>
+                <Text style={styles.sectionTitle}>Add cards to your collection</Text>
+
+                <TouchableOpacity
+                  style={styles.gameOptionCard}
+                  activeOpacity={0.85}
+                  onPress={async () => {
+                    await haptics.medium();
+                    router.push("/(tabs)/tcg-create" as never);
+                  }}
+                >
+                  <View style={styles.gameOptionIcon}>
+                    <Ionicons name="flash" size={22} color="#000" />
+                  </View>
+                  <View style={styles.flexOne}>
+                    <Text style={styles.gameOptionTitle}>Pokémon</Text>
+                    <Text style={styles.gameOptionDescription}>
+                      Scan a card stack with your camera.
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={colors.onSurfaceVariant} />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.magicEntryCard}
+                  activeOpacity={0.85}
+                  onPress={async () => {
+                    await haptics.medium();
+                    router.push("/(tabs)/magic-create" as never);
+                  }}
+                >
+                  <View style={styles.magicEntryIcon}>
+                    <Ionicons name="sparkles" size={22} color="#FFF" />
+                  </View>
+                  <View style={styles.flexOne}>
+                    <Text style={styles.magicEntryTitle}>Magic: The Gathering</Text>
+                    <Text style={styles.magicEntryDescription}>
+                      Search the official database by card name.
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color="#FFF" />
+                </TouchableOpacity>
+              </View>
+            </ScrollView>
+          )}
+
           {inputMode === "barcode" && (
             <ScrollView
               contentContainerStyle={styles.scrollPadding}
@@ -661,6 +727,11 @@ export default function Create() {
         onBarcodeScanned={handleBarcodeScanned}
       />
 
+      <SearchQuotaModal
+        visible={searchQuotaExceeded}
+        onClose={() => setSearchQuotaExceeded(false)}
+      />
+
       {/* Wizards */}
       {wizardMode === "barcode" && (
         <CreateItemWizard
@@ -808,41 +879,63 @@ const getStyles = (colors: ThemeColors) =>
       textAlign: "center",
       lineHeight: 22,
     },
-    tcgEntryCard: {
+    flexOne: {
+      flex: 1,
+      gap: 2,
+    },
+    gameOptionCard: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 14,
+      padding: 16,
+      marginBottom: 12,
+      borderRadius: 20,
+      backgroundColor: colors.primary,
+    },
+    gameOptionIcon: {
+      width: 44,
+      height: 44,
+      borderRadius: 14,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: "rgba(255,255,255,0.35)",
+    },
+    gameOptionTitle: {
+      color: "#000",
+      fontSize: 16,
+      fontWeight: "800",
+    },
+    gameOptionDescription: {
+      color: "rgba(0,0,0,0.68)",
+      fontSize: 12,
+      marginTop: 1,
+    },
+    magicEntryCard: {
       flexDirection: "row",
       alignItems: "center",
       gap: 14,
       padding: 16,
       marginBottom: 18,
       borderRadius: 20,
-      backgroundColor: colors.primary,
+      backgroundColor: colors.secondary,
     },
-    tcgEntryIcon: {
-      width: 48,
-      height: 48,
-      borderRadius: 16,
+    magicEntryIcon: {
+      width: 44,
+      height: 44,
+      borderRadius: 14,
       alignItems: "center",
       justifyContent: "center",
-      backgroundColor: "rgba(255,255,255,0.35)",
+      backgroundColor: "rgba(255,255,255,0.25)",
     },
-    tcgEntryCopy: {
-      flex: 1,
-      gap: 2,
-    },
-    tcgEntryEyebrow: {
-      color: "rgba(0,0,0,0.58)",
-      fontSize: 10,
-      fontWeight: "900",
-      letterSpacing: 1.4,
-    },
-    tcgEntryTitle: {
-      color: "#000",
-      fontSize: 18,
+    magicEntryTitle: {
+      color: "#FFF",
+      fontSize: 16,
       fontWeight: "800",
     },
-    tcgEntryDescription: {
-      color: "rgba(0,0,0,0.68)",
+    magicEntryDescription: {
+      color: "rgba(255,255,255,0.82)",
       fontSize: 12,
+      marginTop: 1,
     },
     // Tab Styles — Pill segmented control
     tabContainer: {

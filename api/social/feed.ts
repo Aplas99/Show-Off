@@ -64,6 +64,12 @@ export const useGetFeed = ({ limit = 20, enabled = true }: { limit?: number; ena
             searchableDescription,
             searchableBrand,
             data
+          ),
+          pokemon_tcg_cards (
+            id, name, set_name, number, rarity, image_small, image_large
+          ),
+          magic_cards (
+            id, name, set_name, collector_number, rarity, image_small, image_normal
           )
         `
                 )
@@ -92,13 +98,13 @@ export const useGetFeed = ({ limit = 20, enabled = true }: { limit?: number; ena
                 ),
             ];
 
-            // Fetch profiles for all users
+            // Fetch profiles via the column-limited SECURITY DEFINER RPC —
+            // a direct table read would come back empty for other users
+            // under owner-only RLS, leaving every post attributed to "User".
             let profilesData: any[] = [];
             if (userIds.length > 0) {
                 const { data: profiles, error: profilesError } = await supabase
-                    .from("profile") // Note: changed from 'profiles' to 'profile'
-                    .select("id, username, first_name, last_name, avatar_url")
-                    .in("id", userIds);
+                    .rpc("get_public_profiles", { p_user_ids: userIds });
 
                 if (profilesError) {
                     console.error("[Feed] Profiles error:", profilesError);
@@ -110,11 +116,56 @@ export const useGetFeed = ({ limit = 20, enabled = true }: { limit?: number; ena
             // Create a map of user_id -> profile for quick lookup
             const profileMap = new Map(profilesData.map((p) => [p.id, p]));
 
-            // Combine items with their profiles
-            const items = (itemsData || []).map((item: any) => ({
-                ...item,
-                profile: profileMap.get(item.user_id as string) || null,
-            })) as FeedItem[];
+            // Combine items with their profiles. Trading-card items have no
+            // products row — synthesize one from the card cache so the feed
+            // card renders a real title/image instead of a placeholder.
+            const items = (itemsData || []).map((item: any) => {
+                const pokemonCard = item.pokemon_tcg_cards;
+                const magicCard = item.magic_cards;
+                let products = item.products;
+                if (!products && pokemonCard) {
+                    products = {
+                        ean: null,
+                        searchableTitle: pokemonCard.name,
+                        searchableDescription: [
+                            pokemonCard.set_name,
+                            `#${pokemonCard.number}`,
+                            pokemonCard.rarity,
+                        ].filter(Boolean).join(" • "),
+                        searchableBrand: "Pokémon",
+                        data: {
+                            images: [
+                                pokemonCard.image_large,
+                                pokemonCard.image_small,
+                            ].filter(Boolean),
+                        },
+                    };
+                } else if (!products && magicCard) {
+                    products = {
+                        ean: null,
+                        searchableTitle: magicCard.name,
+                        searchableDescription: [
+                            magicCard.set_name,
+                            magicCard.collector_number
+                                ? `#${magicCard.collector_number}`
+                                : null,
+                            magicCard.rarity,
+                        ].filter(Boolean).join(" • "),
+                        searchableBrand: "Magic: The Gathering",
+                        data: {
+                            images: [
+                                magicCard.image_normal,
+                                magicCard.image_small,
+                            ].filter(Boolean),
+                        },
+                    };
+                }
+                return {
+                    ...item,
+                    products,
+                    profile: profileMap.get(item.user_id as string) || null,
+                };
+            }) as FeedItem[];
 
             const hasMore = items.length > limit;
             const feedItems = hasMore ? items.slice(0, limit) : items;

@@ -72,7 +72,8 @@
             "kotlinVersion": "2.2.20"
           }
         }
-      ]
+      ],
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true,

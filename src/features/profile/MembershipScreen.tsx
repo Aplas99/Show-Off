@@ -7,6 +7,7 @@ import {
     useStartCheckout,
     type MembershipPlanId,
 } from "@/api/memberships";
+import { TAB_BAR_HEIGHT } from "@/constants/layoutConfig";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -14,6 +15,7 @@ import React, { useState } from "react";
 import {
     ActivityIndicator,
     Alert,
+    Platform,
     ScrollView,
     StyleSheet,
     Text,
@@ -27,6 +29,7 @@ const FREE_PLAN_LIMITS = [
     { icon: "albums-outline", label: `Up to ${FREE_TIER_LIMITS.maxItems} items` },
     { icon: "layers-outline", label: `${FREE_TIER_LIMITS.maxShowcases} showcase` },
     { icon: "scan-outline", label: "10 card scans / day (watch an ad for more)" },
+    { icon: "search-outline", label: "15 searches / day (watch an ad for more)" },
 ] as const;
 
 const CURATOR_PERKS = [
@@ -37,7 +40,7 @@ const CURATOR_PERKS = [
         label:
             "Faster, more accurate card recognition — our upgraded scan pipeline finds cards phones normally struggle with",
     },
-    { icon: "infinite-outline", label: "Unlimited daily scans, no ads" },
+    { icon: "infinite-outline", label: "Unlimited daily scans & searches, no ads" },
     { icon: "stats-chart-outline", label: "Price history for your collection" },
     { icon: "share-social-outline", label: "Sharable public showcase links" },
     { icon: "ribbon-outline", label: "Curator badge & showcase customization" },
@@ -108,7 +111,18 @@ export default function MembershipScreen() {
                 </View>
             ) : (
                 <ScrollView
-                    contentContainerStyle={styles.scrollContent}
+                    contentContainerStyle={[
+                        styles.scrollContent,
+                        // Clear the floating tab bar so the Upgrade button and
+                        // footnote are never hidden underneath it.
+                        {
+                            paddingBottom:
+                                TAB_BAR_HEIGHT +
+                                insets.bottom +
+                                (Platform.OS === "android" ? 8 : 0) +
+                                48,
+                        },
+                    ]}
                     showsVerticalScrollIndicator={false}
                 >
                     {/* Current status */}

@@ -1,5 +1,5 @@
 import { supabase } from "@/lib/supabase";
-import { useMutation, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
 
 const pokemonPriceSchema = z
@@ -434,6 +434,56 @@ export async function getPokemonCardCacheFirst(
 
 export async function cachePokemonCards(cards: PokemonTcgCard[]) {
   await defaultDependencies.cacheCards(cards);
+}
+
+/**
+ * Fetch the complete card roster for one set, paginating until the API's
+ * reported total is reached. Results are cached to Supabase. Intended for
+ * on-demand use (set-completion view), never proactively across all sets.
+ */
+export async function fetchAllCardsInSet(
+  setId: string,
+): Promise<PokemonTcgCard[]> {
+  const normalizedSetId = setId.trim();
+  if (!normalizedSetId) return [];
+
+  const allCards: PokemonTcgCard[] = [];
+  let page = 1;
+  for (;;) {
+    const params = new URLSearchParams({
+      q: `set.id:"${normalizedSetId.replace(/([\\"])/g, "\\$1")}"`,
+      page: String(page),
+      pageSize: "250",
+      orderBy: "number",
+    });
+    const raw = await fetchPokemonApi(`/cards?${params.toString()}`);
+    const parsed = pokemonSearchResponseSchema.parse(raw);
+    allCards.push(...parsed.data);
+    if (
+      parsed.data.length === 0 ||
+      page * parsed.pageSize >= parsed.totalCount
+    ) {
+      break;
+    }
+    page += 1;
+  }
+
+  await defaultDependencies.cacheCards(allCards);
+  return allCards;
+}
+
+/**
+ * Full roster for a set, for the Curator set-completion view. Cached a day —
+ * set rosters only change when a new set releases.
+ */
+export function useSetCards(setId: string | null) {
+  return useQuery({
+    queryKey: ["pokemon", "set-cards", setId],
+    queryFn: () => fetchAllCardsInSet(setId!),
+    enabled: !!setId,
+    staleTime: 24 * 60 * 60 * 1000,
+    gcTime: 24 * 60 * 60 * 1000,
+  });
 }
 
 export function useCreatePokemonCardBatch() {

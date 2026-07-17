@@ -24,8 +24,10 @@ import {
 import {
   useGrantBonusScans,
   useRecordScanAttempt,
+  useRecordSearchAttempt,
   useScanQuotaStatus,
 } from "@/api/scanning";
+import SearchQuotaModal from "@/src/components/membership/SearchQuotaModal";
 import { useRewardedAd } from "@/api/ads";
 import {
   useCreateShowcase,
@@ -283,7 +285,7 @@ export default function TcgCreateScreen() {
           selectedId={showcaseId}
           isLoading={isLoading}
           isCreating={createShowcase.isPending}
-          onBack={() => router.back()}
+          onBack={() => router.replace("/(tabs)/create")}
           onSelect={setShowcaseId}
           onCreate={handleCreateShowcase}
           onContinue={() => setStep("scan")}
@@ -830,12 +832,14 @@ function ScannerStep({
 
       <View style={[styles.cameraControls, { paddingBottom: insets.bottom + 18 }]}>
         <TouchableOpacity
-          style={styles.manualControlButton}
+          style={styles.searchControlButton}
           onPress={() => { setFromFailedScan(false); setManualSearchOpen(true); }}
           accessibilityLabel="Search for a card manually"
         >
-          <Ionicons name="search" size={19} color="#FFF" />
-          <Text style={styles.manualControlText}>Search</Text>
+          <View style={styles.searchControlIcon}>
+            <Ionicons name="search" size={16} color="#000" />
+          </View>
+          <Text style={styles.searchControlText}>Search</Text>
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.shutterOuter, (!isReady || isIdentifying) && styles.disabled]}
@@ -886,8 +890,23 @@ function ScannerStep({
         animationType="fade"
         onRequestClose={() => setQuotaExceeded(false)}
       >
-        <View style={styles.quotaBackdrop}>
-          <View style={styles.quotaCard}>
+        <Pressable
+          style={styles.quotaBackdrop}
+          onPress={() => setQuotaExceeded(false)}
+        >
+          <Pressable
+            style={styles.quotaCard}
+            onPress={(event) => event.stopPropagation()}
+          >
+            <TouchableOpacity
+              style={styles.quotaCloseButton}
+              onPress={() => setQuotaExceeded(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Close membership popup"
+              hitSlop={8}
+            >
+              <Ionicons name="close" size={20} color={colors.onSurfaceVariant} />
+            </TouchableOpacity>
             <Ionicons name="hourglass-outline" size={28} color={colors.tertiary} />
             <Text style={styles.quotaTitle}>Out of free scans for today</Text>
             <Text style={styles.quotaDescription}>
@@ -921,8 +940,8 @@ function ScannerStep({
             <TouchableOpacity onPress={() => setQuotaExceeded(false)}>
               <Text style={styles.quotaDismissText}>Not now</Text>
             </TouchableOpacity>
-          </View>
-        </View>
+          </Pressable>
+        </Pressable>
       </Modal>
 
     </View>
@@ -958,6 +977,10 @@ function ManualCardSearchModal({
   const [isAdding, setIsAdding] = useState(false);
   const [hasSearched, setHasSearched] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [searchQuotaExceeded, setSearchQuotaExceeded] = useState(false);
+  const { data: membership } = useMembership();
+  const isCurator = membership?.isCurator ?? false;
+  const recordSearchAttempt = useRecordSearchAttempt();
 
   // Sync initial values when the modal opens with new pre-fill data
   useEffect(() => {
@@ -973,6 +996,20 @@ function ManualCardSearchModal({
 
   const search = async () => {
     if (!name.trim() || isSearching) return;
+
+    if (!isCurator) {
+      try {
+        const quota = await recordSearchAttempt.mutateAsync();
+        if (!quota.allowed) {
+          setSearchQuotaExceeded(true);
+          return;
+        }
+      } catch {
+        // Fail open on a quota-check error — don't block searching over
+        // a transient network hiccup.
+      }
+    }
+
     try {
       setIsSearching(true);
       setError(null);
@@ -1135,6 +1172,11 @@ function ManualCardSearchModal({
               </View>
             ) : null
           }
+        />
+
+        <SearchQuotaModal
+          visible={searchQuotaExceeded}
+          onClose={() => setSearchQuotaExceeded(false)}
         />
       </View>
     </Modal>
@@ -1436,10 +1478,40 @@ const getStyles = (colors: ThemeColors) =>
     cameraControls: { position: "absolute", left: 0, right: 0, bottom: 0, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 28, paddingTop: 18, backgroundColor: "rgba(0,0,0,0.32)" },
     manualControlButton: { width: 88, height: 46, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, borderRadius: 23, backgroundColor: "rgba(0,0,0,0.62)" },
     manualControlText: { color: "#FFF", fontSize: 12, fontWeight: "700" },
+    // Accent-colored so the manual-search escape hatch reads as a first-class
+    // action next to the shutter, not a dim utility button.
+    searchControlButton: {
+      minWidth: 96,
+      height: 46,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 7,
+      paddingHorizontal: 13,
+      borderRadius: 23,
+      backgroundColor: colors.primary,
+      borderWidth: 1.5,
+      borderColor: "rgba(255,255,255,0.55)",
+      shadowColor: colors.primary,
+      shadowOpacity: 0.55,
+      shadowRadius: 10,
+      shadowOffset: { width: 0, height: 0 },
+      elevation: 8,
+    },
+    searchControlIcon: {
+      width: 26,
+      height: 26,
+      borderRadius: 13,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: "rgba(255,255,255,0.42)",
+    },
+    searchControlText: { color: "#000", fontSize: 13, fontWeight: "800" },
     scanQuotaPill: { position: "absolute", top: 108, alignSelf: "center", flexDirection: "row", alignItems: "center", gap: 5, paddingHorizontal: 10, paddingVertical: 5, borderRadius: 999, backgroundColor: "rgba(0,0,0,0.55)" },
     scanQuotaPillText: { color: "#FFF", fontSize: 11, fontWeight: "700" },
     quotaBackdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.7)", justifyContent: "center", padding: 24 },
     quotaCard: { alignItems: "center", gap: 8, padding: 24, borderRadius: 20, backgroundColor: colors.surfaceContainer, borderWidth: 1, borderColor: colors.outlineVariant },
+    quotaCloseButton: { position: "absolute", top: 12, right: 12, width: 36, height: 36, borderRadius: 18, alignItems: "center", justifyContent: "center", backgroundColor: colors.surfaceContainerHigh, zIndex: 1 },
     quotaTitle: { color: colors.text, fontSize: 17, fontWeight: "700", textAlign: "center" },
     quotaDescription: { color: colors.onSurfaceVariant, fontSize: 13, textAlign: "center", lineHeight: 18 },
     quotaPrimaryButton: { marginTop: 8, backgroundColor: colors.tertiary, borderRadius: 999, paddingHorizontal: 20, paddingVertical: 12, minWidth: 200, alignItems: "center" },

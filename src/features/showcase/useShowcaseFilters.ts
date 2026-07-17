@@ -15,6 +15,7 @@ type ShowcaseFiltersAction =
   | { type: "SET_SORT_ORDER"; sortOrder: ShowcaseSortOrder }
   | { type: "TOGGLE_TYPE"; value: string }
   | { type: "TOGGLE_SET"; value: string }
+  | { type: "CLEAR_SELECTIONS" }
   | { type: "RESET" };
 
 const INITIAL_STATE: ShowcaseFiltersState = {
@@ -49,6 +50,10 @@ function reducer(
         ...state,
         selectedSetIds: toggleValue(state.selectedSetIds, action.value),
       };
+    case "CLEAR_SELECTIONS":
+      // Keep sort settings; drop type/set picks (used when the game tab
+      // changes, since selections from another game would zero out results).
+      return { ...state, selectedTypes: [], selectedSetIds: [] };
     case "RESET":
       return INITIAL_STATE;
     default:
@@ -81,6 +86,10 @@ export function useShowcaseFilters() {
     (value: string) => dispatch({ type: "TOGGLE_SET", value }),
     [],
   );
+  const clearSelections = useCallback(
+    () => dispatch({ type: "CLEAR_SELECTIONS" }),
+    [],
+  );
   const reset = useCallback(() => dispatch({ type: "RESET" }), []);
 
   const activeFilterCount = useMemo(
@@ -94,6 +103,7 @@ export function useShowcaseFilters() {
     setSortOrder,
     toggleType,
     toggleSet,
+    clearSelections,
     reset,
     activeFilterCount,
   };

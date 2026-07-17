@@ -11,15 +11,35 @@ interface UploadImageParams {
     uri: string;
     fileSize?: number;
     bucketName?: string;
+    /** Allow video formats too (post uploads). Defaults to images only. */
+    kind?: "image" | "media";
 }
 
+const IMAGE_EXTENSIONS = ["jpg", "jpeg", "png", "gif", "webp", "heic", "heif"];
+const VIDEO_EXTENSIONS = ["mp4", "mov", "m4v", "webm"];
+
+const MIME_BY_EXT: Record<string, string> = {
+    jpg: "image/jpeg",
+    jpeg: "image/jpeg",
+    png: "image/png",
+    gif: "image/gif",
+    webp: "image/webp",
+    heic: "image/heic",
+    heif: "image/heif",
+    mp4: "video/mp4",
+    mov: "video/quicktime",
+    m4v: "video/x-m4v",
+    webm: "video/webm",
+};
+
 /**
- * Uploads an image to Supabase Storage.
+ * Uploads an image (or, with `kind: "media"`, a video) to Supabase Storage.
  */
 export async function uploadImageToSupabase({
     uri,
     fileSize,
     bucketName = "item-images",
+    kind = "image",
 }: UploadImageParams): Promise<string> {
     // Paid members get the larger upload limit (see api/memberships).
     const isPaidUser = await getHasActiveMembership();
@@ -39,17 +59,22 @@ export async function uploadImageToSupabase({
     if (fileSize && fileSize > MAX_FILE_SIZE_BYTES) {
         const limitMb = MAX_FILE_SIZE_BYTES / (1024 * 1024);
         throw new Error(
-            `File too large. Please select an image smaller than ${limitMb}MB.`
+            `File too large. Please select a file smaller than ${limitMb}MB.`
         );
     }
 
     // 2. Validate file type
     const ext = uri.split(".").pop()?.toLowerCase();
-    const allowedExtensions = ["jpg", "jpeg", "png", "gif", "webp", "heic", "heif"];
+    const allowedExtensions =
+        kind === "media"
+            ? [...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS]
+            : IMAGE_EXTENSIONS;
 
     if (!ext || !allowedExtensions.includes(ext)) {
         throw new Error(
-            `Unsupported file format (${ext}). Please upload a valid image (JPG, PNG, GIF, WEBP, or HEIC).`
+            kind === "media"
+                ? `Unsupported file format (${ext}). Please upload an image (JPG, PNG, GIF, WEBP, HEIC) or video (MP4, MOV, WEBM).`
+                : `Unsupported file format (${ext}). Please upload a valid image (JPG, PNG, GIF, WEBP, or HEIC).`
         );
     }
 
@@ -67,7 +92,7 @@ export async function uploadImageToSupabase({
     formData.append("file", {
         uri,
         name: fileName,
-        type: `image/${ext === "png" ? "png" : "jpeg"}`,
+        type: MIME_BY_EXT[ext] ?? "application/octet-stream",
     } as any);
 
     // 4. Upload to Supabase

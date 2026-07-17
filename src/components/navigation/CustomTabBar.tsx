@@ -1,5 +1,5 @@
 import { TAB_BAR_HEIGHT } from "@/constants/layoutConfig";
-import { COLORS } from "@/constants/theme";
+import { useColors, type ThemeColors } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
 import AntDesign from "@expo/vector-icons/AntDesign";
 import Feather from "@expo/vector-icons/Feather";
@@ -41,11 +41,13 @@ function AnimatedTab({
   isFocused,
   onPress,
   onLongPress,
+  colors,
 }: {
   route: any;
   isFocused: boolean;
   onPress: () => void;
   onLongPress: () => void;
+  colors: ThemeColors;
 }) {
   const scaleAnim = useRef(new Animated.Value(isFocused ? 1 : 0)).current;
 
@@ -71,7 +73,7 @@ function AnimatedTab({
     outputRange: [1, 1.15],
   });
 
-  const iconColor = isFocused ? "#1a1a1a" : "rgba(255,255,255,0.4)";
+  const iconColor = isFocused ? "#1a1a1a" : colors.onSurfaceVariant;
 
   return (
     <TouchableOpacity
@@ -87,6 +89,8 @@ function AnimatedTab({
         style={[
           styles.activeCircle,
           {
+            backgroundColor: colors.primary,
+            shadowColor: colors.primary,
             transform: [{ scale: circleScale }],
             opacity: scaleAnim,
           },
@@ -107,6 +111,7 @@ function AnimatedTab({
 
 export default function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
   const insets = useSafeAreaInsets();
+  const colors = useColors();
   const activeRoute = state.routes[state.index];
   const activeOptions = descriptors[activeRoute.key]?.options;
 
@@ -131,6 +136,7 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
       style={[
         styles.barOuter,
         {
+          backgroundColor: colors.surfaceContainerLow,
           paddingBottom: insets.bottom + (Platform.OS === "android" ? 8 : 0),
         },
       ]}
@@ -166,6 +172,7 @@ export default function CustomTabBar({ state, descriptors, navigation }: BottomT
               isFocused={isFocused}
               onPress={onPress}
               onLongPress={onLongPress}
+              colors={colors}
             />
           );
         })}
@@ -180,7 +187,6 @@ const styles = StyleSheet.create({
     bottom: 0,
     left: 0,
     right: 0,
-    backgroundColor: COLORS.surfaceContainerLow,
     borderTopLeftRadius: 24,
     borderTopRightRadius: 24,
     paddingHorizontal: 12,
@@ -210,8 +216,6 @@ const styles = StyleSheet.create({
     width: ACTIVE_CIRCLE,
     height: ACTIVE_CIRCLE,
     borderRadius: ACTIVE_CIRCLE / 2,
-    backgroundColor: COLORS.primary,
-    shadowColor: COLORS.primary,
     shadowOffset: { width: 0, height: 0 },
     shadowOpacity: 0.4,
     shadowRadius: 16,

@@ -7,6 +7,7 @@ import {
 } from "@/api/scanning";
 import { COLORS } from "@/constants/theme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { createActionLogger } from "@/lib/actionDebug";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import { BlurView } from "expo-blur";
@@ -16,6 +17,7 @@ import {
   ActivityIndicator,
   Modal,
   Platform,
+  Pressable,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -36,6 +38,7 @@ interface BarcodeScannerModalProps {
 }
 
 const SCANNER_FRAME_SIZE = 280;
+const barcodeDebug = createActionLogger("Barcode");
 
 export default function BarcodeScannerModal({
   visible,
@@ -117,26 +120,30 @@ export default function BarcodeScannerModal({
   }, [haptics, onClose]);
 
   const handleBarcodeScanned = useCallback(
-    async ({ data }: { data: string; type: string }) => {
+    async ({ data, type }: { data: string; type: string }) => {
       // Prevent duplicate fires
       if (scanLockRef.current) return;
       scanLockRef.current = true;
+      barcodeDebug.log("scan.detected", { data, type, isCurator });
 
       if (!isCurator) {
         try {
           const quota = await recordScanAttempt.mutateAsync();
           if (!quota.allowed) {
+            barcodeDebug.log("scan.quota-exceeded", { data, type });
             await haptics.error();
             setQuotaExceeded(true);
             scanLockRef.current = false;
             return;
           }
-        } catch {
+        } catch (error) {
           // Fail open on a quota-check error — don't block scanning over
           // a transient network hiccup.
+          barcodeDebug.error("scan.quota-check-failed", error);
         }
       }
 
+      barcodeDebug.log("scan.accepted", { data, type });
       await haptics.success();
       onBarcodeScanned(data);
     },
@@ -144,12 +151,16 @@ export default function BarcodeScannerModal({
   );
 
   const handleWatchAdForBonusScans = useCallback(async () => {
+    barcodeDebug.log("quota.watch-ad-requested");
     const result = await rewardedAd.show();
     if (result === "earned") {
       await grantBonusScans.mutateAsync(5);
+      barcodeDebug.log("quota.bonus-scans-granted", { amount: 5 });
       await haptics.success();
       setQuotaExceeded(false);
       scanLockRef.current = false;
+    } else {
+      barcodeDebug.log("quota.watch-ad-not-earned", { result });
     }
   }, [rewardedAd, grantBonusScans, haptics]);
 
@@ -324,8 +335,23 @@ export default function BarcodeScannerModal({
           animationType="fade"
           onRequestClose={() => setQuotaExceeded(false)}
         >
-          <View style={styles.quotaBackdrop}>
-            <View style={styles.quotaCard}>
+          <Pressable
+            style={styles.quotaBackdrop}
+            onPress={() => setQuotaExceeded(false)}
+          >
+            <Pressable
+              style={styles.quotaCard}
+              onPress={(event) => event.stopPropagation()}
+            >
+              <TouchableOpacity
+                style={styles.quotaCloseButton}
+                onPress={() => setQuotaExceeded(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Close membership popup"
+                hitSlop={8}
+              >
+                <Ionicons name="close" size={20} color={COLORS.grey} />
+              </TouchableOpacity>
               <Ionicons name="hourglass-outline" size={28} color={COLORS.primary} />
               <Text style={styles.quotaTitle}>Out of free scans for today</Text>
               <Text style={styles.quotaDescription}>
@@ -361,8 +387,8 @@ export default function BarcodeScannerModal({
               <TouchableOpacity onPress={() => setQuotaExceeded(false)}>
                 <Text style={styles.quotaDismissText}>Not now</Text>
               </TouchableOpacity>
-            </View>
-          </View>
+            </Pressable>
+          </Pressable>
         </Modal>
       </View>
     </Modal>
@@ -405,6 +431,18 @@ const styles = StyleSheet.create({
     backgroundColor: "#18181B",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.1)",
+  },
+  quotaCloseButton: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.08)",
+    zIndex: 1,
   },
   quotaTitle: { color: COLORS.white, fontSize: 17, fontWeight: "700", textAlign: "center" },
   quotaDescription: { color: COLORS.grey, fontSize: 13, textAlign: "center", lineHeight: 18 },
