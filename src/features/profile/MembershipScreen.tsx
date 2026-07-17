@@ -1,10 +1,13 @@
 import {
+    FREE_TIER_LIMITS,
+    FREE_TIER_NAME,
     MEMBERSHIP_PLANS,
     useMembership,
     useOpenBillingPortal,
     useStartCheckout,
     type MembershipPlanId,
 } from "@/api/memberships";
+import { TAB_BAR_HEIGHT } from "@/constants/layoutConfig";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
@@ -12,6 +15,7 @@ import React, { useState } from "react";
 import {
     ActivityIndicator,
     Alert,
+    Platform,
     ScrollView,
     StyleSheet,
     Text,
@@ -21,11 +25,26 @@ import {
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const PERKS = [
+const FREE_PLAN_LIMITS = [
+    { icon: "albums-outline", label: `Up to ${FREE_TIER_LIMITS.maxItems} items` },
+    { icon: "layers-outline", label: `${FREE_TIER_LIMITS.maxShowcases} showcase` },
+    { icon: "scan-outline", label: "10 card scans / day (watch an ad for more)" },
+    { icon: "search-outline", label: "15 searches / day (watch an ad for more)" },
+] as const;
+
+const CURATOR_PERKS = [
+    { icon: "infinite-outline", label: "Unlimited items & showcases" },
     { icon: "cloud-upload-outline", label: "200MB image uploads (vs 5MB free)" },
-    { icon: "albums-outline", label: "Unlimited showcases" },
-    { icon: "scan-outline", label: "Priority card scanning" },
-    { icon: "sparkles-outline", label: "Early access to new features" },
+    {
+        icon: "flash-outline",
+        label:
+            "Faster, more accurate card recognition — our upgraded scan pipeline finds cards phones normally struggle with",
+    },
+    { icon: "infinite-outline", label: "Unlimited daily scans & searches, no ads" },
+    { icon: "stats-chart-outline", label: "Price history for your collection" },
+    { icon: "share-social-outline", label: "Sharable public showcase links" },
+    { icon: "ribbon-outline", label: "Curator badge & showcase customization" },
+    { icon: "list-outline", label: "Missing-items tracking per set" },
 ] as const;
 
 export default function MembershipScreen() {
@@ -37,9 +56,16 @@ export default function MembershipScreen() {
     const { data: membership, isLoading } = useMembership();
     const startCheckout = useStartCheckout();
     const openPortal = useOpenBillingPortal();
-    const [selectedPlan, setSelectedPlan] = useState<MembershipPlanId>("monthly");
+    const [selectedPlan, setSelectedPlan] =
+        useState<MembershipPlanId>("curator_monthly");
 
+    // There is only one paid tier (Curator, at three price points), so
+    // isPaidUser and isCurator are equivalent in normal operation —
+    // isCurator only differs in the unlikely case of a subscription on
+    // an unseeded price_id (see subscriptions_with_tier's fail-safe
+    // default to 'collector' in that case).
     const isPaidUser = membership?.isPaidUser ?? false;
+    const isCurator = membership?.isCurator ?? false;
     const subscription = membership?.subscription ?? null;
 
     const handleUpgrade = async () => {
@@ -85,7 +111,18 @@ export default function MembershipScreen() {
                 </View>
             ) : (
                 <ScrollView
-                    contentContainerStyle={styles.scrollContent}
+                    contentContainerStyle={[
+                        styles.scrollContent,
+                        // Clear the floating tab bar so the Upgrade button and
+                        // footnote are never hidden underneath it.
+                        {
+                            paddingBottom:
+                                TAB_BAR_HEIGHT +
+                                insets.bottom +
+                                (Platform.OS === "android" ? 8 : 0) +
+                                48,
+                        },
+                    ]}
                     showsVerticalScrollIndicator={false}
                 >
                     {/* Current status */}
@@ -105,7 +142,7 @@ export default function MembershipScreen() {
                             </View>
                             <View style={styles.statusTextContainer}>
                                 <Text style={styles.statusTitle}>
-                                    {isPaidUser ? "Collector Member" : "Free Plan"}
+                                    {isCurator ? "Curator Member" : `${FREE_TIER_NAME} (Free)`}
                                 </Text>
                                 <Text style={styles.statusSubtitle}>
                                     {isPaidUser
@@ -118,25 +155,56 @@ export default function MembershipScreen() {
                         </View>
                     </Animated.View>
 
-                    {/* Perks */}
-                    <Animated.View entering={FadeInDown.delay(150).springify()}>
+                    {/* Free plan limits — only relevant to free users */}
+                    {!isPaidUser && (
+                        <Animated.View entering={FadeInDown.delay(150).springify()}>
+                            <View style={styles.sectionHeader}>
+                                <Ionicons name="gift-outline" size={20} color={colors.primary} />
+                                <Text style={styles.sectionTitle}>{FREE_TIER_NAME} Plan</Text>
+                            </View>
+                            <View style={styles.card}>
+                                {FREE_PLAN_LIMITS.map((perk, index) => (
+                                    <View
+                                        key={perk.label}
+                                        style={[
+                                            styles.perkRow,
+                                            index === FREE_PLAN_LIMITS.length - 1 && {
+                                                borderBottomWidth: 0,
+                                            },
+                                        ]}
+                                    >
+                                        <Ionicons
+                                            name={perk.icon as any}
+                                            size={20}
+                                            color={colors.primary}
+                                        />
+                                        <Text style={styles.perkText}>{perk.label}</Text>
+                                    </View>
+                                ))}
+                            </View>
+                        </Animated.View>
+                    )}
+
+                    <Animated.View entering={FadeInDown.delay(175).springify()}>
                         <View style={styles.sectionHeader}>
-                            <Ionicons name="gift-outline" size={20} color={colors.primary} />
-                            <Text style={styles.sectionTitle}>Member Perks</Text>
+                            <Ionicons name="ribbon-outline" size={20} color={colors.tertiary} />
+                            <Text style={styles.sectionTitle}>Curator Perks</Text>
                         </View>
                         <View style={styles.card}>
-                            {PERKS.map((perk, index) => (
+                            {CURATOR_PERKS.map((perk, index) => (
                                 <View
                                     key={perk.label}
                                     style={[
                                         styles.perkRow,
-                                        index === PERKS.length - 1 && { borderBottomWidth: 0 },
+                                        index === CURATOR_PERKS.length - 1 && {
+                                            borderBottomWidth: 0,
+                                        },
                                     ]}
                                 >
                                     <Ionicons
                                         name={perk.icon as any}
                                         size={20}
-                                        color={colors.primary}
+                                        color={colors.tertiary}
                                     />
                                     <Text style={styles.perkText}>{perk.label}</Text>
                                 </View>
@@ -145,7 +213,7 @@ export default function MembershipScreen() {
                     </Animated.View>
 
                     {/* Plans + actions */}
-                    {isPaidUser ? (
+                    {isPaidUser && (
                         <Animated.View entering={FadeInDown.delay(200).springify()}>
                             <TouchableOpacity
                                 style={styles.primaryButton}
@@ -164,8 +232,10 @@ export default function MembershipScreen() {
                                 Stripe billing portal.
                             </Text>
                         </Animated.View>
-                    ) : (
-                        <Animated.View entering={FadeInDown.delay(200).springify()}>
+                    )}
+
+                    {!isPaidUser && (
+                        <Animated.View entering={FadeInDown.delay(220).springify()}>
                             <View style={styles.sectionHeader}>
                                 <Ionicons
                                     name="pricetag-outline"

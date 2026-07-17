@@ -33,9 +33,12 @@ npx jest --watch                                    # watch mode
 | `EXPO_PUBLIC_POKE_KEY` | Pokémon TCG API key (bundled; move to Edge Function before production) |
 | `EXPO_PUBLIC_BARCODE_LOOKUP_API_KEY` | Barcode Lookup product search API |
 | `EXPO_PUBLIC_CARD_SCAN_DEBUG` | Set to `false` to silence `[CardScan]` OCR logs |
+| `EXPO_PUBLIC_ACTION_DEBUG` | Set to `false` to silence `lib/actionDebug.ts` logs (barcode scanning, product/API search, manual item creation, Magic: The Gathering search) |
 | `EXPO_PUBLIC_OCR_FALLBACK_URL` | Optional PaddleOCR fallback service URL (`server/paddleocr`); unset disables the server second pass |
 | `EXPO_PUBLIC_OCR_FALLBACK_TOKEN` | Bearer token for the OCR fallback service (`OCR_SERVICE_TOKEN`) |
 | `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Stripe publishable key (reserved for future native SDK use) |
+| `EXPO_PUBLIC_ADMOB_BANNER_UNIT_ID` | AdMob banner ad unit id; unset falls back to Google's test unit |
+| `EXPO_PUBLIC_ADMOB_REWARDED_UNIT_ID` | AdMob rewarded ad unit id (grants bonus scans); unset falls back to Google's test unit |
 
 Stripe server secrets (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_MONTHLY`, `STRIPE_PRICE_ID_ANNUAL`) live in Supabase Edge Function secrets, not app env — see `docs/stripe-memberships.md`.
 
@@ -52,6 +55,9 @@ src/components/   Reusable UI, modals, skeleton loaders
 api/              All Supabase + external API calls, exported as TanStack Query hooks
   items/          Product search, item creation, barcode lookups
   pokemon/        TCG card cache, OCR recognition pipeline, search, scan debug logging
+  magic/          Magic: The Gathering via Scryfall (name search, OCR scan, card cache)
+  prices/         Per-card market price history (Curator graph; DB triggers snapshot daily)
+  scanning/       Free-tier daily quotas: card/barcode scans (10/day) and searches (15/day)
   showcase/       Showcase CRUD
   social/         Feed, interactions (likes, bookmarks, comments)
   auth/           Auth hooks
@@ -72,12 +78,13 @@ All data access goes through `api/*`:
 
 ### Item creation paths
 
-Items can be created three ways:
+Items can be created four ways:
 - **Barcode scan** → `BarcodeScannerModal` → `useCreateItemWithProductLookup` (in `api/items`)
 - **Manual wizard** → `ManualCreateItemWizard` → same mutation
 - **Pokémon TCG card** → `TcgCreateScreen` (scan queue) → `useCreatePokemonCardBatch` RPC
+- **Magic: The Gathering card** → `MagicCreateScreen` (camera scan via ML Kit OCR + Scryfall fuzzy lookup, or name search) → `useCreateMagicCardBatch` RPC
 
-An item is "verified" (`is_verified = true`) when it has a `product_ean` (barcode path) or `pokemon_tcg_card_id` (TCG path).
+An item is "verified" (`is_verified = true`) when it has a `product_ean` (barcode path), `pokemon_tcg_card_id`, or `magic_card_id` (TCG paths).
 
 ### Pokémon TCG pipeline
 
@@ -100,11 +107,15 @@ ML Kit (`@infinitered/react-native-mlkit-text-recognition`) is a native module �
 
 ### Supabase schema (key tables)
 
-- `items` — user-owned collectibles; links to `products` via `product_ean` or `pokemon_tcg_cards` via `pokemon_tcg_card_id`
+- `items` — user-owned collectibles; links to `products` via `product_ean`, `pokemon_tcg_cards` via `pokemon_tcg_card_id`, or `magic_cards` via `magic_card_id`
 - `products` — shared product catalog (barcode path); `ean` is the PK
-- `pokemon_tcg_cards` — TCG card cache; `id` is the TCG provider ID (e.g. `xy1-1`)
+- `pokemon_tcg_cards` — Pokémon card cache; `id` is the TCG provider ID (e.g. `xy1-1`)
+- `magic_cards` — Magic card cache (Scryfall); `id` is the Scryfall UUID
+- `price_history` — daily per-card market price snapshots, written by SECURITY DEFINER triggers on both card caches
+- `scan_usage` / `search_usage` — free-tier daily quota counters, written only via SECURITY DEFINER RPCs
 - `showcase_items` — join table linking items to showcases
 - `billing_customers` / `subscriptions` — Stripe membership state, written only by the `stripe-webhook` Edge Function (see `docs/stripe-memberships.md`)
+- `get_public_profiles(uuid[])` RPC — column-limited profile lookup for social surfaces (feed/comments); use it instead of selecting from `profile` for other users
 - Migrations in `supabase/migrations/` must be applied in timestamp order
 
 ### Memberships (Stripe)
@@ -126,3 +137,7 @@ Jest + ts-jest, `testEnvironment: "node"`. Tests live beside their subjects (`li
 ## Pokémon TCG scanner debugging
 
 Scanner logs emit with the `[CardScan]` prefix and cover: image crop dimensions, raw OCR text, parsed identifiers (name candidates, number, set code, printed total), catalog search attempts with source (`cache`/`api`), match scores, manual selections, and batch-save status. Set `EXPO_PUBLIC_CARD_SCAN_DEBUG=false` to silence them.
+
+## General item creation & discovery debugging
+
+`lib/actionDebug.ts` exports `createActionLogger(tag)`, used to build namespaced structured loggers (`[Barcode]`, `[Search]`, `[CreateItem]`, `[MagicTCG]`, `[MagicScan]`) across the non-Pokémon item flows — barcode scan detection/quota checks, product/UPC search requests, manual + barcode item creation lifecycle, and Magic: The Gathering search/queue/batch-save. All share one toggle: set `EXPO_PUBLIC_ACTION_DEBUG=false` to silence them. Pokémon scanning keeps its own `[CardScan]` logger (see above) rather than using this one.

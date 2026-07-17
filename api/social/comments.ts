@@ -57,15 +57,18 @@ export function useGetItemComments({ itemId, enabled = true }: { itemId: number;
 
             let profileMap = new Map<string, { username: string; avatar_url: string | null }>();
             if (userIds.length > 0) {
+                // Column-limited SECURITY DEFINER RPC — a direct table read
+                // returns nothing for other users under owner-only RLS.
                 const { data: profiles, error: profilesError } = await supabase
-                    .from("profile")
-                    .select("id, username, avatar_url")
-                    .in("id", userIds);
+                    .rpc("get_public_profiles", { p_user_ids: userIds });
 
                 if (profilesError) {
                     console.error("[Comments] Profile fetch error:", profilesError);
                 } else if (profiles) {
-                    profileMap = new Map(profiles.map((p) => [p.id, { username: p.username, avatar_url: p.avatar_url }]));
+                    profileMap = new Map(
+                        (profiles as { id: string; username: string; avatar_url: string | null }[])
+                            .map((p) => [p.id, { username: p.username, avatar_url: p.avatar_url }]),
+                    );
                 }
             }
 

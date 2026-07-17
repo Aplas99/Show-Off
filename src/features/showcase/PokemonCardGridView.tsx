@@ -55,11 +55,14 @@ const CardCell = React.memo(
     item,
     width,
     onPress,
+    duplicateCount,
   }: {
     item: ItemWithProduct;
     width: number;
     onPress?: (item: ItemWithProduct) => void;
+    duplicateCount?: number;
   }) => {
+    const colors = useColors();
     const imageUrl = getPokemonCardImage(item);
     const title = item.products?.searchableTitle || item.custom_title || "Unknown card";
 
@@ -100,6 +103,14 @@ const CardCell = React.memo(
             </Text>
           </View>
         )}
+
+        {duplicateCount != null && duplicateCount > 1 && (
+          <View
+            style={[styles.duplicateBadge, { backgroundColor: colors.tertiary }]}
+          >
+            <Text style={styles.duplicateBadgeText}>×{duplicateCount}</Text>
+          </View>
+        )}
       </Pressable>
     );
   },
@@ -112,6 +123,12 @@ interface PokemonCardGridViewProps {
   bottomPadding?: number;
   refreshing?: boolean;
   onRefresh?: () => void;
+  /** Total card count for the showcase, shown in the header pill. Defaults to `items.length` (i.e. the unfiltered count when the caller passes the full list, or the currently-displayed count otherwise). */
+  totalCount?: number;
+  /** Maps a card id (`pokemon_tcg_card_id` or `magic_card_id`) -> how many times that card appears in the showcase, for the "×N" corner badge. Omit or leave a card's id out to render no badge. */
+  duplicateCounts?: Map<string, number>;
+  /** Rendered above the count pill in the list header (e.g. game filter tabs). */
+  headerAccessory?: React.ReactNode;
 }
 
 export const PokemonCardGridView: React.FC<PokemonCardGridViewProps> = ({
@@ -120,12 +137,16 @@ export const PokemonCardGridView: React.FC<PokemonCardGridViewProps> = ({
   bottomPadding = 120,
   refreshing = false,
   onRefresh,
+  totalCount,
+  duplicateCounts,
+  headerAccessory,
 }) => {
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
   const cardWidth =
     (width - GRID_PADDING * 2 - GRID_GAP * (NUM_COLUMNS - 1)) / NUM_COLUMNS;
+  const resolvedTotalCount = totalCount ?? items.length;
 
   const doodles = useMemo(
     () =>
@@ -147,10 +168,18 @@ export const PokemonCardGridView: React.FC<PokemonCardGridViewProps> = ({
   );
 
   const renderItem = useCallback(
-    ({ item }: { item: ItemWithProduct }) => (
-      <CardCell item={item} width={cardWidth} onPress={onItemPress} />
-    ),
-    [cardWidth, onItemPress],
+    ({ item }: { item: ItemWithProduct }) => {
+      const cardId = item.pokemon_tcg_card_id || item.magic_card_id;
+      return (
+        <CardCell
+          item={item}
+          width={cardWidth}
+          onPress={onItemPress}
+          duplicateCount={cardId ? duplicateCounts?.get(cardId) : undefined}
+        />
+      );
+    },
+    [cardWidth, onItemPress, duplicateCounts],
   );
 
   return (
@@ -184,6 +213,21 @@ export const PokemonCardGridView: React.FC<PokemonCardGridViewProps> = ({
               tintColor="#FFF"
             />
           ) : undefined
+        }
+        ListHeaderComponent={
+          headerAccessory || resolvedTotalCount > 0 ? (
+            <View>
+              {headerAccessory}
+              {resolvedTotalCount > 0 && (
+                <View style={styles.countPill}>
+                  <Ionicons name="albums" size={12} color="#FFF" />
+                  <Text style={styles.countPillText}>
+                    {resolvedTotalCount} {resolvedTotalCount === 1 ? "card" : "cards"}
+                  </Text>
+                </View>
+              )}
+            </View>
+          ) : null
         }
         ListEmptyComponent={
           <View style={styles.emptyContainer}>
@@ -238,6 +282,37 @@ const styles = StyleSheet.create({
     fontSize: 10,
     fontWeight: "600",
     textAlign: "center",
+  },
+  duplicateBadge: {
+    position: "absolute",
+    top: 4,
+    right: 4,
+    borderRadius: 999,
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+  },
+  duplicateBadgeText: {
+    color: "#FFF",
+    fontSize: 10,
+    fontWeight: "800",
+  },
+  countPill: {
+    flexDirection: "row",
+    alignItems: "center",
+    alignSelf: "flex-start",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: "rgba(255,255,255,0.15)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.3)",
+    marginBottom: GRID_GAP,
+  },
+  countPillText: {
+    color: "#FFF",
+    fontSize: 12,
+    fontWeight: "700",
   },
   emptyContainer: {
     alignItems: "center",

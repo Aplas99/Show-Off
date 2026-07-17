@@ -17,7 +17,13 @@ export interface ShowcaseRow {
   is_default: boolean;
   is_public: boolean;
   created_at: string;
+  /** Curator-only customization; null unless the owner has set them. */
+  accent_color?: string | null;
+  banner_image_url?: string | null;
 }
+
+const SHOWCASE_SELECT =
+  "id, profile_id, is_default, created_at, name, is_public, accent_color, banner_image_url";
 
 /**
  * Fetch all visible showcases for the current user.
@@ -33,7 +39,7 @@ export function useGetVisibleShowcases() {
 
       const { data, error } = await supabase
         .from("showcase")
-        .select("id, profile_id, is_default, created_at, name, is_public")
+        .select(SHOWCASE_SELECT)
         .eq("profile_id", user.id)
         .order("is_default", { ascending: false })
         .order("created_at", { ascending: false });
@@ -68,7 +74,7 @@ export function useCreateShowcase() {
           is_default: false,
           is_public: input.isPublic ?? false,
         })
-        .select("id, profile_id, is_default, created_at, name, is_public")
+        .select(SHOWCASE_SELECT)
         .single();
 
       if (error) throw new Error(error.message);
@@ -121,7 +127,7 @@ export function useGetShowcase(id: string) {
     queryFn: async (): Promise<ShowcaseRow | null> => {
       const { data, error } = await supabase
         .from("showcase")
-        .select("id, profile_id, is_default, created_at, name, is_public")
+        .select(SHOWCASE_SELECT)
         .eq("id", id)
         .single();
 
@@ -133,5 +139,75 @@ export function useGetShowcase(id: string) {
       return data as ShowcaseRow;
     },
     enabled: !!id,
+  });
+}
+
+/**
+ * Toggles whether a showcase is publicly viewable (via `app/s/[id].tsx`,
+ * unauthenticated). Reuses the existing `is_public` column/RLS policy —
+ * it already grants `anon` read on the showcase row when true. Callers
+ * must gate this on `isCurator` themselves (see CuratorGate); this
+ * mutation only enforces ownership, via "update_own_showcase" RLS.
+ */
+export function useSetShowcasePublic() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: { showcaseId: string; isPublic: boolean }) => {
+      const { data, error } = await supabase
+        .from("showcase")
+        .update({ is_public: input.isPublic })
+        .eq("id", input.showcaseId)
+        .select(SHOWCASE_SELECT)
+        .single();
+
+      if (error) throw new Error(error.message);
+      return data as ShowcaseRow;
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.showcase.visible() });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.showcase.byId(vars.showcaseId),
+      });
+    },
+  });
+}
+
+/**
+ * Update a showcase's Curator-only customization (accent color / banner
+ * image). Callers must gate the entry point on `isCurator` themselves
+ * (see CuratorGate) — this mutation relies on the existing
+ * "update_own_showcase" RLS policy for ownership enforcement, not tier.
+ */
+export function useUpdateShowcaseCustomization() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: async (input: {
+      showcaseId: string;
+      accentColor?: string | null;
+      bannerImageUrl?: string | null;
+    }) => {
+      const update: Record<string, string | null> = {};
+      if (input.accentColor !== undefined) update.accent_color = input.accentColor;
+      if (input.bannerImageUrl !== undefined)
+        update.banner_image_url = input.bannerImageUrl;
+
+      const { data, error } = await supabase
+        .from("showcase")
+        .update(update)
+        .eq("id", input.showcaseId)
+        .select(SHOWCASE_SELECT)
+        .single();
+
+      if (error) throw new Error(error.message);
+      return data as ShowcaseRow;
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.showcase.visible() });
+      queryClient.invalidateQueries({
+        queryKey: queryKeys.showcase.byId(vars.showcaseId),
+      });
+    },
   });
 }

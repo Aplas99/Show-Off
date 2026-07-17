@@ -52,6 +52,20 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="magic-create"
+        options={{
+          href: null,
+          tabBarStyle: { display: "none" },
+        }}
+      />
+      <Tabs.Screen
+        name="create-post"
+        options={{
+          href: null,
+          tabBarStyle: { display: "none" },
+        }}
+      />
+      <Tabs.Screen
         name="showcase"
         options={{
           tabBarAccessibilityLabel: "Showcase",

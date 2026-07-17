@@ -5,6 +5,8 @@ import { z } from "zod";
 
 // --- Types & schemas ---
 
+export type MembershipTier = "collector" | "curator";
+
 export const subscriptionRowSchema = z.object({
   id: z.string().min(1),
   user_id: z.string().min(1),
@@ -14,34 +16,69 @@ export const subscriptionRowSchema = z.object({
   current_period_end: z.string().nullable(),
   created_at: z.string(),
   updated_at: z.string(),
+  // Both default rather than required: rows read before the tiers
+  // migration/view is in place (or via the raw `subscriptions` table)
+  // should still parse, falling back to the base paid tier.
+  tier: z.enum(["collector", "curator"]).default("collector"),
+  provider: z.string().default("stripe"),
 });
 
 export type SubscriptionRow = z.infer<typeof subscriptionRowSchema>;
 
-export type MembershipPlanId = "monthly" | "annual";
+export type MembershipPlanId =
+  | "founding_curator"
+  | "curator_monthly"
+  | "curator_annual";
 
 export interface MembershipPlan {
   id: MembershipPlanId;
+  tier: MembershipTier;
   name: string;
   /** Display-only. Real amounts live on the Stripe Price objects. */
   priceLabel: string;
   description: string;
 }
 
+/**
+ * "Collector" is the free tier's display name — not a purchasable plan.
+ * Every purchasable plan below is the Curator tier at a different price
+ * point; there is no separate paid Collector tier anymore.
+ */
+export const FREE_TIER_NAME = "Collector";
+export const FREE_TIER_LIMITS = {
+  maxItems: 50,
+  maxShowcases: 1,
+} as const;
+
 // Placeholder copy — keep in sync with the Stripe Prices configured via
-// STRIPE_PRICE_ID_MONTHLY / STRIPE_PRICE_ID_ANNUAL on the Edge Function.
+// STRIPE_PRICE_ID_FOUNDING_CURATOR / STRIPE_PRICE_ID_CURATOR_MONTHLY /
+// STRIPE_PRICE_ID_CURATOR_ANNUAL on the Edge Function. Founding Curator is
+// a permanently-priced legacy rate for early subscribers — once retired,
+// archive its Stripe Price (existing subscribers keep billing at it;
+// new checkouts can no longer select it) rather than deleting it.
 export const MEMBERSHIP_PLANS: MembershipPlan[] = [
   {
-    id: "monthly",
-    name: "Collector Monthly",
-    priceLabel: "$4.99 / month",
-    description: "Larger uploads, unlimited showcases, and priority scanning.",
+    id: "founding_curator",
+    tier: "curator",
+    name: "Founding Curator",
+    priceLabel: "$3.99 / month",
+    description:
+      "Full Curator access at a permanent founding-member rate for early subscribers.",
   },
   {
-    id: "annual",
-    name: "Collector Annual",
-    priceLabel: "$39.99 / year",
-    description: "Everything in Monthly, two months free.",
+    id: "curator_monthly",
+    tier: "curator",
+    name: "Curator",
+    priceLabel: "$5.99 / month",
+    description:
+      "Full premium membership: price history, sharable showcases, set-completion tracking, and faster card recognition.",
+  },
+  {
+    id: "curator_annual",
+    tier: "curator",
+    name: "Annual Curator",
+    priceLabel: "$59.99 / year",
+    description: "Everything in Curator, at roughly two months free.",
   },
 ];
 
@@ -88,9 +125,9 @@ async function fetchCurrentSubscription(): Promise<SubscriptionRow | null> {
   if (!user) return null;
 
   const { data, error } = await supabase
-    .from("subscriptions")
+    .from("subscriptions_with_tier")
     .select(
-      "id, user_id, status, price_id, cancel_at_period_end, current_period_end, created_at, updated_at",
+      "id, user_id, status, price_id, cancel_at_period_end, current_period_end, created_at, updated_at, tier, provider",
     )
     .eq("user_id", user.id)
     .order("updated_at", { ascending: false })
@@ -121,17 +158,26 @@ async function invokeStripeSession(body: {
 // --- Hooks ---
 
 /**
- * Current user's membership state. `isPaidUser` is the flag feature gates
- * should consume.
+ * Current user's membership state.
+ *
+ * `isPaidUser` is kept as the flag pre-existing feature gates (upload
+ * limits, the membership screen) already consume — it means "any active
+ * paid tier," collector or curator. New Curator-only features should gate
+ * on `isCurator` instead.
  */
 export function useMembership() {
   return useQuery({
     queryKey: membershipKeys.current(),
     queryFn: async () => {
       const subscription = await fetchCurrentSubscription();
+      const isPaidUser = isActiveMembershipStatus(subscription?.status);
+      const isCurator = isPaidUser && subscription?.tier === "curator";
       return {
         subscription,
-        isPaidUser: isActiveMembershipStatus(subscription?.status),
+        tier: isPaidUser ? (subscription?.tier ?? "collector") : null,
+        isPaidUser,
+        isCollectorOrAbove: isPaidUser,
+        isCurator,
       };
     },
     staleTime: 60 * 1000,

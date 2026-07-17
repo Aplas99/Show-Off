@@ -1,9 +1,11 @@
-import { useGetFeed } from "@/api/social/feed";
+import { useGetPostsFeed } from "@/api/social/posts";
 import { TAB_BAR_HEIGHT } from "@/constants/layoutConfig";
 import { COLORS } from "@/constants/theme";
 import CommentModal from "@/src/components/social/CommentModal";
-import SocialFeedCard from "@/src/components/social/SocialFeedCard";
+import PostFeedCard from "@/src/components/social/PostFeedCard";
+import { Ionicons } from "@expo/vector-icons";
 import { useIsFocused } from "@react-navigation/native";
+import { useRouter } from "expo-router";
 import React, { useCallback, useMemo, useRef, useState } from "react";
 import {
     ActivityIndicator,
@@ -12,6 +14,7 @@ import {
     StatusBar,
     StyleSheet,
     Text,
+    TouchableOpacity,
     useWindowDimensions,
     View
 } from "react-native";
@@ -19,15 +22,15 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function DiscoverScreen() {
     const insets = useSafeAreaInsets();
+    const router = useRouter();
     const { height: screenHeight } = useWindowDimensions();
     const [commentModalVisible, setCommentModalVisible] = useState(false);
-    const [selectedItemId, setSelectedItemId] = useState<number | null>(null);
-    const [activeItemIndex, setActiveItemIndex] = useState(0);
+    const [selectedPostId, setSelectedPostId] = useState<number | null>(null);
+    const [activePostIndex, setActivePostIndex] = useState(0);
 
     // Calculate total tab bar height including safe area insets and platform-specific padding
     const tabBarHeight = TAB_BAR_HEIGHT + insets.bottom + (Platform.OS === "android" ? 10 : 0);
 
-    // Use the full height minus tab bar height so cards don't extend behind the tab bar
     const usableHeight = screenHeight;
 
     const isFocused = useIsFocused();
@@ -38,11 +41,10 @@ export default function DiscoverScreen() {
         isFetchingNextPage,
         hasNextPage,
         fetchNextPage,
-        refetch,
         isRefetching,
-    } = useGetFeed({ enabled: isFocused });
+    } = useGetPostsFeed({ enabled: isFocused });
 
-    const allItems = useMemo(
+    const allPosts = useMemo(
         () => data?.pages.flatMap((page) => page.items) ?? [],
         [data]
     );
@@ -53,14 +55,14 @@ export default function DiscoverScreen() {
         }
     }, [hasNextPage, isFetchingNextPage, fetchNextPage]);
 
-    const handleCommentPress = useCallback((itemId: number) => {
-        setSelectedItemId(itemId);
+    const handleCommentPress = useCallback((postId: number) => {
+        setSelectedPostId(postId);
         setCommentModalVisible(true);
     }, []);
 
     const onViewableItemsChanged = useRef(({ viewableItems }: any) => {
         if (viewableItems.length > 0) {
-            setActiveItemIndex(viewableItems[0].index ?? 0);
+            setActivePostIndex(viewableItems[0].index ?? 0);
         }
     }).current;
 
@@ -79,23 +81,30 @@ export default function DiscoverScreen() {
             {/* Black bar to cover phone notification/status bar area */}
             <View style={[styles.statusBarOverlay, { height: insets.top }]} />
 
-            {allItems.length === 0 ? (
+            {allPosts.length === 0 ? (
                 <View style={styles.centered}>
                     <Text style={styles.emptyText}>
-                        No items in your feed yet.{"\n"}
-                        Follow users to see their items here!
+                        No posts yet.{"\n"}
+                        Be the first — share something from your collection!
                     </Text>
+                    <TouchableOpacity
+                        style={styles.emptyCreateButton}
+                        onPress={() => router.push("/(tabs)/create-post" as never)}
+                    >
+                        <Ionicons name="add" size={18} color="#000" />
+                        <Text style={styles.emptyCreateButtonText}>Create a post</Text>
+                    </TouchableOpacity>
                 </View>
             ) : (
                 <FlatList
-                    data={allItems}
+                    data={allPosts}
                     renderItem={({ item, index }) => (
-                        <SocialFeedCard
-                            item={item}
+                        <PostFeedCard
+                            post={item}
                             cardHeight={usableHeight}
                             tabBarHeight={tabBarHeight}
                             onCommentPress={handleCommentPress}
-                            isActive={index === activeItemIndex}
+                            isActive={index === activePostIndex && isFocused}
                         />
                     )}
                     keyExtractor={(item) => String(item.id)}
@@ -128,15 +137,22 @@ export default function DiscoverScreen() {
                     <Text style={[styles.feedTab, styles.feedTabActive]}>FOR YOU</Text>
                     <Text style={styles.feedTab}>FOLLOWING</Text>
                 </View>
+                <TouchableOpacity
+                    style={[styles.createButton, { top: insets.top + 4 }]}
+                    onPress={() => router.push("/(tabs)/create-post" as never)}
+                    accessibilityLabel="Create a post"
+                >
+                    <Ionicons name="add" size={22} color="#FFF" />
+                </TouchableOpacity>
             </View>
 
-            {selectedItemId !== null && (
+            {selectedPostId !== null && (
                 <CommentModal
                     visible={commentModalVisible}
-                    itemId={selectedItemId}
+                    postId={selectedPostId}
                     onClose={() => {
                         setCommentModalVisible(false);
-                        setSelectedItemId(null);
+                        setSelectedPostId(null);
                     }}
                 />
             )}
@@ -153,12 +169,27 @@ const styles = StyleSheet.create({
         flex: 1,
         justifyContent: "center",
         alignItems: "center",
+        gap: 16,
         backgroundColor: "#000",
     },
     emptyText: {
         color: "#9CA3AF",
         fontSize: 16,
         textAlign: "center",
+    },
+    emptyCreateButton: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 6,
+        paddingHorizontal: 18,
+        paddingVertical: 12,
+        borderRadius: 999,
+        backgroundColor: COLORS.primary,
+    },
+    emptyCreateButtonText: {
+        color: "#000",
+        fontSize: 14,
+        fontWeight: "800",
     },
     headerOverlay: {
         position: "absolute",
@@ -188,6 +219,18 @@ const styles = StyleSheet.create({
         borderBottomWidth: 2,
         borderBottomColor: COLORS.primary,
         paddingBottom: 6,
+    },
+    createButton: {
+        position: "absolute",
+        right: 16,
+        width: 38,
+        height: 38,
+        borderRadius: 19,
+        alignItems: "center",
+        justifyContent: "center",
+        backgroundColor: "rgba(255,255,255,0.18)",
+        borderWidth: 1,
+        borderColor: "rgba(255,255,255,0.35)",
     },
     statusBarOverlay: {
         position: "absolute",

@@ -772,10 +772,17 @@ const defaultDependencies: PokemonRecognitionDependencies = {
 
 export async function identifyPokemonCardImage(
   imageUri: string,
-  dependencies: PokemonRecognitionDependencies = defaultDependencies,
+  dependencyOverrides: Partial<PokemonRecognitionDependencies> = {},
   onIdentifiers?: (identifiers: PokemonCardIdentifiers) => void,
   scanHints: { foil: boolean; promo: boolean } = { foil: false, promo: false },
 ): Promise<RecognizedPokemonCard[]> {
+  // Merged rather than all-or-nothing so callers can override a single
+  // dependency (e.g. disabling the paid backup-OCR fallback for free
+  // users) without having to reconstruct the other defaults themselves.
+  const dependencies: PokemonRecognitionDependencies = {
+    ...defaultDependencies,
+    ...dependencyOverrides,
+  };
   const startedAt = Date.now();
   cardScanDebug("ocr.started");
 

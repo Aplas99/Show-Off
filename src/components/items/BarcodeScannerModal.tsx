@@ -1,6 +1,15 @@
+import { useRewardedAd } from "@/api/ads";
+import { useMembership } from "@/api/memberships";
+import {
+  useGrantBonusScans,
+  useRecordScanAttempt,
+  useScanQuotaStatus,
+} from "@/api/scanning";
 import { COLORS } from "@/constants/theme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { createActionLogger } from "@/lib/actionDebug";
 import { Ionicons } from "@expo/vector-icons";
+import { useRouter } from "expo-router";
 import { BlurView } from "expo-blur";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import React, { useCallback, useEffect, useRef, useState } from "react";
@@ -8,6 +17,7 @@ import {
   ActivityIndicator,
   Modal,
   Platform,
+  Pressable,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -28,6 +38,7 @@ interface BarcodeScannerModalProps {
 }
 
 const SCANNER_FRAME_SIZE = 280;
+const barcodeDebug = createActionLogger("Barcode");
 
 export default function BarcodeScannerModal({
   visible,
@@ -35,9 +46,18 @@ export default function BarcodeScannerModal({
   onBarcodeScanned,
 }: BarcodeScannerModalProps) {
   const haptics = useHaptics();
+  const router = useRouter();
   const [permission, requestPermission] = useCameraPermissions();
   const [torchOn, setTorchOn] = useState(false);
   const [isCameraReady, setIsCameraReady] = useState(false);
+  const [quotaExceeded, setQuotaExceeded] = useState(false);
+
+  const { data: membership } = useMembership();
+  const isCurator = membership?.isCurator ?? false;
+  const { data: quotaStatus } = useScanQuotaStatus();
+  const recordScanAttempt = useRecordScanAttempt();
+  const grantBonusScans = useGrantBonusScans();
+  const rewardedAd = useRewardedAd();
 
   // Prevent duplicate scans — lock after a successful read
   const scanLockRef = useRef(false);
@@ -53,6 +73,7 @@ export default function BarcodeScannerModal({
       scanLockRef.current = false;
       setTorchOn(false);
       setIsCameraReady(false);
+      setQuotaExceeded(false);
 
       // Start scanning animation
       scanLinePosition.value = withRepeat(
@@ -99,16 +120,49 @@ export default function BarcodeScannerModal({
   }, [haptics, onClose]);
 
   const handleBarcodeScanned = useCallback(
-    async ({ data }: { data: string; type: string }) => {
+    async ({ data, type }: { data: string; type: string }) => {
       // Prevent duplicate fires
       if (scanLockRef.current) return;
       scanLockRef.current = true;
+      barcodeDebug.log("scan.detected", { data, type, isCurator });
 
+      if (!isCurator) {
+        try {
+          const quota = await recordScanAttempt.mutateAsync();
+          if (!quota.allowed) {
+            barcodeDebug.log("scan.quota-exceeded", { data, type });
+            await haptics.error();
+            setQuotaExceeded(true);
+            scanLockRef.current = false;
+            return;
+          }
+        } catch (error) {
+          // Fail open on a quota-check error — don't block scanning over
+          // a transient network hiccup.
+          barcodeDebug.error("scan.quota-check-failed", error);
+        }
+      }
+
+      barcodeDebug.log("scan.accepted", { data, type });
       await haptics.success();
       onBarcodeScanned(data);
     },
-    [haptics, onBarcodeScanned]
+    [haptics, isCurator, recordScanAttempt, onBarcodeScanned]
   );
+
+  const handleWatchAdForBonusScans = useCallback(async () => {
+    barcodeDebug.log("quota.watch-ad-requested");
+    const result = await rewardedAd.show();
+    if (result === "earned") {
+      await grantBonusScans.mutateAsync(5);
+      barcodeDebug.log("quota.bonus-scans-granted", { amount: 5 });
+      await haptics.success();
+      setQuotaExceeded(false);
+      scanLockRef.current = false;
+    } else {
+      barcodeDebug.log("quota.watch-ad-not-earned", { result });
+    }
+  }, [rewardedAd, grantBonusScans, haptics]);
 
   const handleToggleTorch = useCallback(async () => {
     await haptics.light();
@@ -238,6 +292,15 @@ export default function BarcodeScannerModal({
           <View style={styles.placeholder} />
         </BlurView>
 
+        {!isCurator && quotaStatus?.remaining != null && (
+          <View style={styles.scanQuotaPill} pointerEvents="none">
+            <Ionicons name="scan-outline" size={12} color="#FFF" />
+            <Text style={styles.scanQuotaPillText}>
+              {quotaStatus.remaining} scan{quotaStatus.remaining === 1 ? "" : "s"} left today
+            </Text>
+          </View>
+        )}
+
         {/* Bottom Controls — only when camera is active */}
         {permission?.granted && (
           <BlurView intensity={80} style={styles.bottomContainer} tint="dark">
@@ -265,6 +328,68 @@ export default function BarcodeScannerModal({
             </TouchableOpacity>
           </BlurView>
         )}
+
+        <Modal
+          visible={quotaExceeded}
+          transparent
+          animationType="fade"
+          onRequestClose={() => setQuotaExceeded(false)}
+        >
+          <Pressable
+            style={styles.quotaBackdrop}
+            onPress={() => setQuotaExceeded(false)}
+          >
+            <Pressable
+              style={styles.quotaCard}
+              onPress={(event) => event.stopPropagation()}
+            >
+              <TouchableOpacity
+                style={styles.quotaCloseButton}
+                onPress={() => setQuotaExceeded(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Close membership popup"
+                hitSlop={8}
+              >
+                <Ionicons name="close" size={20} color={COLORS.grey} />
+              </TouchableOpacity>
+              <Ionicons name="hourglass-outline" size={28} color={COLORS.primary} />
+              <Text style={styles.quotaTitle}>Out of free scans for today</Text>
+              <Text style={styles.quotaDescription}>
+                Free accounts get 10 scans a day (barcode + card scans
+                combined). Watch a short ad for 5 more, or upgrade to
+                Curator for unlimited scans.
+              </Text>
+              <TouchableOpacity
+                style={styles.quotaPrimaryButton}
+                onPress={handleWatchAdForBonusScans}
+                disabled={rewardedAd.isLoading || grantBonusScans.isPending}
+              >
+                {rewardedAd.isLoading || grantBonusScans.isPending ? (
+                  <ActivityIndicator color="#000" size="small" />
+                ) : (
+                  <Text style={styles.quotaPrimaryButtonText}>
+                    Watch ad for +5 scans
+                  </Text>
+                )}
+              </TouchableOpacity>
+              <TouchableOpacity
+                style={styles.quotaSecondaryButton}
+                onPress={() => {
+                  setQuotaExceeded(false);
+                  onClose();
+                  router.push("/(tabs)/profile/membership" as any);
+                }}
+              >
+                <Text style={styles.quotaSecondaryButtonText}>
+                  Upgrade to Curator
+                </Text>
+              </TouchableOpacity>
+              <TouchableOpacity onPress={() => setQuotaExceeded(false)}>
+                <Text style={styles.quotaDismissText}>Not now</Text>
+              </TouchableOpacity>
+            </Pressable>
+          </Pressable>
+        </Modal>
       </View>
     </Modal>
   );
@@ -278,6 +403,70 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: COLORS.background,
   },
+  scanQuotaPill: {
+    position: "absolute",
+    top: Platform.OS === "ios" ? 100 : 74,
+    alignSelf: "center",
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 5,
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    borderRadius: 999,
+    backgroundColor: "rgba(0,0,0,0.55)",
+    zIndex: 10,
+  },
+  scanQuotaPillText: { color: "#FFF", fontSize: 11, fontWeight: "700" },
+  quotaBackdrop: {
+    flex: 1,
+    backgroundColor: "rgba(0,0,0,0.7)",
+    justifyContent: "center",
+    padding: 24,
+  },
+  quotaCard: {
+    alignItems: "center",
+    gap: 8,
+    padding: 24,
+    borderRadius: 20,
+    backgroundColor: "#18181B",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.1)",
+  },
+  quotaCloseButton: {
+    position: "absolute",
+    top: 12,
+    right: 12,
+    width: 36,
+    height: 36,
+    borderRadius: 18,
+    alignItems: "center",
+    justifyContent: "center",
+    backgroundColor: "rgba(255,255,255,0.08)",
+    zIndex: 1,
+  },
+  quotaTitle: { color: COLORS.white, fontSize: 17, fontWeight: "700", textAlign: "center" },
+  quotaDescription: { color: COLORS.grey, fontSize: 13, textAlign: "center", lineHeight: 18 },
+  quotaPrimaryButton: {
+    marginTop: 8,
+    backgroundColor: COLORS.primary,
+    borderRadius: 999,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    minWidth: 200,
+    alignItems: "center",
+  },
+  quotaPrimaryButtonText: { color: "#000", fontSize: 14, fontWeight: "800" },
+  quotaSecondaryButton: {
+    marginTop: 4,
+    backgroundColor: "rgba(255,255,255,0.1)",
+    borderRadius: 999,
+    paddingHorizontal: 20,
+    paddingVertical: 12,
+    minWidth: 200,
+    alignItems: "center",
+  },
+  quotaSecondaryButtonText: { color: COLORS.white, fontSize: 14, fontWeight: "800" },
+  quotaDismissText: { marginTop: 4, padding: 8, color: COLORS.grey, fontSize: 13, fontWeight: "600" },
   header: {
     position: "absolute",
     top: 0,

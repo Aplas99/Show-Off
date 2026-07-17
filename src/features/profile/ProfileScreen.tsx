@@ -1,4 +1,5 @@
 import { useSignOut } from "@/api/auth";
+import { useMembership } from "@/api/memberships";
 import { useGetCurrentUserProfile } from "@/api/profile/index";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { useThemeStore } from "@/hooks/useThemeStore";
@@ -20,6 +21,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 export default function ProfileScreen() {
   const { data, isLoading, error } = useGetCurrentUserProfile();
+  const { data: membership } = useMembership();
   const { mutateAsync: signOut } = useSignOut();
   const insets = useSafeAreaInsets();
   const colors = useColors();
@@ -128,6 +130,12 @@ export default function ProfileScreen() {
           <Text style={styles.name}>
             {profile?.full_name || profile?.username || "Collector"}
           </Text>
+          {!!membership?.isCurator && (
+            <View style={styles.curatorBadge}>
+              <Ionicons name="ribbon" size={12} color="#000" />
+              <Text style={styles.curatorBadgeText}>CURATOR</Text>
+            </View>
+          )}
           <Text style={styles.email}>{user?.email}</Text>
         </Animated.View>
 
@@ -397,6 +405,22 @@ const getStyles = (colors: ThemeColors) =>
       color: colors.text,
       letterSpacing: -0.5,
       marginBottom: 4,
+    },
+    curatorBadge: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 4,
+      paddingHorizontal: 8,
+      paddingVertical: 3,
+      borderRadius: 999,
+      backgroundColor: colors.tertiary,
+      marginBottom: 8,
+    },
+    curatorBadgeText: {
+      fontSize: 10,
+      fontWeight: "800",
+      letterSpacing: 1,
+      color: "#000",
     },
     email: {
       fontSize: 14,
