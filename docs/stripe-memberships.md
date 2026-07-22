@@ -33,8 +33,10 @@ Key pieces:
 ## Setup
 
 1. **Stripe Dashboard**
-   - Create a Product ("Collector Membership") with two recurring Prices
-     (monthly + annual). Note the `price_...` ids.
+   - Create a Product ("Curator Membership") with three recurring Prices —
+     a Founder rate, a standard monthly, and an annual. Note each
+     `price_...` id (they map to `STRIPE_PRICE_ID_FOUNDING_CURATOR`,
+     `STRIPE_PRICE_ID_CURATOR_MONTHLY`, `STRIPE_PRICE_ID_CURATOR_ANNUAL`).
    - Developers → Webhooks → Add endpoint:
      `https://<project-ref>.functions.supabase.co/stripe-webhook`
      with events `checkout.session.completed`,
@@ -51,9 +53,15 @@ Key pieces:
    npx supabase secrets set \
      STRIPE_SECRET_KEY=sk_test_... \
      STRIPE_WEBHOOK_SECRET=whsec_... \
-     STRIPE_PRICE_ID_MONTHLY=price_... \
-     STRIPE_PRICE_ID_ANNUAL=price_...
+     STRIPE_PRICE_ID_FOUNDING_CURATOR=price_... \
+     STRIPE_PRICE_ID_CURATOR_MONTHLY=price_... \
+     STRIPE_PRICE_ID_CURATOR_ANNUAL=price_...
    ```
+
+   > The Edge Function reads exactly these three `STRIPE_PRICE_ID_*` names
+   > (see `PLAN_PRICE_ENV_VARS` in `stripe-checkout/index.ts`). A missing or
+   > misnamed price secret makes checkout return
+   > `No Stripe price configured for plan "..."`.
 
 4. **Deploy functions**
    ```bash

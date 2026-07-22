@@ -1,9 +1,7 @@
 import { ItemWithProduct } from "@/api/items";
-import { useMembership } from "@/api/memberships";
 import { usePriceHistory } from "@/api/prices";
 import { useColors } from "@/constants/theme";
 import PriceHistoryChart from "@/src/components/charts/PriceHistoryChart";
-import { CuratorInlineGate } from "@/src/features/membership/CuratorGate";
 import { Ionicons, MaterialCommunityIcons } from "@expo/vector-icons";
 import { Image } from "expo-image";
 import React, { useCallback, useEffect, useState } from "react";
@@ -74,14 +72,12 @@ export default function PokemonCardTiltModal({ visible, item, onClose }: Props) 
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const colors = useColors();
-  const { data: membership } = useMembership();
-  const isCurator = membership?.isCurator ?? false;
   const priceGame = item?.magic_card_id ? ("magic" as const) : ("pokemon" as const);
   const priceCardId = item?.magic_card_id ?? item?.pokemon_tcg_card_id ?? null;
-  // Only fetch when the modal is open and the viewer can actually see it.
+  // Only fetch while the card viewer is open.
   const { data: priceHistory } = usePriceHistory(
     priceGame,
-    visible && isCurator ? priceCardId : null,
+    visible ? priceCardId : null,
   );
 
   const cardWidth = Math.min(width * 0.88, 400);
@@ -310,19 +306,15 @@ export default function PokemonCardTiltModal({ visible, item, onClose }: Props) 
                   { backgroundColor: colors.surfaceContainerHighest },
                 ]}
               >
-                <CuratorInlineGate
-                  feature="Price history"
-                  description="Track this card's market value over time with Curator."
-                >
-                  {priceHistory && priceHistory.length > 0 ? (
-                    <PriceHistoryChart points={priceHistory} />
-                  ) : (
-                    <Text style={[styles.priceHistoryEmpty, { color: colors.grey }]}>
-                      No price history yet — it builds automatically as market
-                      prices refresh.
-                    </Text>
-                  )}
-                </CuratorInlineGate>
+                <Text style={[styles.priceHistoryTitle, { color: colors.text }]}>Price history</Text>
+                {priceHistory && priceHistory.length > 0 ? (
+                  <PriceHistoryChart points={priceHistory} />
+                ) : (
+                  <Text style={[styles.priceHistoryEmpty, { color: colors.grey }]}>
+                    No price history yet — it builds automatically as market
+                    prices refresh.
+                  </Text>
+                )}
               </View>
             ) : null}
           </View>
@@ -424,6 +416,11 @@ const styles = StyleSheet.create({
     marginTop: 12,
     padding: 14,
     borderRadius: 16,
+  },
+  priceHistoryTitle: {
+    fontSize: 14,
+    fontWeight: "800",
+    marginBottom: 8,
   },
   priceHistoryEmpty: {
     fontSize: 12,
