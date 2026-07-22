@@ -1,13 +1,20 @@
 // expo-web-browser and expo-secure-store (via @/lib/supabase) ship
-// untranspiled ESM that ts-jest can't parse.
+// untranspiled ESM that ts-jest can't parse. react-native is likewise flow/ESM
+// (pulled in transitively via api/memberships/nativeBilling.ts); the node test
+// env only needs Platform, which resolves native billing to "unavailable" here.
 jest.mock("expo-web-browser", () => ({
   openAuthSessionAsync: jest.fn(),
 }));
 jest.mock("@/lib/supabase", () => ({
   supabase: {},
 }));
+jest.mock("react-native", () => ({
+  Platform: { OS: "web", select: () => undefined },
+}));
 
 import {
+  PLAN_STORE_PRODUCT_IDS,
+  getActiveBillingProvider,
   isActiveMembershipStatus,
   subscriptionRowSchema,
 } from "@/api/memberships";
@@ -96,5 +103,19 @@ describe("subscriptionRowSchema", () => {
     expect(
       subscriptionRowSchema.safeParse({ ...validRow, tier: "platinum" }).success,
     ).toBe(false);
+  });
+});
+
+describe("billing provider routing", () => {
+  it("falls back to Stripe when native billing is unavailable", () => {
+    // Under the node/web test env RevenueCat isn't linked, so new purchases
+    // must route to Stripe rather than a missing native module.
+    expect(getActiveBillingProvider()).toBe("stripe");
+  });
+
+  it("maps every plan to a store product id", () => {
+    expect(PLAN_STORE_PRODUCT_IDS.founding_curator).toBeTruthy();
+    expect(PLAN_STORE_PRODUCT_IDS.curator_monthly).toBeTruthy();
+    expect(PLAN_STORE_PRODUCT_IDS.curator_annual).toBeTruthy();
   });
 });

@@ -2,6 +2,14 @@ import { supabase } from "@/lib/supabase";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as WebBrowser from "expo-web-browser";
 import { z } from "zod";
+import {
+  configureNativeBilling,
+  isNativeBillingAvailable,
+  purchaseNativePlan,
+  restoreNativePurchases,
+  showNativeManageSubscriptions,
+  type NativePurchaseResult,
+} from "./nativeBilling";
 
 // --- Types & schemas ---
 
@@ -214,6 +222,127 @@ export function useOpenBillingPortal() {
       const url = await invokeStripeSession({ action: "portal" });
       return WebBrowser.openAuthSessionAsync(url, "showoff://membership");
     },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: membershipKeys.all() });
+    },
+  });
+}
+
+// --- Native IAP (App Store / Play) + provider routing ---
+//
+// Store policy requires in-app digital memberships to use native billing, not
+// an in-app web checkout. `usePurchaseMembership` / `useManageMembership` route
+// to RevenueCat IAP on store builds and Stripe-in-the-browser on web (and any
+// build where native billing isn't configured). Both rails reconcile into the
+// same `public.subscriptions` table via their respective webhooks, so the
+// membership state (`useMembership`) is identical regardless of how the user
+// paid. See `docs/iap-memberships.md`.
+
+export type BillingProvider = "stripe" | "revenuecat";
+
+/** App Store / Play product identifiers per plan. Must match the products
+ *  created in App Store Connect and Google Play Console (and be seeded into
+ *  `membership_tiers` so tier resolves to 'curator' — see the IAP migration).
+ *  Overridable per environment; defaults are conventional ids. */
+export const PLAN_STORE_PRODUCT_IDS: Record<MembershipPlanId, string> = {
+  founding_curator:
+    process.env.EXPO_PUBLIC_IAP_PRODUCT_FOUNDING_CURATOR ??
+    "curator_founding_monthly",
+  curator_monthly:
+    process.env.EXPO_PUBLIC_IAP_PRODUCT_CURATOR_MONTHLY ?? "curator_monthly",
+  curator_annual:
+    process.env.EXPO_PUBLIC_IAP_PRODUCT_CURATOR_ANNUAL ?? "curator_annual",
+};
+
+/**
+ * Which billing rail this build should use for a *new* purchase: native IAP
+ * when it's available (store build with RevenueCat configured), otherwise
+ * Stripe web checkout. Managing an *existing* subscription instead follows the
+ * rail it was bought on — see `useManageMembership`.
+ */
+export function getActiveBillingProvider(): BillingProvider {
+  return isNativeBillingAvailable() ? "revenuecat" : "stripe";
+}
+
+/**
+ * Purchase a membership plan on the correct rail for this build. On store
+ * builds this opens the native App Store / Play purchase sheet (compliant);
+ * on web it opens Stripe Checkout in the system browser. The subscription row
+ * is written by the provider's webhook, so callers should rely on the
+ * `useMembership` refetch (invalidated here) for the authoritative state.
+ */
+export function usePurchaseMembership() {
+  const qc = useQueryClient();
+
+  return useMutation<NativePurchaseResult, Error, MembershipPlanId>({
+    mutationFn: async (plan) => {
+      if (getActiveBillingProvider() === "revenuecat") {
+        const {
+          data: { user },
+        } = await supabase.auth.getUser();
+        if (!user) throw new Error("Please sign in to subscribe.");
+
+        await configureNativeBilling(user.id);
+        const productId = PLAN_STORE_PRODUCT_IDS[plan];
+        if (!productId) {
+          throw new Error(`No store product configured for plan "${plan}".`);
+        }
+        return purchaseNativePlan(productId);
+      }
+
+      // Web / fallback: Stripe Checkout in the system browser. Payment success
+      // is confirmed asynchronously by the Stripe webhook, so we don't claim
+      // `success` here — the refetch below reflects the real state on return.
+      const url = await invokeStripeSession({ action: "checkout", plan });
+      await WebBrowser.openAuthSessionAsync(url, "showoff://membership");
+      return { success: false, cancelled: false };
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: membershipKeys.all() });
+    },
+  });
+}
+
+/**
+ * Manage an existing subscription. Routes by the rail the subscription was
+ * bought on (`subscription.provider`) — an IAP subscription can only be
+ * managed in the native store sheet, a Stripe one only in the billing portal.
+ * Pass the current `subscription.provider`; falls back to this build's active
+ * provider when unknown.
+ */
+export function useManageMembership() {
+  const qc = useQueryClient();
+
+  return useMutation<void, Error, string | null | undefined>({
+    mutationFn: async (provider) => {
+      const rail: BillingProvider =
+        provider === "revenuecat" || provider === "stripe"
+          ? provider
+          : getActiveBillingProvider();
+
+      if (rail === "revenuecat") {
+        await showNativeManageSubscriptions();
+        return;
+      }
+      const url = await invokeStripeSession({ action: "portal" });
+      await WebBrowser.openAuthSessionAsync(url, "showoff://membership");
+    },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: membershipKeys.all() });
+    },
+  });
+}
+
+/**
+ * Restore previous IAP purchases (App Store review requires a visible
+ * "Restore purchases" action for apps selling subscriptions). No-op / false on
+ * web. Returns whether an active Curator entitlement was found.
+ */
+export function useRestorePurchases() {
+  const qc = useQueryClient();
+
+  return useMutation<boolean, Error, void>({
+    mutationFn: () => restoreNativePurchases(),
     onSettled: () => {
       qc.invalidateQueries({ queryKey: membershipKeys.all() });
     },

@@ -37,6 +37,8 @@ npx jest --watch                                    # watch mode
 | `EXPO_PUBLIC_OCR_FALLBACK_URL` | Optional PaddleOCR fallback service URL (`server/paddleocr`); unset disables the server second pass |
 | `EXPO_PUBLIC_OCR_FALLBACK_TOKEN` | Bearer token for the OCR fallback service (`OCR_SERVICE_TOKEN`) |
 | `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Stripe publishable key (reserved for future native SDK use) |
+| `EXPO_PUBLIC_REVENUECAT_IOS_KEY` / `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY` | RevenueCat public SDK keys for native IAP memberships (store builds). Unset disables native billing and falls back to Stripe web checkout — see `docs/iap-memberships.md` |
+| `EXPO_PUBLIC_IAP_PRODUCT_FOUNDING_CURATOR` / `EXPO_PUBLIC_IAP_PRODUCT_CURATOR_MONTHLY` / `EXPO_PUBLIC_IAP_PRODUCT_CURATOR_ANNUAL` | Optional overrides for the App Store / Play product ids per plan (defaults in `PLAN_STORE_PRODUCT_IDS`) |
 | `EXPO_PUBLIC_ADMOB_BANNER_UNIT_ID` | AdMob banner ad unit id; unset falls back to Google's test unit |
 | `EXPO_PUBLIC_ADMOB_REWARDED_UNIT_ID` | AdMob rewarded ad unit id (grants bonus scans); unset falls back to Google's test unit |
 
@@ -121,6 +123,8 @@ ML Kit (`@infinitered/react-native-mlkit-text-recognition`) is a native module �
 ### Memberships (Stripe)
 
 Checkout runs in the browser via the `stripe-checkout` Edge Function; subscription state syncs back through `stripe-webhook` into `public.subscriptions`. Client hooks live in `api/memberships` (`useMembership`, `useStartCheckout`, `useOpenBillingPortal`); gate features with `isPaidUser`, `getHasActiveMembership()` (plain async), or the `has_active_membership()` SQL helper. Full setup in `docs/stripe-memberships.md`.
+
+**Store builds use native IAP, not web checkout.** Apple/Google require in-app digital purchases to go through StoreKit / Play Billing, so store builds sell the membership via **RevenueCat** (`api/memberships/nativeBilling.ts` + the `revenuecat-webhook` Edge Function), which writes into the same `public.subscriptions` table with `provider = 'revenuecat'`. Use `getActiveBillingProvider()`, `usePurchaseMembership()`, `useManageMembership()`, and `useRestorePurchases()` — they route to native IAP on store builds and Stripe on web automatically. RevenueCat is a native module (no Expo Go; needs a dev build). Full setup in `docs/iap-memberships.md`.
 
 ### Routing
 

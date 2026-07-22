@@ -75,8 +75,10 @@ Key pieces:
 - **Apple / Google store policy:** digital memberships sold in-app normally
   must use In-App Purchase / Play Billing. Web-checkout via external links
   is only permitted in limited jurisdictions (e.g. US external-purchase
-  entitlements). Decide the compliance strategy before shipping this flow
-  in store builds.
+  entitlements). Store builds therefore sell through **native IAP via
+  RevenueCat** — see [`docs/iap-memberships.md`](./iap-memberships.md). This
+  Stripe flow remains the rail for the **web** target and out-of-app signups;
+  both write into the same `public.subscriptions` table.
 - Plan copy/prices in `MEMBERSHIP_PLANS` (`api/memberships/index.ts`) are
   display-only placeholders — keep them in sync with the Stripe Prices.
 - The webhook is idempotent (upsert keyed by subscription id); Stripe

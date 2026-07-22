@@ -2,9 +2,11 @@ import {
     FREE_TIER_LIMITS,
     FREE_TIER_NAME,
     MEMBERSHIP_PLANS,
+    getActiveBillingProvider,
+    useManageMembership,
     useMembership,
-    useOpenBillingPortal,
-    useStartCheckout,
+    usePurchaseMembership,
+    useRestorePurchases,
     type MembershipPlanId,
 } from "@/api/memberships";
 import { TAB_BAR_HEIGHT } from "@/constants/layoutConfig";
@@ -54,10 +56,17 @@ export default function MembershipScreen() {
     const styles = getStyles(colors);
 
     const { data: membership, isLoading } = useMembership();
-    const startCheckout = useStartCheckout();
-    const openPortal = useOpenBillingPortal();
+    const purchase = usePurchaseMembership();
+    const manage = useManageMembership();
+    const restore = useRestorePurchases();
     const [selectedPlan, setSelectedPlan] =
         useState<MembershipPlanId>("curator_monthly");
+
+    // On store builds the app sells through native IAP (App Store / Play) to
+    // stay policy-compliant; on web it uses Stripe checkout in the browser.
+    const isNativeBilling = getActiveBillingProvider() === "revenuecat";
+    const storeName =
+        Platform.OS === "ios" ? "the App Store" : "Google Play";
 
     // There is only one paid tier (Curator, at three price points), so
     // isPaidUser and isCurator are equivalent in normal operation —
@@ -70,22 +79,49 @@ export default function MembershipScreen() {
 
     const handleUpgrade = async () => {
         try {
-            await startCheckout.mutateAsync(selectedPlan);
+            const result = await purchase.mutateAsync(selectedPlan);
+            // Native purchases resolve synchronously with the store result;
+            // Stripe (web) confirms asynchronously via webhook, so only the
+            // native success path shows an immediate confirmation.
+            if (isNativeBilling && result.success) {
+                Alert.alert(
+                    "Welcome to Curator",
+                    "Your membership is now active.",
+                );
+            }
         } catch (error: any) {
             Alert.alert(
-                "Checkout unavailable",
-                error?.message ?? "Could not start checkout. Please try again.",
+                "Purchase unavailable",
+                error?.message ?? "Could not start the purchase. Please try again.",
             );
         }
     };
 
     const handleManageBilling = async () => {
         try {
-            await openPortal.mutateAsync();
+            // Manage on the rail the subscription was actually bought on.
+            await manage.mutateAsync(subscription?.provider);
         } catch (error: any) {
             Alert.alert(
-                "Billing portal unavailable",
-                error?.message ?? "Could not open the billing portal.",
+                "Subscription management unavailable",
+                error?.message ?? "Could not open subscription management.",
+            );
+        }
+    };
+
+    const handleRestore = async () => {
+        try {
+            const active = await restore.mutateAsync();
+            Alert.alert(
+                active ? "Purchases restored" : "Nothing to restore",
+                active
+                    ? "Your Curator membership is active again."
+                    : `We couldn't find an active membership on your ${storeName} account.`,
+            );
+        } catch (error: any) {
+            Alert.alert(
+                "Restore failed",
+                error?.message ?? "Could not restore purchases. Please try again.",
             );
         }
     };
@@ -218,19 +254,36 @@ export default function MembershipScreen() {
                             <TouchableOpacity
                                 style={styles.primaryButton}
                                 onPress={handleManageBilling}
-                                disabled={openPortal.isPending}
+                                disabled={manage.isPending}
                                 activeOpacity={0.8}
                             >
-                                {openPortal.isPending ? (
+                                {manage.isPending ? (
                                     <ActivityIndicator color="#FFF" />
                                 ) : (
-                                    <Text style={styles.primaryButtonText}>Manage Billing</Text>
+                                    <Text style={styles.primaryButtonText}>
+                                        Manage Subscription
+                                    </Text>
                                 )}
                             </TouchableOpacity>
                             <Text style={styles.footnote}>
-                                Update your payment method, switch plans, or cancel via the
-                                Stripe billing portal.
+                                {subscription?.provider === "revenuecat"
+                                    ? `Billed through your ${storeName} account. Switch plans or cancel there anytime.`
+                                    : "Update your payment method, switch plans, or cancel via the Stripe billing portal."}
                             </Text>
+                            {isNativeBilling && (
+                                <TouchableOpacity
+                                    onPress={handleRestore}
+                                    disabled={restore.isPending}
+                                    style={styles.restoreButton}
+                                    activeOpacity={0.7}
+                                >
+                                    <Text style={styles.restoreText}>
+                                        {restore.isPending
+                                            ? "Restoring…"
+                                            : "Restore purchases"}
+                                    </Text>
+                                </TouchableOpacity>
+                            )}
                         </Animated.View>
                     )}
 
@@ -286,19 +339,34 @@ export default function MembershipScreen() {
                             <TouchableOpacity
                                 style={styles.primaryButton}
                                 onPress={handleUpgrade}
-                                disabled={startCheckout.isPending}
+                                disabled={purchase.isPending}
                                 activeOpacity={0.8}
                             >
-                                {startCheckout.isPending ? (
+                                {purchase.isPending ? (
                                     <ActivityIndicator color="#FFF" />
                                 ) : (
                                     <Text style={styles.primaryButtonText}>Upgrade</Text>
                                 )}
                             </TouchableOpacity>
                             <Text style={styles.footnote}>
-                                Secure checkout powered by Stripe. Membership renews
-                                automatically and can be cancelled anytime.
+                                {isNativeBilling
+                                    ? `Billed through your ${storeName} account. Renews automatically — cancel anytime in ${storeName}.`
+                                    : "Secure checkout powered by Stripe. Membership renews automatically and can be cancelled anytime."}
                             </Text>
+                            {isNativeBilling && (
+                                <TouchableOpacity
+                                    onPress={handleRestore}
+                                    disabled={restore.isPending}
+                                    style={styles.restoreButton}
+                                    activeOpacity={0.7}
+                                >
+                                    <Text style={styles.restoreText}>
+                                        {restore.isPending
+                                            ? "Restoring…"
+                                            : "Restore purchases"}
+                                    </Text>
+                                </TouchableOpacity>
+                            )}
                         </Animated.View>
                     )}
                 </ScrollView>
@@ -461,5 +529,16 @@ const getStyles = (colors: ThemeColors) =>
             color: colors.grey,
             textAlign: "center",
             lineHeight: 17,
+        },
+        restoreButton: {
+            marginTop: 16,
+            alignSelf: "center",
+            paddingVertical: 6,
+            paddingHorizontal: 12,
+        },
+        restoreText: {
+            fontSize: 14,
+            fontWeight: "600",
+            color: colors.primary,
         },
     });
