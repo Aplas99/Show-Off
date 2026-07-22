@@ -82,6 +82,37 @@ export const MEMBERSHIP_PLANS: MembershipPlan[] = [
   },
 ];
 
+/**
+ * Client-visible Stripe Price ids, used only to label which plan a subscriber
+ * is currently on (the subscription row already exposes `price_id`, which is
+ * not secret). Server-side checkout still resolves prices from Edge Function
+ * secrets — these are display-only and overridable per environment. Defaults
+ * are the test-mode Prices; set the env vars for live mode.
+ */
+export const PLAN_PRICE_IDS: Record<MembershipPlanId, string> = {
+  founding_curator:
+    process.env.EXPO_PUBLIC_STRIPE_PRICE_FOUNDING_CURATOR ??
+    "price_1Tw7eIDWVhDBLzJE6TtFiBUm",
+  curator_monthly:
+    process.env.EXPO_PUBLIC_STRIPE_PRICE_CURATOR_MONTHLY ??
+    "price_1Tw7eKDWVhDBLzJEqlb0cvh7",
+  curator_annual:
+    process.env.EXPO_PUBLIC_STRIPE_PRICE_CURATOR_ANNUAL ??
+    "price_1Tw7eKDWVhDBLzJErtrm0WYB",
+};
+
+/** Resolves the subscriber's plan from their subscription `price_id`. */
+export function planIdFromPriceId(
+  priceId: string | null | undefined,
+): MembershipPlanId | null {
+  if (!priceId) return null;
+  return (
+    (Object.keys(PLAN_PRICE_IDS) as MembershipPlanId[]).find(
+      (id) => PLAN_PRICE_IDS[id] === priceId,
+    ) ?? null
+  );
+}
+
 /** Stripe statuses that count as a paid membership. */
 const ACTIVE_MEMBERSHIP_STATUSES = ["active", "trialing"] as const;
 
@@ -149,10 +180,37 @@ async function invokeStripeSession(body: {
     body,
   });
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    throw new Error(await describeFunctionError(error));
+  }
   const url = (data as { url?: string } | null)?.url;
   if (!url) throw new Error("Stripe did not return a session URL.");
   return url;
+}
+
+/**
+ * `supabase.functions.invoke` surfaces every failure as the opaque
+ * "Edge Function returned a non-2xx status code". Dig into the attached
+ * Response so the user sees the actual cause — a missing deployment, an
+ * unconfigured price, or the error the function itself returned.
+ */
+async function describeFunctionError(error: unknown): Promise<string> {
+  const fallback =
+    error instanceof Error ? error.message : "Could not reach checkout.";
+  const context = (error as { context?: unknown })?.context;
+
+  if (context instanceof Response) {
+    if (context.status === 404) {
+      return "Membership checkout isn't available yet — the payment service hasn't been set up. Please try again later.";
+    }
+    try {
+      const payload = await context.clone().json();
+      if (payload && typeof payload.error === "string") return payload.error;
+    } catch {
+      // Body wasn't JSON; fall through to the generic message.
+    }
+  }
+  return fallback;
 }
 
 // --- Hooks ---
@@ -175,6 +233,8 @@ export function useMembership() {
       return {
         subscription,
         tier: isPaidUser ? (subscription?.tier ?? "collector") : null,
+        /** Which purchasable plan the subscriber is on (null when free). */
+        plan: isPaidUser ? planIdFromPriceId(subscription?.price_id) : null,
         isPaidUser,
         isCollectorOrAbove: isPaidUser,
         isCurator,

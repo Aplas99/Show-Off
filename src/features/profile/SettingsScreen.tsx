@@ -1,9 +1,12 @@
 import { useDeleteAccount } from "@/api/auth";
+import { useMembership } from "@/api/memberships";
+import { useGetCurrentUserProfile } from "@/api/profile";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { useThemeStore, type ThemeMode } from "@/hooks/useThemeStore";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { useRouter } from "expo-router";
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
     ActivityIndicator,
     Alert,
@@ -21,6 +24,7 @@ import Animated, {
     withTiming
 } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
+import { MembershipCabinetModal } from "./MembershipCabinetModal";
 
 const THEME_OPTIONS: { mode: ThemeMode; label: string; icon: string; description: string }[] = [
     { mode: "light", label: "Light", icon: "sunny", description: "Soft eggshell white" },
@@ -35,6 +39,15 @@ export default function SettingsScreen() {
     const { mode, setMode, isDark } = useThemeStore();
     const styles = getStyles(colors);
     const deleteAccount = useDeleteAccount();
+    const { data: profileData } = useGetCurrentUserProfile();
+    const { data: membership } = useMembership();
+    const [membershipOpen, setMembershipOpen] = useState(false);
+
+    const isCurator = membership?.isCurator ?? false;
+    const displayName =
+        profileData?.profile?.full_name ||
+        profileData?.profile?.username ||
+        "Collector";
 
     const handleDeleteAccount = () => {
         Alert.alert(
@@ -88,6 +101,39 @@ export default function SettingsScreen() {
                 <View style={{ width: 40 }} />
             </View>
 
+            {/* Account header — name, badge & membership status */}
+            <Animated.View
+                entering={FadeInDown.delay(60).springify()}
+                style={styles.accountCard}
+            >
+                <View style={styles.accountAvatar}>
+                    <Ionicons name="person" size={24} color={colors.primary} />
+                </View>
+                <View style={styles.accountText}>
+                    <View style={styles.accountNameRow}>
+                        <Text style={styles.accountName} numberOfLines={1}>
+                            {displayName}
+                        </Text>
+                        {isCurator && (
+                            <View style={styles.curatorBadge}>
+                                <Ionicons name="ribbon" size={11} color="#000" />
+                                <Text style={styles.curatorBadgeText}>CURATOR</Text>
+                            </View>
+                        )}
+                    </View>
+                    <View style={styles.membershipStatusRow}>
+                        <Ionicons
+                            name={isCurator ? "diamond" : "diamond-outline"}
+                            size={13}
+                            color={isCurator ? colors.primary : colors.grey}
+                        />
+                        <Text style={styles.membershipStatusText}>
+                            {isCurator ? "Curator membership active" : "Free · Collector plan"}
+                        </Text>
+                    </View>
+                </View>
+            </Animated.View>
+
             {/* Theme Section */}
             <Animated.View entering={FadeInDown.delay(100).springify()}>
                 <View style={styles.sectionHeader}>
@@ -136,16 +182,24 @@ export default function SettingsScreen() {
                     <Ionicons name="diamond-outline" size={20} color={colors.primary} />
                     <Text style={styles.sectionTitle}>Membership</Text>
                 </View>
-                <View style={styles.themeCard}>
-                    <TouchableOpacity
-                        style={[styles.infoRow, { borderBottomWidth: 0 }]}
-                        onPress={() => router.push("/(tabs)/profile/membership" as any)}
-                        activeOpacity={0.7}
+                <TouchableOpacity
+                    style={styles.membershipButtonWrap}
+                    onPress={() => setMembershipOpen(true)}
+                    activeOpacity={0.85}
+                    accessibilityRole="button"
+                    accessibilityLabel="Open membership"
+                >
+                    <LinearGradient
+                        colors={[colors.primary, colors.secondary]}
+                        start={{ x: 0, y: 0 }}
+                        end={{ x: 1, y: 0 }}
+                        style={styles.membershipButton}
                     >
-                        <Text style={styles.infoLabel}>Manage Membership</Text>
-                        <Ionicons name="chevron-forward" size={18} color={colors.grey} />
-                    </TouchableOpacity>
-                </View>
+                        <Ionicons name="diamond" size={20} color="#FFF" />
+                        <Text style={styles.membershipButtonText}>View Membership</Text>
+                        <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.9)" />
+                    </LinearGradient>
+                </TouchableOpacity>
             </Animated.View>
 
             {/* App Info */}
@@ -192,6 +246,11 @@ export default function SettingsScreen() {
                     </TouchableOpacity>
                 </View>
             </Animated.View>
+
+            <MembershipCabinetModal
+                visible={membershipOpen}
+                onDismiss={() => setMembershipOpen(false)}
+            />
         </View>
     );
 }
@@ -318,6 +377,84 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
         borderWidth: 1,
         borderColor: colors.border,
         overflow: "hidden",
+    },
+    accountCard: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 14,
+        marginHorizontal: 16,
+        marginTop: 16,
+        padding: 16,
+        borderRadius: 20,
+        backgroundColor: colors.card,
+        borderWidth: 1,
+        borderColor: colors.border,
+    },
+    accountAvatar: {
+        width: 48,
+        height: 48,
+        borderRadius: 16,
+        backgroundColor: `${colors.primary}1A`,
+        justifyContent: "center",
+        alignItems: "center",
+    },
+    accountText: {
+        flex: 1,
+    },
+    accountNameRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 8,
+        marginBottom: 4,
+    },
+    accountName: {
+        flexShrink: 1,
+        fontSize: 17,
+        fontWeight: "800",
+        color: colors.text,
+    },
+    curatorBadge: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 3,
+        paddingHorizontal: 7,
+        paddingVertical: 2,
+        borderRadius: 999,
+        backgroundColor: colors.tertiary,
+    },
+    curatorBadgeText: {
+        fontSize: 9,
+        fontWeight: "800",
+        letterSpacing: 0.8,
+        color: "#000",
+    },
+    membershipStatusRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 5,
+    },
+    membershipStatusText: {
+        fontSize: 13,
+        color: colors.onSurfaceVariant,
+        fontWeight: "500",
+    },
+    membershipButtonWrap: {
+        marginHorizontal: 16,
+        borderRadius: 16,
+        overflow: "hidden",
+    },
+    membershipButton: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 12,
+        paddingVertical: 16,
+        paddingHorizontal: 18,
+    },
+    membershipButtonText: {
+        flex: 1,
+        fontSize: 16,
+        fontWeight: "800",
+        color: "#FFF",
     },
     themeOption: {
         flexDirection: "row",

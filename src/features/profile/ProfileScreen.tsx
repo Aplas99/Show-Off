@@ -160,6 +160,47 @@ export default function ProfileScreen() {
           />
         </Animated.View>
 
+        {/* Membership Card */}
+        <Animated.View
+          entering={FadeInDown.delay(250).duration(500)}
+          style={styles.membershipSection}
+        >
+          <TouchableOpacity
+            activeOpacity={0.85}
+            onPress={() => router.push("/(tabs)/profile/membership" as any)}
+          >
+            <LinearGradient
+              colors={[colors.primary, colors.secondary]}
+              start={{ x: 0, y: 0 }}
+              end={{ x: 1, y: 1 }}
+              style={styles.membershipCard}
+            >
+              <View style={styles.membershipIconBg}>
+                <Ionicons
+                  name={membership?.isCurator ? "diamond" : "diamond-outline"}
+                  size={24}
+                  color="#FFF"
+                />
+              </View>
+              <View style={{ flex: 1 }}>
+                <Text style={styles.membershipTitle}>
+                  {membership?.isCurator ? "Curator Member" : "Go Curator"}
+                </Text>
+                <Text style={styles.membershipSubtitle}>
+                  {membership?.isCurator
+                    ? "Manage your membership & billing"
+                    : "Unlock price history, sharing & more"}
+                </Text>
+              </View>
+              <Ionicons
+                name="chevron-forward"
+                size={20}
+                color="rgba(255,255,255,0.9)"
+              />
+            </LinearGradient>
+          </TouchableOpacity>
+        </Animated.View>
+
         {/* Account Details Section */}
         <Animated.View
           entering={FadeInDown.delay(300).duration(500)}
@@ -440,6 +481,40 @@ const getStyles = (colors: ThemeColors) =>
       width: 1,
       height: 32,
       backgroundColor: `${colors.outlineVariant}4D`,
+    },
+    membershipSection: {
+      marginBottom: 40,
+    },
+    membershipCard: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 14,
+      padding: 18,
+      borderRadius: 24,
+      shadowColor: colors.primary,
+      shadowOffset: { width: 0, height: 8 },
+      shadowOpacity: 0.3,
+      shadowRadius: 16,
+      elevation: 6,
+    },
+    membershipIconBg: {
+      width: 48,
+      height: 48,
+      borderRadius: 16,
+      backgroundColor: "rgba(255,255,255,0.2)",
+      justifyContent: "center",
+      alignItems: "center",
+    },
+    membershipTitle: {
+      fontSize: 17,
+      fontWeight: "800",
+      color: "#FFF",
+      marginBottom: 3,
+    },
+    membershipSubtitle: {
+      fontSize: 13,
+      color: "rgba(255,255,255,0.85)",
+      fontWeight: "500",
     },
     section: {
       marginBottom: 48,
