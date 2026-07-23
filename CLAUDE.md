@@ -34,6 +34,7 @@ npx jest --watch                                    # watch mode
 | `EXPO_PUBLIC_BARCODE_LOOKUP_API_KEY` | Barcode Lookup product search API |
 | `EXPO_PUBLIC_CARD_SCAN_DEBUG` | Set to `false` to silence `[CardScan]` OCR logs |
 | `EXPO_PUBLIC_ACTION_DEBUG` | Set to `false` to silence `lib/actionDebug.ts` logs (barcode scanning, product/API search, manual item creation, Magic: The Gathering search) |
+| `EXPO_PUBLIC_MEMBERSHIP_DEBUG` | Set to `false` to silence development-only `[Membership]` checkout diagnostics; logs never include tokens, checkout URLs, or payment details |
 | `EXPO_PUBLIC_OCR_FALLBACK_URL` | Optional PaddleOCR fallback service URL (`server/paddleocr`); unset disables the server second pass |
 | `EXPO_PUBLIC_OCR_FALLBACK_TOKEN` | Bearer token for the OCR fallback service (`OCR_SERVICE_TOKEN`) |
 | `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Stripe publishable key (reserved for future native SDK use) |
@@ -42,7 +43,7 @@ npx jest --watch                                    # watch mode
 | `EXPO_PUBLIC_ADMOB_BANNER_UNIT_ID` | AdMob banner ad unit id; unset falls back to Google's test unit |
 | `EXPO_PUBLIC_ADMOB_REWARDED_UNIT_ID` | AdMob rewarded ad unit id (grants bonus scans); unset falls back to Google's test unit |
 
-Stripe server secrets (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_MONTHLY`, `STRIPE_PRICE_ID_ANNUAL`) live in Supabase Edge Function secrets, not app env — see `docs/stripe-memberships.md`.
+Stripe server secrets (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_FOUNDING_CURATOR`, `STRIPE_PRICE_ID_CURATOR_MONTHLY`, `STRIPE_PRICE_ID_CURATOR_ANNUAL`) live in Supabase Edge Function secrets, not app env — see `docs/stripe-memberships.md`.
 
 ## Architecture
 
@@ -64,7 +65,7 @@ api/              All Supabase + external API calls, exported as TanStack Query 
   social/         Feed, interactions (likes, bookmarks, comments)
   auth/           Auth hooks
   memberships/    Stripe membership state + checkout/portal hooks
-  storage/        Image upload to Supabase Storage (upload limit gated on membership)
+  storage/        Image upload to Supabase Storage (5MB free / 10MB Founding Curator / 100MB Curator)
 lib/              Supabase client, Zod validation schemas
 constants/        theme.ts (colors), layoutConfig.ts, itemCondition.ts, pokemonTcgSets.ts
 hooks/            useAuthStore (Zustand), useThemeStore, useAnimations, useHaptics
@@ -112,6 +113,7 @@ ML Kit (`@infinitered/react-native-mlkit-text-recognition`) is a native module �
 - `items` — user-owned collectibles; links to `products` via `product_ean`, `pokemon_tcg_cards` via `pokemon_tcg_card_id`, or `magic_cards` via `magic_card_id`
 - `products` — shared product catalog (barcode path); `ean` is the PK
 - `pokemon_tcg_cards` — Pokémon card cache; `id` is the TCG provider ID (e.g. `xy1-1`)
+- `pokemon_tcg_set_rosters` — complete-set cache manifest; set completion reads this plus `pokemon_tcg_cards` before calling the external API
 - `magic_cards` — Magic card cache (Scryfall); `id` is the Scryfall UUID
 - `price_history` — daily per-card market price snapshots, written by SECURITY DEFINER triggers on both card caches
 - `scan_usage` / `search_usage` — free-tier daily quota counters, written only via SECURITY DEFINER RPCs
@@ -122,7 +124,7 @@ ML Kit (`@infinitered/react-native-mlkit-text-recognition`) is a native module �
 
 ### Memberships (Stripe)
 
-Checkout runs in the browser via the `stripe-checkout` Edge Function; subscription state syncs back through `stripe-webhook` into `public.subscriptions`. Client hooks live in `api/memberships` (`useMembership`, `useStartCheckout`, `useOpenBillingPortal`); gate features with `isPaidUser`, `getHasActiveMembership()` (plain async), or the `has_active_membership()` SQL helper. Full setup in `docs/stripe-memberships.md`.
+Checkout runs in the browser via the `stripe-checkout` Edge Function; subscription state syncs back through `stripe-webhook` into `public.subscriptions`. Collector is the free tier. Founding Curator is an Early Access-only paid plan with a permanent founding rate and 10MB uploads; monthly and annual Curator plans receive 100MB uploads. All tiers can create shareable public showcase links. Client hooks live in `api/memberships` (`useMembership`, `useStartCheckout`, `useOpenBillingPortal`); gate features with `isPaidUser`, `getHasActiveMembership()` (plain async), or the `has_active_membership()` SQL helper. Full setup in `docs/stripe-memberships.md`.
 
 **Store builds use native IAP, not web checkout.** Apple/Google require in-app digital purchases to go through StoreKit / Play Billing, so store builds sell the membership via **RevenueCat** (`api/memberships/nativeBilling.ts` + the `revenuecat-webhook` Edge Function), which writes into the same `public.subscriptions` table with `provider = 'revenuecat'`. Use `getActiveBillingProvider()`, `usePurchaseMembership()`, `useManageMembership()`, and `useRestorePurchases()` — they route to native IAP on store builds and Stripe on web automatically. RevenueCat is a native module (no Expo Go; needs a dev build). Full setup in `docs/iap-memberships.md`.
 

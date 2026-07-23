@@ -88,6 +88,12 @@ interface PokemonCardCacheRow {
   raw_data: unknown;
 }
 
+interface PokemonSetRosterCacheRow {
+  set_id: string;
+  cached_card_count: number;
+  is_complete: boolean;
+}
+
 export interface SearchPokemonCardsInput {
   query: string;
   number?: string;
@@ -436,16 +442,112 @@ export async function cachePokemonCards(cards: PokemonTcgCard[]) {
   await defaultDependencies.cacheCards(cards);
 }
 
+async function getCompleteSetRosterFromCache(
+  setId: string,
+): Promise<PokemonTcgCard[] | null> {
+  const { data: manifest, error: manifestError } = await supabase
+    .from("pokemon_tcg_set_rosters")
+    .select("set_id, cached_card_count, is_complete")
+    .eq("set_id", setId)
+    .maybeSingle();
+
+  if (manifestError) {
+    console.warn(
+      "[Pokémon TCG] Set roster manifest unavailable:",
+      manifestError.message,
+    );
+    return null;
+  }
+
+  const parsedManifest = manifest as PokemonSetRosterCacheRow | null;
+  if (!parsedManifest?.is_complete) return null;
+
+  const { data: rows, error: cardsError } = await supabase
+    .from("pokemon_tcg_cards")
+    .select("id, raw_data")
+    .eq("set_id", setId)
+    .limit(500);
+
+  if (cardsError) {
+    console.warn("[Pokémon TCG] Cached set lookup failed:", cardsError.message);
+    return null;
+  }
+
+  const cards = ((rows ?? []) as PokemonCardCacheRow[])
+    .map(parseCachedCard)
+    .filter((card): card is PokemonTcgCard => card !== null)
+    .sort((a, b) =>
+      a.number.localeCompare(b.number, undefined, {
+        numeric: true,
+        sensitivity: "base",
+      }),
+    );
+
+  // Never serve a partial roster. Search and scanning also populate the card
+  // table, so only the manifest's exact count proves this set cache is whole.
+  if (cards.length !== parsedManifest.cached_card_count) return null;
+
+  console.log("[Pokémon TCG] Set roster cache hit", {
+    setId,
+    cardCount: cards.length,
+  });
+  return cards;
+}
+
+async function cacheCompleteSetRoster(
+  setId: string,
+  cards: PokemonTcgCard[],
+): Promise<void> {
+  if (cards.length === 0) return;
+
+  const { error: cardsError } = await supabase
+    .from("pokemon_tcg_cards")
+    .upsert(cards.map(pokemonCardToCacheRow), { onConflict: "id" });
+  if (cardsError) throw new Error(cardsError.message);
+
+  const set = cards[0].set;
+  const now = new Date().toISOString();
+  const { error: manifestError } = await supabase
+    .from("pokemon_tcg_set_rosters")
+    .upsert(
+      {
+        set_id: setId,
+        set_name: set.name,
+        set_series: set.series ?? null,
+        printed_total: set.printedTotal ?? null,
+        total: set.total ?? cards.length,
+        cached_card_count: cards.length,
+        is_complete: true,
+        cached_at: now,
+        updated_at: now,
+      },
+      { onConflict: "set_id" },
+    );
+  if (manifestError) throw new Error(manifestError.message);
+
+  console.log("[Pokémon TCG] Set roster cached", {
+    setId,
+    cardCount: cards.length,
+  });
+}
+
 /**
- * Fetch the complete card roster for one set, paginating until the API's
- * reported total is reached. Results are cached to Supabase. Intended for
- * on-demand use (set-completion view), never proactively across all sets.
+ * Returns a complete set roster from Supabase first. Only a missing or partial
+ * database roster reaches the Pokémon API; successful API responses populate
+ * both the shared card cache and the complete-roster manifest.
  */
 export async function fetchAllCardsInSet(
   setId: string,
 ): Promise<PokemonTcgCard[]> {
   const normalizedSetId = setId.trim();
   if (!normalizedSetId) return [];
+
+  const cachedRoster = await getCompleteSetRosterFromCache(normalizedSetId);
+  if (cachedRoster) return cachedRoster;
+
+  console.log("[Pokémon TCG] Set roster cache miss", {
+    setId: normalizedSetId,
+  });
 
   const allCards: PokemonTcgCard[] = [];
   let page = 1;
@@ -468,13 +570,22 @@ export async function fetchAllCardsInSet(
     page += 1;
   }
 
-  await defaultDependencies.cacheCards(allCards);
+  try {
+    await cacheCompleteSetRoster(normalizedSetId, allCards);
+  } catch (error) {
+    // The user can still use the roster returned by the API. Do not mark a
+    // partial/failed write complete; the next request will safely retry.
+    console.warn(
+      "[Pokémon TCG] Could not persist complete set roster:",
+      error instanceof Error ? error.message : String(error),
+    );
+  }
   return allCards;
 }
 
 /**
- * Full roster for a set, for the Curator set-completion view. Cached a day —
- * set rosters only change when a new set releases.
+ * Full roster for the Curator set-completion view. TanStack Query handles the
+ * current session; Supabase provides the persistent cross-user roster cache.
  */
 export function useSetCards(setId: string | null) {
   return useQuery({

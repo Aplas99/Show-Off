@@ -81,11 +81,10 @@ export default function ShowcaseDetail() {
     "all",
   );
 
-  // Sharable public link (Curator feature)
+  // Sharable public links are available to every membership tier.
   const { data: membership } = useMembership();
   const isCurator = membership?.isCurator ?? false;
   const setShowcasePublic = useSetShowcasePublic();
-  const [sharePaywallVisible, setSharePaywallVisible] = useState(false);
 
   // Curator set-completion view
   const [setCompletionVisible, setSetCompletionVisible] = useState(false);
@@ -94,10 +93,6 @@ export default function ShowcaseDetail() {
 
   const handleShare = useCallback(async () => {
     if (!showcaseId) return;
-    if (!isCurator) {
-      setSharePaywallVisible(true);
-      return;
-    }
     try {
       await setShowcasePublic.mutateAsync({ showcaseId, isPublic: true });
       await Share.share({
@@ -110,7 +105,7 @@ export default function ShowcaseDetail() {
         error?.message ?? "Please try again.",
       );
     }
-  }, [showcaseId, isCurator, setShowcasePublic]);
+  }, [showcaseId, setShowcasePublic]);
 
   // Modal state
   const [selectedItem, setSelectedItem] = useState<ItemWithProduct | null>(
@@ -781,13 +776,6 @@ export default function ShowcaseDetail() {
           </View>
         </View>
       </Modal>
-
-      <CuratorGateModal
-        visible={sharePaywallVisible}
-        feature="Sharable showcase links"
-        description="Let anyone view this showcase with a link, no account required, with Curator."
-        onDismiss={() => setSharePaywallVisible(false)}
-      />
 
       <CuratorGateModal
         visible={setCompletionPaywallVisible}

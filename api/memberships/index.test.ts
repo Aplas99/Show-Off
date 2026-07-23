@@ -13,8 +13,10 @@ jest.mock("react-native", () => ({
 }));
 
 import {
+  MEMBERSHIP_UPLOAD_LIMITS_BYTES,
   PLAN_STORE_PRODUCT_IDS,
   getActiveBillingProvider,
+  getMembershipUploadLimitBytes,
   isActiveMembershipStatus,
   subscriptionRowSchema,
 } from "@/api/memberships";
@@ -85,6 +87,7 @@ describe("subscriptionRowSchema", () => {
     if (result.success) {
       expect(result.data.tier).toBe("collector");
       expect(result.data.provider).toBe("stripe");
+      expect(result.data.plan_id).toBeNull();
     }
   });
 
@@ -99,10 +102,55 @@ describe("subscriptionRowSchema", () => {
     }
   });
 
-  it("rejects an unrecognized tier", () => {
+  it("accepts a founding curator plan", () => {
+    const result = subscriptionRowSchema.safeParse({
+      ...validRow,
+      tier: "curator",
+      plan_id: "founding_curator",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.plan_id).toBe("founding_curator");
+    }
+  });
+
+  it("rejects an unrecognized tier or plan", () => {
     expect(
       subscriptionRowSchema.safeParse({ ...validRow, tier: "platinum" }).success,
     ).toBe(false);
+    expect(
+      subscriptionRowSchema.safeParse({ ...validRow, plan_id: "vip" }).success,
+    ).toBe(false);
+  });
+});
+
+describe("membership upload limits", () => {
+  it("allows 5MB for free members", () => {
+    expect(getMembershipUploadLimitBytes({ isPaidUser: false })).toBe(
+      MEMBERSHIP_UPLOAD_LIMITS_BYTES.free,
+    );
+  });
+
+  it("allows 10MB for Founding Curator", () => {
+    expect(
+      getMembershipUploadLimitBytes({
+        isPaidUser: true,
+        tier: "curator",
+        planId: "founding_curator",
+      }),
+    ).toBe(MEMBERSHIP_UPLOAD_LIMITS_BYTES.foundingCurator);
+  });
+
+  it("allows 100MB for monthly and annual Curator", () => {
+    for (const planId of ["curator_monthly", "curator_annual"] as const) {
+      expect(
+        getMembershipUploadLimitBytes({
+          isPaidUser: true,
+          tier: "curator",
+          planId,
+        }),
+      ).toBe(MEMBERSHIP_UPLOAD_LIMITS_BYTES.curator);
+    }
   });
 });
 

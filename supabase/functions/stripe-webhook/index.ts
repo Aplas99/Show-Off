@@ -21,6 +21,12 @@ const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") ?? "", {
 // async signature verification.
 const cryptoProvider = Stripe.createSubtleCryptoProvider();
 
+const MEMBERSHIP_PLANS = new Set([
+  "founding_curator",
+  "curator_monthly",
+  "curator_annual",
+]);
+
 const admin = createClient(
   Deno.env.get("SUPABASE_URL")!,
   Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
@@ -69,20 +75,42 @@ async function upsertSubscription(subscription: Stripe.Subscription) {
     return;
   }
 
+  const metadataPlan = subscription.metadata?.membership_plan;
+  const planId =
+    typeof metadataPlan === "string" && MEMBERSHIP_PLANS.has(metadataPlan)
+      ? metadataPlan
+      : null;
+
+  console.log("[stripe-webhook] syncing subscription", {
+    subscriptionId: subscription.id,
+    status: subscription.status,
+    planId,
+  });
+
   const { error } = await admin.from("subscriptions").upsert({
     id: subscription.id,
     user_id: userId,
     status: subscription.status,
     price_id: subscription.items?.data?.[0]?.price?.id ?? null,
+    plan_id: planId,
     cancel_at_period_end: subscription.cancel_at_period_end ?? false,
     current_period_end: getPeriodEndIso(subscription),
     updated_at: new Date().toISOString(),
   });
 
   if (error) {
-    console.error("[stripe-webhook] Upsert failed:", error);
+    console.error("[stripe-webhook] Upsert failed", {
+      subscriptionId: subscription.id,
+      planId,
+      error,
+    });
     throw error;
   }
+
+  console.log("[stripe-webhook] subscription synced", {
+    subscriptionId: subscription.id,
+    planId,
+  });
 }
 
 Deno.serve(async (req) => {
@@ -110,6 +138,11 @@ Deno.serve(async (req) => {
     console.error("[stripe-webhook] Signature verification failed:", err);
     return new Response("Invalid signature", { status: 400 });
   }
+
+  console.log("[stripe-webhook] event received", {
+    eventId: event.id,
+    eventType: event.type,
+  });
 
   try {
     switch (event.type) {
@@ -140,6 +173,11 @@ Deno.serve(async (req) => {
     console.error("[stripe-webhook] Handler error:", err);
     return new Response("Webhook handler failed", { status: 500 });
   }
+
+  console.log("[stripe-webhook] event processed", {
+    eventId: event.id,
+    eventType: event.type,
+  });
 
   return new Response(JSON.stringify({ received: true }), {
     headers: { "Content-Type": "application/json" },

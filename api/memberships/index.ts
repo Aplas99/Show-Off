@@ -1,3 +1,4 @@
+import { membershipDebug } from "@/lib/membershipDebug";
 import { supabase } from "@/lib/supabase";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as WebBrowser from "expo-web-browser";
@@ -10,6 +11,9 @@ import {
   showNativeManageSubscriptions,
   type NativePurchaseResult,
 } from "./nativeBilling";
+
+const CHECKOUT_REDIRECT_URL = "showoff:///membership";
+const MEMBERSHIP_REDIRECT_URL = "showoff:///profile/membership";
 
 // --- Types & schemas ---
 
@@ -29,6 +33,10 @@ export const subscriptionRowSchema = z.object({
   // should still parse, falling back to the base paid tier.
   tier: z.enum(["collector", "curator"]).default("collector"),
   provider: z.string().default("stripe"),
+  plan_id: z
+    .enum(["founding_curator", "curator_monthly", "curator_annual"])
+    .nullable()
+    .default(null),
 });
 
 export type SubscriptionRow = z.infer<typeof subscriptionRowSchema>;
@@ -57,6 +65,28 @@ export const FREE_TIER_LIMITS = {
   maxItems: 50,
   maxShowcases: 1,
 } as const;
+
+export const MEMBERSHIP_UPLOAD_LIMITS_BYTES = {
+  free: 5 * 1024 * 1024,
+  foundingCurator: 10 * 1024 * 1024,
+  curator: 100 * 1024 * 1024,
+} as const;
+
+export function getMembershipUploadLimitBytes(access: {
+  isPaidUser: boolean;
+  tier?: MembershipTier | null;
+  planId?: MembershipPlanId | null;
+}): number {
+  if (!access.isPaidUser) return MEMBERSHIP_UPLOAD_LIMITS_BYTES.free;
+  if (access.planId === "founding_curator") {
+    return MEMBERSHIP_UPLOAD_LIMITS_BYTES.foundingCurator;
+  }
+  if (access.tier === "curator") {
+    return MEMBERSHIP_UPLOAD_LIMITS_BYTES.curator;
+  }
+  // Legacy paid rows without a mapped plan fail safely to the lower paid cap.
+  return MEMBERSHIP_UPLOAD_LIMITS_BYTES.foundingCurator;
+}
 
 // Placeholder copy — keep in sync with the Stripe Prices configured via
 // STRIPE_PRICE_ID_FOUNDING_CURATOR / STRIPE_PRICE_ID_CURATOR_MONTHLY /
@@ -132,35 +162,140 @@ async function fetchCurrentSubscription(): Promise<SubscriptionRow | null> {
   } = await supabase.auth.getUser();
   if (!user) return null;
 
+  // Select the whole own-row view for rolling-deploy compatibility: before
+  // the plan_id migration reaches a backend, Zod safely defaults it to null.
   const { data, error } = await supabase
     .from("subscriptions_with_tier")
-    .select(
-      "id, user_id, status, price_id, cancel_at_period_end, current_period_end, created_at, updated_at, tier, provider",
-    )
+    .select("*")
     .eq("user_id", user.id)
     .order("updated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(10);
 
   if (error) throw new Error(error.message);
-  if (!data) return null;
+  if (!data || data.length === 0) {
+    membershipDebug.log("membership.no_subscription");
+    return null;
+  }
 
-  const parsed = subscriptionRowSchema.safeParse(data);
-  return parsed.success ? parsed.data : null;
+  const parsedRows = data
+    .map((row) => subscriptionRowSchema.safeParse(row))
+    .filter((result) => result.success)
+    .map((result) => result.data);
+  if (parsedRows.length === 0) {
+    membershipDebug.log("membership.invalid_subscription_rows", {
+      rowCount: data.length,
+    });
+    return null;
+  }
+
+  const subscription =
+    parsedRows.find((row) => isActiveMembershipStatus(row.status)) ??
+    parsedRows[0];
+  membershipDebug.log("membership.subscription_resolved", {
+    status: subscription.status,
+    tier: subscription.tier,
+    plan: subscription.plan_id,
+    provider: subscription.provider,
+  });
+  return subscription;
+}
+
+async function getFunctionErrorDetails(error: unknown): Promise<{
+  message: string;
+  requestId?: string;
+}> {
+  const fallback =
+    error instanceof Error ? error.message : "Membership service unavailable.";
+  const context = (error as { context?: unknown } | null)?.context as
+    | { clone?: () => { json?: () => Promise<unknown> } }
+    | undefined;
+
+  try {
+    const payload = await context?.clone?.().json?.();
+    const serverPayload = payload as {
+      error?: unknown;
+      requestId?: unknown;
+    } | null;
+    return {
+      message:
+        typeof serverPayload?.error === "string"
+          ? serverPayload.error
+          : fallback,
+      requestId:
+        typeof serverPayload?.requestId === "string"
+          ? serverPayload.requestId
+          : undefined,
+    };
+  } catch {
+    return { message: fallback };
+  }
 }
 
 async function invokeStripeSession(body: {
   action: "checkout" | "portal";
   plan?: MembershipPlanId;
 }): Promise<string> {
+  membershipDebug.log("stripe.session.requested", body);
   const { data, error } = await supabase.functions.invoke("stripe-checkout", {
     body,
   });
 
-  if (error) throw new Error(error.message);
+  if (error) {
+    const details = await getFunctionErrorDetails(error);
+    membershipDebug.error("stripe.session.failed", error, {
+      action: body.action,
+      plan: body.plan,
+      serverMessage: details.message,
+      requestId: details.requestId,
+    });
+    throw new Error(
+      details.requestId
+        ? `${details.message} (reference: ${details.requestId})`
+        : details.message,
+    );
+  }
   const url = (data as { url?: string } | null)?.url;
-  if (!url) throw new Error("Stripe did not return a session URL.");
+  if (!url) {
+    const missingUrlError = new Error("Stripe did not return a session URL.");
+    membershipDebug.error("stripe.session.missing_url", missingUrlError, body);
+    throw missingUrlError;
+  }
+  membershipDebug.log("stripe.session.created", {
+    action: body.action,
+    plan: body.plan,
+  });
   return url;
+}
+
+export async function syncMembershipFromBilling(): Promise<boolean> {
+  membershipDebug.log("stripe.sync.requested");
+  const { data, error } = await supabase.functions.invoke("stripe-checkout", {
+    body: { action: "sync" },
+  });
+  if (error) {
+    const details = await getFunctionErrorDetails(error);
+    membershipDebug.error("stripe.sync.failed", error, {
+      serverMessage: details.message,
+      requestId: details.requestId,
+    });
+    throw new Error(
+      details.requestId
+        ? `${details.message} (reference: ${details.requestId})`
+        : details.message,
+    );
+  }
+
+  const result = data as {
+    synced?: boolean;
+    status?: string;
+    plan?: string | null;
+  } | null;
+  membershipDebug.log("stripe.sync.completed", {
+    synced: result?.synced ?? false,
+    status: result?.status,
+    plan: result?.plan,
+  });
+  return result?.synced ?? false;
 }
 
 // --- Hooks ---
@@ -173,22 +308,42 @@ async function invokeStripeSession(body: {
  * paid tier," collector or curator. New Curator-only features should gate
  * on `isCurator` instead.
  */
+export async function getCurrentMembershipAccess() {
+  try {
+    const subscription = await fetchCurrentSubscription();
+    const isPaidUser = isActiveMembershipStatus(subscription?.status);
+    const tier = isPaidUser ? (subscription?.tier ?? "collector") : null;
+    const planId = isPaidUser ? (subscription?.plan_id ?? null) : null;
+    return {
+      subscription,
+      tier,
+      planId,
+      isPaidUser,
+      isCollectorOrAbove: isPaidUser,
+      isCurator: isPaidUser && tier === "curator",
+      isFoundingCurator: isPaidUser && planId === "founding_curator",
+    };
+  } catch (error) {
+    membershipDebug.error("membership.fetch_failed", error);
+    throw error;
+  }
+}
+
 export function useMembership() {
   return useQuery({
     queryKey: membershipKeys.current(),
-    queryFn: async () => {
-      const subscription = await fetchCurrentSubscription();
-      const isPaidUser = isActiveMembershipStatus(subscription?.status);
-      const isCurator = isPaidUser && subscription?.tier === "curator";
-      return {
-        subscription,
-        tier: isPaidUser ? (subscription?.tier ?? "collector") : null,
-        isPaidUser,
-        isCollectorOrAbove: isPaidUser,
-        isCurator,
-      };
-    },
+    queryFn: getCurrentMembershipAccess,
     staleTime: 60 * 1000,
+  });
+}
+
+export function useSyncMembership() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: syncMembershipFromBilling,
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: membershipKeys.all() });
+    },
   });
 }
 
@@ -202,7 +357,7 @@ export function useStartCheckout() {
   return useMutation({
     mutationFn: async (plan: MembershipPlanId) => {
       const url = await invokeStripeSession({ action: "checkout", plan });
-      return WebBrowser.openAuthSessionAsync(url, "showoff://membership");
+      return WebBrowser.openAuthSessionAsync(url, CHECKOUT_REDIRECT_URL);
     },
     onSettled: () => {
       // The webhook updates the subscription row; refetch on return.
@@ -220,7 +375,7 @@ export function useOpenBillingPortal() {
   return useMutation({
     mutationFn: async () => {
       const url = await invokeStripeSession({ action: "portal" });
-      return WebBrowser.openAuthSessionAsync(url, "showoff://membership");
+      return WebBrowser.openAuthSessionAsync(url, MEMBERSHIP_REDIRECT_URL);
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: membershipKeys.all() });
@@ -276,7 +431,9 @@ export function usePurchaseMembership() {
 
   return useMutation<NativePurchaseResult, Error, MembershipPlanId>({
     mutationFn: async (plan) => {
-      if (getActiveBillingProvider() === "revenuecat") {
+      const provider = getActiveBillingProvider();
+      membershipDebug.log("purchase.started", { plan, provider });
+      if (provider === "revenuecat") {
         const {
           data: { user },
         } = await supabase.auth.getUser();
@@ -287,17 +444,74 @@ export function usePurchaseMembership() {
         if (!productId) {
           throw new Error(`No store product configured for plan "${plan}".`);
         }
-        return purchaseNativePlan(productId);
+        const result = await purchaseNativePlan(productId);
+        membershipDebug.log("purchase.native_completed", {
+          plan,
+          success: result.success,
+          cancelled: result.cancelled,
+        });
+        return result;
       }
 
       // Web / fallback: Stripe Checkout in the system browser. Payment success
       // is confirmed asynchronously by the Stripe webhook, so we don't claim
       // `success` here — the refetch below reflects the real state on return.
       const url = await invokeStripeSession({ action: "checkout", plan });
-      await WebBrowser.openAuthSessionAsync(url, "showoff://membership");
-      return { success: false, cancelled: false };
+      const browserResult = await WebBrowser.openAuthSessionAsync(
+        url,
+        CHECKOUT_REDIRECT_URL,
+      );
+      membershipDebug.log("purchase.stripe_browser_closed", {
+        plan,
+        resultType: browserResult.type,
+      });
+
+      if (browserResult.type === "success") {
+        // Reconcile directly as a fallback in addition to the authoritative
+        // webhook. This covers delayed or misconfigured webhook delivery.
+        await syncMembershipFromBilling().catch((error) => {
+          membershipDebug.error("purchase.post_checkout_sync_failed", error, {
+            plan,
+          });
+        });
+
+        // Stripe writes membership state asynchronously through its webhook.
+        // Poll briefly so the UI usually reflects the upgrade immediately,
+        // while still allowing Stripe's normal webhook retry behavior.
+        for (let attempt = 1; attempt <= 6; attempt += 1) {
+          await new Promise((resolve) => setTimeout(resolve, 1000));
+          const subscription = await fetchCurrentSubscription().catch(
+            (error) => {
+              membershipDebug.error("purchase.confirmation_fetch_failed", error, {
+                plan,
+                attempt,
+              });
+              return null;
+            },
+          );
+          if (isActiveMembershipStatus(subscription?.status)) {
+            membershipDebug.log("purchase.stripe_confirmed", {
+              plan,
+              resolvedPlan: subscription?.plan_id,
+              attempt,
+            });
+            return { success: true, cancelled: false };
+          }
+        }
+        membershipDebug.log("purchase.stripe_webhook_pending", { plan });
+      }
+
+      return {
+        success: false,
+        cancelled:
+          browserResult.type === "cancel" || browserResult.type === "dismiss",
+      };
     },
-    onSettled: () => {
+    onError: (error, plan) => {
+      membershipDebug.error("purchase.failed", error, { plan });
+    },
+    onSettled: (_data, _error, plan) => {
+      membershipDebug.log("purchase.membership_refetch", { plan });
       qc.invalidateQueries({ queryKey: membershipKeys.all() });
     },
   });
@@ -325,7 +539,7 @@ export function useManageMembership() {
         return;
       }
       const url = await invokeStripeSession({ action: "portal" });
-      await WebBrowser.openAuthSessionAsync(url, "showoff://membership");
+      await WebBrowser.openAuthSessionAsync(url, MEMBERSHIP_REDIRECT_URL);
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: membershipKeys.all() });

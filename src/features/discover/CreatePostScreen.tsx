@@ -186,8 +186,8 @@ export default function CreatePostScreen() {
         {!isPaidUser && (
           <Text style={styles.limitNote}>
             Free accounts: up to {FREE_MAX_MEDIA_PER_POST} attachments and 5MB
-            per file. Curators get {PAID_MAX_MEDIA_PER_POST} attachments and
-            200MB per file.
+            per file. Founding Curators get {PAID_MAX_MEDIA_PER_POST}
+            attachments and 10MB per file; Curators get 100MB per file.
           </Text>
         )}
 

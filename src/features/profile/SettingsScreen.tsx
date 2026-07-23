@@ -130,24 +130,6 @@ export default function SettingsScreen() {
                 </Animated.View>
             </Animated.View>
 
-            {/* Membership */}
-            <Animated.View entering={FadeInDown.delay(250).springify()}>
-                <View style={styles.sectionHeader}>
-                    <Ionicons name="diamond-outline" size={20} color={colors.primary} />
-                    <Text style={styles.sectionTitle}>Membership</Text>
-                </View>
-                <View style={styles.themeCard}>
-                    <TouchableOpacity
-                        style={[styles.infoRow, { borderBottomWidth: 0 }]}
-                        onPress={() => router.push("/(tabs)/profile/membership" as any)}
-                        activeOpacity={0.7}
-                    >
-                        <Text style={styles.infoLabel}>Manage Membership</Text>
-                        <Ionicons name="chevron-forward" size={18} color={colors.grey} />
-                    </TouchableOpacity>
-                </View>
-            </Animated.View>
-
             {/* App Info */}
             <Animated.View entering={FadeInDown.delay(300).springify()} style={styles.footerSection}>
                 <View style={styles.sectionHeader}>

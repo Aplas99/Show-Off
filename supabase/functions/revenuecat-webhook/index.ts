@@ -63,6 +63,16 @@ interface DerivedState {
 /** Map a RevenueCat event to the Stripe-style status vocabulary already used
  *  in public.subscriptions ('active' | 'trialing' | 'past_due' | 'canceled' |
  *  'paused'), so has_active_membership() and the tier view need no changes. */
+function getPlanId(productId?: string): string | null {
+  const baseProductId = productId?.split(":")[0];
+  if (baseProductId === "curator_founding_monthly") {
+    return "founding_curator";
+  }
+  if (baseProductId === "curator_monthly") return "curator_monthly";
+  if (baseProductId === "curator_annual") return "curator_annual";
+  return null;
+}
+
 function deriveState(event: RevenueCatEvent): DerivedState {
   const now = Date.now();
   const exp = event.expiration_at_ms ?? null;
@@ -113,6 +123,14 @@ async function upsertFromEvent(event: RevenueCatEvent): Promise<void> {
     `${userId}:${event.product_id ?? "unknown"}`;
 
   const { status, cancelAtPeriodEnd } = deriveState(event);
+  const planId = getPlanId(event.product_id);
+
+  console.log("[revenuecat-webhook] syncing subscription", {
+    eventType: event.type,
+    productId: event.product_id,
+    planId,
+    status,
+  });
 
   const { error } = await admin.from("subscriptions").upsert({
     id: `rc_${rowKey}`,
@@ -121,6 +139,7 @@ async function upsertFromEvent(event: RevenueCatEvent): Promise<void> {
     // price_id holds the store product id here; seed membership_tiers with
     // these ids so subscriptions_with_tier resolves them to 'curator'.
     price_id: event.product_id ?? null,
+    plan_id: planId,
     cancel_at_period_end: cancelAtPeriodEnd,
     current_period_end:
       typeof event.expiration_at_ms === "number"
@@ -131,9 +150,20 @@ async function upsertFromEvent(event: RevenueCatEvent): Promise<void> {
   });
 
   if (error) {
-    console.error("[revenuecat-webhook] Upsert failed:", error);
+    console.error("[revenuecat-webhook] Upsert failed", {
+      eventType: event.type,
+      productId: event.product_id,
+      planId,
+      error,
+    });
     throw error;
   }
+
+  console.log("[revenuecat-webhook] subscription synced", {
+    eventType: event.type,
+    productId: event.product_id,
+    planId,
+  });
 }
 
 Deno.serve(async (req) => {

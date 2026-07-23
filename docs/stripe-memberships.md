@@ -11,7 +11,8 @@ App (api/memberships hooks)
   └─ supabase.functions.invoke("stripe-checkout")   ← user JWT verified
        └─ creates Stripe Checkout / Billing Portal session, returns URL
   └─ expo-web-browser opens the URL (openAuthSessionAsync)
-       └─ Stripe redirects back to showoff://membership deep link
+       └─ Stripe redirects to showoff:///membership for the payment animation
+          and then the app opens /profile/membership
 
 Stripe ──(webhook)──▶ supabase/functions/stripe-webhook
   └─ verifies signature, upserts public.subscriptions (service role)
@@ -33,8 +34,10 @@ Key pieces:
 ## Setup
 
 1. **Stripe Dashboard**
-   - Create a Product ("Collector Membership") with two recurring Prices
-     (monthly + annual). Note the `price_...` ids.
+   - Create a Product ("Curator Membership") with three recurring Prices:
+     Founding Curator, Curator Monthly, and Curator Annual. Founding Curator is
+     available only during Early Access; archive its Price when Early Access
+     ends so existing subscribers retain it while new signups cannot select it.
    - Developers → Webhooks → Add endpoint:
      `https://<project-ref>.functions.supabase.co/stripe-webhook`
      with events `checkout.session.completed`,
@@ -51,8 +54,9 @@ Key pieces:
    npx supabase secrets set \
      STRIPE_SECRET_KEY=sk_test_... \
      STRIPE_WEBHOOK_SECRET=whsec_... \
-     STRIPE_PRICE_ID_MONTHLY=price_... \
-     STRIPE_PRICE_ID_ANNUAL=price_...
+     STRIPE_PRICE_ID_FOUNDING_CURATOR=price_... \
+     STRIPE_PRICE_ID_CURATOR_MONTHLY=price_... \
+     STRIPE_PRICE_ID_CURATOR_ANNUAL=price_...
    ```
 
 4. **Deploy functions**
@@ -63,6 +67,9 @@ Key pieces:
 
 5. **Test** with Stripe test cards (`4242 4242 4242 4242`). The
    `stripe listen --forward-to` CLI can proxy webhooks against local dev.
+   Development clients emit safe `[Membership]` lifecycle logs by default;
+   Edge Function logs include a request/event id and selected plan. Set
+   `EXPO_PUBLIC_MEMBERSHIP_DEBUG=false` to silence client diagnostics.
 
 ## Gating features on membership
 
@@ -81,5 +88,7 @@ Key pieces:
   both write into the same `public.subscriptions` table.
 - Plan copy/prices in `MEMBERSHIP_PLANS` (`api/memberships/index.ts`) are
   display-only placeholders — keep them in sync with the Stripe Prices.
+- Upload limits are 5MB for free Collector, 10MB for Founding Curator, and
+  100MB for monthly/annual Curator. Shareable showcases are free for all tiers.
 - The webhook is idempotent (upsert keyed by subscription id); Stripe
   retries failed deliveries automatically.

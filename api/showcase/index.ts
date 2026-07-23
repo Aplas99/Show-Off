@@ -145,9 +145,9 @@ export function useGetShowcase(id: string) {
 /**
  * Toggles whether a showcase is publicly viewable (via `app/s/[id].tsx`,
  * unauthenticated). Reuses the existing `is_public` column/RLS policy —
- * it already grants `anon` read on the showcase row when true. Callers
- * must gate this on `isCurator` themselves (see CuratorGate); this
- * mutation only enforces ownership, via "update_own_showcase" RLS.
+ * it already grants `anon` read on the showcase row when true. Sharing is
+ * available to every membership tier; this mutation enforces ownership via
+ * the "update_own_showcase" RLS policy.
  */
 export function useSetShowcasePublic() {
   const queryClient = useQueryClient();

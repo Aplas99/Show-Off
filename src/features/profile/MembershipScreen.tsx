@@ -32,11 +32,15 @@ const FREE_PLAN_LIMITS = [
     { icon: "layers-outline", label: `${FREE_TIER_LIMITS.maxShowcases} showcase` },
     { icon: "scan-outline", label: "10 card scans / day (watch an ad for more)" },
     { icon: "search-outline", label: "15 searches / day (watch an ad for more)" },
+    { icon: "share-social-outline", label: "Sharable public showcase links" },
 ] as const;
 
-const CURATOR_PERKS = [
+const CURATOR_FEATURES = [
     { icon: "infinite-outline", label: "Unlimited items & showcases" },
-    { icon: "cloud-upload-outline", label: "200MB image uploads (vs 5MB free)" },
+    {
+        icon: "cloud-upload-outline",
+        label: "100MB image uploads (10MB for Founding Curator)",
+    },
     {
         icon: "flash-outline",
         label:
@@ -44,10 +48,27 @@ const CURATOR_PERKS = [
     },
     { icon: "infinite-outline", label: "Unlimited daily scans & searches, no ads" },
     { icon: "stats-chart-outline", label: "Price history for your collection" },
-    { icon: "share-social-outline", label: "Sharable public showcase links" },
     { icon: "ribbon-outline", label: "Curator badge & showcase customization" },
     { icon: "list-outline", label: "Missing-items tracking per set" },
 ] as const;
+
+const PLAN_FEATURES: Record<MembershipPlanId, readonly string[]> = {
+    founding_curator: [
+        "10MB uploads per file",
+        "Permanent Early Access founding rate",
+        "Metallic Founding Curator profile badge",
+    ],
+    curator_monthly: [
+        "100MB uploads per file",
+        "Flexible month-to-month billing",
+        "Full Curator feature access",
+    ],
+    curator_annual: [
+        "100MB uploads per file",
+        "Roughly two months free each year",
+        "Best-value Curator membership",
+    ],
+};
 
 export default function MembershipScreen() {
     const colors = useColors();
@@ -83,9 +104,11 @@ export default function MembershipScreen() {
             // Native purchases resolve synchronously with the store result;
             // Stripe (web) confirms asynchronously via webhook, so only the
             // native success path shows an immediate confirmation.
-            if (isNativeBilling && result.success) {
+            if (result.success) {
                 Alert.alert(
-                    "Welcome to Curator",
+                    selectedPlan === "founding_curator"
+                        ? "Welcome, Founding Curator"
+                        : "Welcome to Curator",
                     "Your membership is now active.",
                 );
             }
@@ -224,15 +247,15 @@ export default function MembershipScreen() {
                     <Animated.View entering={FadeInDown.delay(175).springify()}>
                         <View style={styles.sectionHeader}>
                             <Ionicons name="ribbon-outline" size={20} color={colors.tertiary} />
-                            <Text style={styles.sectionTitle}>Curator Perks</Text>
+                            <Text style={styles.sectionTitle}>Curator Features</Text>
                         </View>
                         <View style={styles.card}>
-                            {CURATOR_PERKS.map((perk, index) => (
+                            {CURATOR_FEATURES.map((perk, index) => (
                                 <View
                                     key={perk.label}
                                     style={[
                                         styles.perkRow,
-                                        index === CURATOR_PERKS.length - 1 && {
+                                        index === CURATOR_FEATURES.length - 1 && {
                                             borderBottomWidth: 0,
                                         },
                                     ]}
@@ -335,6 +358,36 @@ export default function MembershipScreen() {
                                     );
                                 })}
                             </View>
+
+                            <View style={styles.selectedPlanFeatures}>
+                                <Text style={styles.selectedPlanTitle}>
+                                    {MEMBERSHIP_PLANS.find((plan) => plan.id === selectedPlan)?.name} features
+                                </Text>
+                                {PLAN_FEATURES[selectedPlan].map((feature) => (
+                                    <View key={feature} style={styles.selectedFeatureRow}>
+                                        <Ionicons
+                                            name="checkmark-circle"
+                                            size={17}
+                                            color={colors.primary}
+                                        />
+                                        <Text style={styles.selectedFeatureText}>{feature}</Text>
+                                    </View>
+                                ))}
+                            </View>
+
+                            {selectedPlan === "founding_curator" && (
+                                <View style={styles.earlyAccessNotice}>
+                                    <Ionicons
+                                        name="time-outline"
+                                        size={18}
+                                        color={colors.tertiary}
+                                    />
+                                    <Text style={styles.earlyAccessText}>
+                                        Founding Curator is available only during Early Access.
+                                        Join before the offer closes to keep the founding rate.
+                                    </Text>
+                                </View>
+                            )}
 
                             <TouchableOpacity
                                 style={styles.primaryButton}
@@ -507,6 +560,53 @@ const getStyles = (colors: ThemeColors) =>
             fontSize: 14,
             fontWeight: "700",
             color: colors.primary,
+        },
+        selectedPlanFeatures: {
+            gap: 8,
+            marginHorizontal: 16,
+            marginTop: 16,
+            padding: 14,
+            borderRadius: 15,
+            backgroundColor: colors.surfaceContainerLow,
+            borderWidth: 1,
+            borderColor: colors.outlineVariant,
+        },
+        selectedPlanTitle: {
+            color: colors.text,
+            fontSize: 14,
+            fontWeight: "800",
+            marginBottom: 2,
+        },
+        selectedFeatureRow: {
+            flexDirection: "row",
+            alignItems: "center",
+            gap: 8,
+        },
+        selectedFeatureText: {
+            flex: 1,
+            color: colors.onSurfaceVariant,
+            fontSize: 12,
+            lineHeight: 17,
+            fontWeight: "600",
+        },
+        earlyAccessNotice: {
+            flexDirection: "row",
+            alignItems: "flex-start",
+            gap: 9,
+            marginHorizontal: 16,
+            marginTop: 16,
+            padding: 12,
+            borderRadius: 13,
+            backgroundColor: `${colors.tertiary}12`,
+            borderWidth: 1,
+            borderColor: `${colors.tertiary}40`,
+        },
+        earlyAccessText: {
+            flex: 1,
+            color: colors.onSurfaceVariant,
+            fontSize: 12,
+            lineHeight: 17,
+            fontWeight: "600",
         },
         primaryButton: {
             marginHorizontal: 16,

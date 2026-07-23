@@ -24,8 +24,8 @@ function getItemImage(item: PublicShowcaseItem): string | null {
 }
 
 /**
- * Public, unauthenticated showcase view — reachable via a Curator's
- * "shareable link". Deliberately minimal: no tab bar, no auth chrome, no
+ * Public, unauthenticated showcase view — reachable through a member's
+ * shareable link. Deliberately minimal: no tab bar, no auth chrome, no
  * edit affordances. `AuthInitializer` exempts this "s" segment from the
  * sign-in redirect so signed-out visitors can actually load it.
  */

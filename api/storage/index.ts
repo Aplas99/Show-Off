@@ -1,11 +1,11 @@
-import { getHasActiveMembership } from "@/api/memberships";
+import {
+    getCurrentMembershipAccess,
+    getMembershipUploadLimitBytes,
+} from "@/api/memberships";
 import { supabase } from "@/lib/supabase";
 import { useMutation } from "@tanstack/react-query";
 import * as FileSystem from "expo-file-system/legacy";
 import { Alert } from "react-native";
-
-const FREE_USER_MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5MB
-const PAID_USER_MAX_FILE_SIZE_BYTES = 200 * 1024 * 1024; // 200MB
 
 interface UploadImageParams {
     uri: string;
@@ -41,9 +41,12 @@ export async function uploadImageToSupabase({
     bucketName = "item-images",
     kind = "image",
 }: UploadImageParams): Promise<string> {
-    // Paid members get the larger upload limit (see api/memberships).
-    const isPaidUser = await getHasActiveMembership();
-    const MAX_FILE_SIZE_BYTES = isPaidUser ? PAID_USER_MAX_FILE_SIZE_BYTES : FREE_USER_MAX_FILE_SIZE_BYTES;
+    const membership = await getCurrentMembershipAccess().catch(() => null);
+    const MAX_FILE_SIZE_BYTES = getMembershipUploadLimitBytes({
+        isPaidUser: membership?.isPaidUser ?? false,
+        tier: membership?.tier,
+        planId: membership?.planId,
+    });
 
     // 1. Validate file size (measure it ourselves when not provided)
     if (fileSize == null) {
