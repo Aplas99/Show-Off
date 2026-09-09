@@ -1,3 +1,4 @@
+import { CatalogRequestError, fetchCatalog } from "@/api/catalog";
 import { supabase } from "@/lib/supabase";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { z } from "zod";
@@ -126,9 +127,6 @@ export interface PokemonTcgDependencies {
   cacheCards: (cards: PokemonTcgCard[]) => Promise<void>;
 }
 
-const POKEMON_TCG_API_URL = "https://api.pokemontcg.io/v2";
-const PokemonTcgAPIKey = process.env.EXPO_PUBLIC_POKE_KEY || "";
-
 export class PokemonTcgApiError extends Error {
   status: number;
   path: string;
@@ -218,28 +216,15 @@ export function pokemonCardToCacheRow(card: PokemonTcgCard) {
   };
 }
 
-function pokemonHeaders() {
-  const headers: Record<string, string> = {
-    Accept: "application/json",
-  };
-
-  if (PokemonTcgAPIKey) {
-    headers["X-Api-Key"] = PokemonTcgAPIKey;
-  }
-
-  return headers;
-}
-
 async function fetchPokemonApi(path: string) {
-  const response = await fetch(`${POKEMON_TCG_API_URL}${path}`, {
-    headers: pokemonHeaders(),
-  });
-
-  if (!response.ok) {
-    throw new PokemonTcgApiError(response.status, path);
+  try {
+    return await fetchCatalog({ provider: "pokemon", path });
+  } catch (error) {
+    if (error instanceof CatalogRequestError && error.status === 404) {
+      throw new PokemonTcgApiError(404, path);
+    }
+    throw error;
   }
-
-  return response.json();
 }
 
 const defaultDependencies: PokemonTcgDependencies = {
