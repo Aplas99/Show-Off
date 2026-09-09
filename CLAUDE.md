@@ -30,8 +30,6 @@ npx jest --watch                                    # watch mode
 |---|---|
 | `EXPO_PUBLIC_SUPABASE_URL` | Supabase project URL |
 | `EXPO_PUBLIC_ANON_KEY` | Supabase public anon key |
-| `EXPO_PUBLIC_POKE_KEY` | Pokémon TCG API key (bundled; move to Edge Function before production) |
-| `EXPO_PUBLIC_BARCODE_LOOKUP_API_KEY` | Barcode Lookup product search API |
 | `EXPO_PUBLIC_CARD_SCAN_DEBUG` | Set to `false` to silence `[CardScan]` OCR logs |
 | `EXPO_PUBLIC_ACTION_DEBUG` | Set to `false` to silence `lib/actionDebug.ts` logs (barcode scanning, product/API search, manual item creation, Magic: The Gathering search) |
 | `EXPO_PUBLIC_MEMBERSHIP_DEBUG` | Set to `false` to silence development-only `[Membership]` checkout diagnostics; logs never include tokens, checkout URLs, or payment details |
@@ -44,6 +42,12 @@ npx jest --watch                                    # watch mode
 | `EXPO_PUBLIC_ADMOB_REWARDED_UNIT_ID` | AdMob rewarded ad unit id (grants bonus scans); unset falls back to Google's test unit |
 
 Stripe server secrets (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_FOUNDING_CURATOR`, `STRIPE_PRICE_ID_CURATOR_MONTHLY`, `STRIPE_PRICE_ID_CURATOR_ANNUAL`) live in Supabase Edge Function secrets, not app env — see `docs/stripe-memberships.md`.
+
+Catalog secrets (`POKEMON_TCG_API_KEY`, `BARCODE_LOOKUP_API_KEY`) also live only
+in Edge Function secrets. Deploy `catalog-proxy` and all catalog migrations
+before using the client; see `docs/catalog-proxy.md`. Magic and product cache
+writes now use trusted server code, including UPCItemDB's shared trial budget.
+Pokemon card/roster and manual-card writes still need migration.
 
 ## Architecture
 

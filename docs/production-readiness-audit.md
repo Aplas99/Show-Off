@@ -6,6 +6,29 @@ clean, ESLint clean, 86/86 Jest tests passing.
 
 Legend: 🔴 blocker before launch · 🟠 should fix soon · 🟡 nice to have
 
+## Implementation update - 2026-09-09
+
+The active work is now tracked in [the final push checklist](final-push-checklist.md)
+on `codex/final-push`, starting from `iap-memberships` at `6181a4a`. Audience is
+13+, with a whole-showcase 18+ designation required only for public showcases
+or when switching a private showcase to public. These age controls are planned,
+not yet implemented.
+
+Item 3 is partially addressed locally: Pokemon and Barcode Lookup requests use
+the authenticated `catalog-proxy` Edge Function, and both vendor-key reads have
+been removed from the client. Deployment, server secret configuration, key
+rotation, and device verification remain. Item 4 is partially addressed locally:
+Magic and barcode product catalog writes now happen inside the proxy, with
+migrations revoking client writes. UPCItemDB uses the proxy with a shared trial
+budget and Barcode Lookup fallback. Pokemon cards/rosters and manual cards still
+need migration. Existing cached data has not been independently revalidated.
+
+Local checks: 221/221 tests passing, app TypeScript and the new Edge Function's
+Deno type-check passing, and isolated PostgreSQL rate-limit and Magic/product write
+permission assertions passing.
+ESLint has 0 errors and 13 existing warnings. No backend deployment has occurred.
+The original findings below are historical; use the checklist for current status.
+
 ## Status update (later on 2026-07-13)
 
 Fixed on this branch: 1 (password reset flow), 2 (fake Google buttons
