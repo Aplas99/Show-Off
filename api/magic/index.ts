@@ -1,72 +1,16 @@
-import { createActionLogger } from "@/lib/actionDebug";
-import { supabase } from "@/lib/supabase";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
-import { z } from "zod";
 
-// scryfall.com/docs/api — no auth required. Search is field-based only, no
-// image/OCR scan endpoint, so this integration is search-only like the
-// magicthegathering.io one it replaces.
+import { CatalogRequestError, fetchCatalog } from "@/api/catalog";
+import { createActionLogger } from "@/lib/actionDebug";
+import { magicCardSchema, scryfallSearchResponseSchema, type MagicCard } from "@/lib/magicCatalog";
+import { supabase } from "@/lib/supabase";
+
+export { magicCardSchema, getMagicCardImageUrl, getMagicCardPrice, getMagicCardTypeLine, type MagicCard } from "@/lib/magicCatalog";
+
+// Search and on-device OCR name matches resolve through the authenticated
+// proxy, which saves provider records before the app creates item references.
 
 const magicDebug = createActionLogger("MagicTCG");
-
-const scryfallImageUrisSchema = z
-  .object({
-    small: z.string().optional(),
-    normal: z.string().optional(),
-    large: z.string().optional(),
-    png: z.string().optional(),
-    art_crop: z.string().optional(),
-    border_crop: z.string().optional(),
-  })
-  .passthrough();
-
-const scryfallCardFaceSchema = z
-  .object({
-    name: z.string(),
-    mana_cost: z.string().optional(),
-    type_line: z.string().optional(),
-    oracle_text: z.string().optional(),
-    image_uris: scryfallImageUrisSchema.optional(),
-  })
-  .passthrough();
-
-const scryfallPricesSchema = z
-  .object({
-    usd: z.string().nullable().optional(),
-    usd_foil: z.string().nullable().optional(),
-  })
-  .passthrough();
-
-export const magicCardSchema = z
-  .object({
-    id: z.string().min(1),
-    oracle_id: z.string().optional(),
-    name: z.string().min(1),
-    mana_cost: z.string().optional(),
-    cmc: z.number().optional(),
-    type_line: z.string().optional(),
-    oracle_text: z.string().optional(),
-    colors: z.array(z.string()).optional().default([]),
-    color_identity: z.array(z.string()).optional().default([]),
-    rarity: z.string().optional(),
-    set: z.string().optional(),
-    set_name: z.string().optional(),
-    collector_number: z.string().optional(),
-    artist: z.string().optional(),
-    image_uris: scryfallImageUrisSchema.optional(),
-    card_faces: z.array(scryfallCardFaceSchema).optional(),
-    prices: scryfallPricesSchema.optional(),
-  })
-  .passthrough();
-
-const scryfallSearchResponseSchema = z.object({
-  object: z.literal("list"),
-  total_cards: z.number().optional(),
-  has_more: z.boolean().optional(),
-  data: z.array(magicCardSchema),
-});
-
-export type MagicCard = z.infer<typeof magicCardSchema>;
 
 export interface MagicCardSearchResult {
   cards: MagicCard[];
@@ -97,14 +41,7 @@ export interface MagicTcgDependencies {
     query: string,
     page: number,
   ) => Promise<{ cards: MagicCard[]; page: number }>;
-  cacheCards: (cards: MagicCard[]) => Promise<void>;
 }
-
-const SCRYFALL_API_URL = "https://api.scryfall.com";
-export const SCRYFALL_REQUEST_HEADERS = {
-  Accept: "application/json;q=0.9,*/*;q=0.8",
-  "User-Agent": "Show-Off/1.0.0 (Expo React Native)",
-} as const;
 
 export class MagicApiError extends Error {
   status: number;
@@ -142,72 +79,15 @@ function parseCachedCard(row: MagicCardCacheRow): MagicCard | null {
   return parsed.success ? parsed.data : null;
 }
 
-/** DFCs (double-faced cards) have no top-level `image_uris` — fall back to the front face. */
-export function getMagicCardImageUrl(
-  card: MagicCard,
-  size: "small" | "normal" = "normal",
-): string | null {
-  return (
-    card.image_uris?.[size] ?? card.card_faces?.[0]?.image_uris?.[size] ?? null
-  );
-}
-
-export function getMagicCardPrice(card: MagicCard): number | null {
-  const usd = card.prices?.usd ?? card.prices?.usd_foil;
-  if (!usd) return null;
-  const parsed = Number(usd);
-  return Number.isFinite(parsed) ? parsed : null;
-}
-
-export function getMagicCardTypeLine(card: MagicCard): string | null {
-  return card.type_line ?? card.card_faces?.[0]?.type_line ?? null;
-}
-
-export function magicCardToCacheRow(card: MagicCard) {
-  const priceUsd = card.prices?.usd ? Number(card.prices.usd) : null;
-  const priceUsdFoil = card.prices?.usd_foil ? Number(card.prices.usd_foil) : null;
-
-  return {
-    id: card.id,
-    oracle_id: card.oracle_id ?? null,
-    name: card.name,
-    mana_cost: card.mana_cost ?? null,
-    cmc: card.cmc ?? null,
-    type_line: getMagicCardTypeLine(card),
-    oracle_text: card.oracle_text ?? card.card_faces?.[0]?.oracle_text ?? null,
-    colors: card.colors,
-    color_identity: card.color_identity,
-    rarity: card.rarity ?? null,
-    set_code: card.set ?? null,
-    set_name: card.set_name ?? null,
-    collector_number: card.collector_number ?? null,
-    artist: card.artist ?? null,
-    image_small: getMagicCardImageUrl(card, "small"),
-    image_normal: getMagicCardImageUrl(card, "normal"),
-    price_usd: Number.isFinite(priceUsd) ? priceUsd : null,
-    price_usd_foil: Number.isFinite(priceUsdFoil) ? priceUsdFoil : null,
-    raw_data: card,
-    cached_at: new Date().toISOString(),
-  };
-}
-
 export async function fetchScryfallApi(path: string) {
-  const response = await fetch(`${SCRYFALL_API_URL}${path}`, {
-    headers: SCRYFALL_REQUEST_HEADERS,
-  });
-
-  if (!response.ok) {
-    let details: string | undefined;
-    try {
-      const body = await response.json();
-      details = typeof body?.details === "string" ? body.details : undefined;
-    } catch {
-      // Error body wasn't JSON (or was empty) — fall back to just the status.
+  try {
+    return await fetchCatalog({ provider: "magic", path });
+  } catch (error) {
+    if (error instanceof CatalogRequestError && error.status === 404) {
+      throw new MagicApiError(404, path);
     }
-    throw new MagicApiError(response.status, path, details);
+    throw error;
   }
-
-  return response.json();
 }
 
 const defaultDependencies: MagicTcgDependencies = {
@@ -236,17 +116,6 @@ const defaultDependencies: MagicTcgDependencies = {
     const parsed = scryfallSearchResponseSchema.parse(raw);
 
     return { cards: parsed.data, page };
-  },
-  cacheCards: async (cards) => {
-    if (cards.length === 0) return;
-
-    const { error } = await supabase
-      .from("magic_cards")
-      .upsert(cards.map(magicCardToCacheRow), { onConflict: "id" });
-
-    if (error) {
-      console.warn("[Magic TCG] Failed to update cache:", error.message);
-    }
   },
 };
 
@@ -293,8 +162,6 @@ export async function searchMagicCardsCacheFirst(
     throw error;
   }
 
-  await dependencies.cacheCards(externalResult.cards);
-
   const cards = externalResult.cards.slice(0, pageSize);
   magicDebug.log("search.completed", {
     query,
@@ -302,10 +169,6 @@ export async function searchMagicCardsCacheFirst(
     resultCount: cards.length,
   });
   return { cards, page, pageSize, source: "api" };
-}
-
-export async function cacheMagicCards(cards: MagicCard[]) {
-  await defaultDependencies.cacheCards(cards);
 }
 
 export function useCreateMagicCardBatch() {
