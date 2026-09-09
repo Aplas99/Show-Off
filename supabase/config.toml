@@ -392,6 +392,10 @@ deno_version = 2
 enabled = true
 verify_jwt = true
 
+[functions.catalog-proxy]
+enabled = true
+verify_jwt = true
+
 [functions.stripe-checkout]
 enabled = true
 verify_jwt = true

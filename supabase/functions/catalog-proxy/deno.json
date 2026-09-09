@@ -1,0 +1,8 @@
+{
+  "imports": {
+    "zod": "npm:zod@4.3.6",
+    "@/lib/catalogValidation": "../../../lib/catalogValidation.ts",
+    "@/lib/magicCatalog": "../../../lib/magicCatalog.ts",
+    "@/lib/productCatalog": "../../../lib/productCatalog.ts"
+  }
+}
