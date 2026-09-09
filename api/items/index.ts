@@ -1,3 +1,5 @@
+import { fetchExternalProducts, fetchFromBarcodeLookup, resolveProductForItem } from "@/api/products";
+import type { CatalogProduct } from "@/lib/productCatalog";
 import { uploadImageToSupabase } from "@/api/storage";
 import {
   searchPokemonCardsCacheFirst,
@@ -19,19 +21,7 @@ import {
 import { z } from "zod";
 
 // --- Types ---
-export interface Product {
-  title: string;
-  brand?: string;
-  description?: string;
-  images?: string[];
-  ean?: string;
-  upc?: string;
-  isbn?: string;
-  category?: string;
-  model?: string;
-  color?: string;
-  manufacturer?: string;
-  price?: number;
+export interface Product extends CatalogProduct {
   pokemonTcgId?: string;
   pokemonSetId?: string;
   pokemonSetName?: string;
@@ -99,9 +89,6 @@ export interface ItemWithProduct {
   /** Scryfall color codes (W/U/B/R/G); empty for colorless cards. */
   magicColors?: string[];
 }
-
-const BarcodeLookupAPIKey =
-  process.env.EXPO_PUBLIC_BARCODE_LOOKUP_API_KEY || "";
 
 const searchDebug = createActionLogger("Search");
 const createItemDebug = createActionLogger("CreateItem");
@@ -193,224 +180,6 @@ export function pokemonCardToProduct(card: PokemonTcgCard): Product {
   };
 }
 
-// --- Helpers ---
-function normalizeCodes(searchQuery: string) {
-  const sanitized = searchQuery.replace(/[\s-]/g, "").trim();
-  const isNumeric = /^\d+$/.test(sanitized);
-  return {
-    ean: isNumeric && sanitized.length === 13 ? sanitized : undefined,
-    upc: isNumeric && sanitized.length === 12 ? sanitized : undefined,
-    isbn:
-      isNumeric && (sanitized.length === 10 || sanitized.length === 13)
-        ? sanitized
-        : undefined,
-  };
-}
-
-function normalizeProductCode(code?: string | null) {
-  const sanitized = code?.replace(/[\s-]/g, "").trim();
-  return sanitized || null;
-}
-
-function getProductCode(
-  productData?: Product | null,
-  fallbackCode?: string | null,
-) {
-  return (
-    normalizeProductCode(productData?.ean) ||
-    normalizeProductCode(productData?.upc) ||
-    normalizeProductCode(productData?.isbn) ||
-    normalizeProductCode(fallbackCode)
-  );
-}
-
-function buildProductRow(productData: Product, productEan: string) {
-  return {
-    ean: productEan,
-    searchableTitle: productData.title.trim(),
-    searchableDescription: productData.description || "",
-    searchableBrand: productData.brand || productData.manufacturer || "",
-    data: {
-      ...productData,
-      ean: normalizeProductCode(productData.ean) || productEan,
-      upc: normalizeProductCode(productData.upc) || undefined,
-      isbn: normalizeProductCode(productData.isbn) || undefined,
-    },
-  };
-}
-
-async function upsertProduct(productData: Product, productEan: string) {
-  if (!productData.title.trim()) return null;
-
-  const productRow = buildProductRow(productData, productEan);
-  const { error } = await supabase
-    .from("products")
-    .upsert(productRow, {
-      onConflict: "ean",
-    });
-
-  if (error) {
-    const isGeneratedColumnError =
-      error.code === "428C9" || error.message.includes("generated column");
-
-    if (!isGeneratedColumnError) throw error;
-
-    const { error: minimalError } = await supabase
-      .from("products")
-      .upsert(
-        {
-          ean: productRow.ean,
-          data: productRow.data,
-        },
-        {
-          onConflict: "ean",
-        },
-      );
-
-    if (minimalError) throw minimalError;
-  }
-
-  return productEan;
-}
-
-async function findExistingProductEan(productEan: string) {
-  const { data, error } = await supabase
-    .from("products")
-    .select("ean")
-    .eq("ean", productEan)
-    .maybeSingle();
-
-  if (error) throw error;
-
-  return data?.ean ?? null;
-}
-
-// Fetch from Barcode Lookup API
-async function fetchFromBarcodeLookup(
-  query: string,
-  page = 1,
-  filters?: Partial<SearchParams>,
-): Promise<Product[]> {
-  if (!BarcodeLookupAPIKey) {
-    console.warn(
-      "[API] ⚠️ Barcode Lookup API key is missing. Skipping request.",
-    );
-    return [];
-  }
-
-  // if (filters) {
-  // We only validate the partial structure here
-  // Use .partial() if you want to validate strict partials, or just trust TS for internal calls
-  // But since this is 'filters', let's just proceed. 
-  // Actually, let's validate the whole object if we constructed it from user input elsewhere.
-  // For now, no runtime check needed inside this helper unless we want to catch bugs.
-  // }
-
-  const sanitized = query.replace(/\s+/g, " ").trim();
-
-  const urlParams = new URLSearchParams();
-  urlParams.append("search", sanitized);
-  urlParams.append("formatted", "y");
-  // NOTE: In production, verify this key is available in process.env
-  urlParams.append("key", BarcodeLookupAPIKey);
-  urlParams.append("page", String(page));
-
-  if (filters?.brand?.trim()) urlParams.append("brand", filters.brand.trim());
-  if (filters?.manufacturer?.trim())
-    urlParams.append("manufacturer", filters.manufacturer.trim());
-  if (filters?.category?.trim())
-    urlParams.append("category", filters.category.trim());
-
-  searchDebug.log("barcode-lookup.requested", { query: sanitized, page });
-
-  const response = await fetch(
-    `https://api.barcodelookup.com/v3/products?${urlParams.toString()}`,
-  );
-
-  if (!response.ok) {
-    if (response.status === 404) {
-      searchDebug.log("barcode-lookup.not-found", { query: sanitized, page });
-      return [];
-    }
-    searchDebug.error(
-      "barcode-lookup.failed",
-      new Error(`Barcode Lookup API error: ${response.status}`),
-    );
-    throw new Error(`Barcode Lookup API error: ${response.status}`);
-  }
-
-  const raw = await response.json();
-  const rawItems: any[] = Array.isArray(raw?.products) ? raw.products : [];
-
-  const results = rawItems
-    .map((item: any) => ({
-      title: item.title || "",
-      upc: item.barcode_number,
-      ean: item.barcode_number,
-      images: Array.isArray(item.images) ? item.images : undefined,
-      description: item.description,
-      brand: item.brand,
-      category: item.category,
-      price: item.stores?.[0]?.price
-        ? parseFloat(item.stores[0].price)
-        : undefined,
-    }))
-    .filter((p) => p.title && p.ean);
-
-  searchDebug.log("barcode-lookup.completed", {
-    query: sanitized,
-    page,
-    resultCount: results.length,
-  });
-  return results;
-}
-
-// Fetch from UPCItemDB (Trial)
-async function fetchFromUPCItemDB(query: string): Promise<Product[]> {
-  const sanitized = query.replace(/\s+/g, " ").trim();
-  const isCode = /^\d+$/.test(sanitized);
-
-  searchDebug.log("upcitemdb.requested", { query: sanitized, isCode });
-
-  const endpoint = isCode ? "lookup" : "search";
-  const body = isCode ? { upc: sanitized } : { q: sanitized };
-
-  const response = await fetch(
-    `https://api.upcitemdb.com/prod/trial/${endpoint}`,
-    {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-    },
-  );
-
-  if (!response.ok) {
-    const error = new Error(`UPC API error: ${response.status}`);
-    searchDebug.error("upcitemdb.failed", error);
-    throw error;
-  }
-
-  const raw = await response.json();
-  const rawItems: any[] = Array.isArray(raw?.items) ? raw.items : [];
-
-  const results = rawItems.map((item: any) => ({
-    title: item.title || "",
-    ean: item.ean,
-    upc: item.upc,
-    isbn: item.isbn,
-    images: Array.isArray(item.images) ? item.images : undefined,
-    description: item.description,
-    brand: item.brand,
-    price: item.lowest_recorded_price,
-  }));
-
-  searchDebug.log("upcitemdb.completed", {
-    query: sanitized,
-    resultCount: results.length,
-  });
-  return results;
-}
-
 // --- Hooks ---
 
 // Main Product Search Hook (Infinite)
@@ -482,7 +251,7 @@ export function useSearchExternalApi(query: string) {
     queryFn: async () => {
       if (!query) return { items: [] };
       searchDebug.log("external-search.started", { query });
-      const items = await fetchFromUPCItemDB(query);
+      const items = await fetchExternalProducts(query);
       searchDebug.log("external-search.completed", {
         query,
         resultCount: items.length,
@@ -513,42 +282,21 @@ export function useCreateItemWithProductLookup() {
       } = await supabase.auth.getUser();
       if (!user) throw new Error("User not authenticated");
 
-      let productData: Product | undefined = payload.productData ?? undefined;
-      const pokemonTcgCardId = productData?.pokemonTcgId ?? null;
-      const { ean, upc, isbn } = payload.searchQuery
-        ? normalizeCodes(payload.searchQuery)
-        : { ean: undefined, upc: undefined, isbn: undefined };
-
-      if (!productData && (ean || upc || isbn) && payload.searchQuery) {
-        try {
-          // Try UPCItemDB first (free/trial)
-          const upcItems = await fetchFromUPCItemDB(payload.searchQuery);
-          if (upcItems.length > 0) productData = upcItems[0];
-        } catch {
-          createItemDebug.log("create.upc-lookup-failed-trying-barcode-lookup");
-          try {
-            const blItems = await fetchFromBarcodeLookup(payload.searchQuery);
-            if (blItems.length > 0) productData = blItems[0];
-          } catch {
-            createItemDebug.log("create.product-lookup-exhausted");
-          }
-        }
+      const pokemonTcgCardId = payload.productData?.pokemonTcgId ?? null;
+      let resolved: Awaited<ReturnType<typeof resolveProductForItem>>;
+      try {
+        resolved = await resolveProductForItem(payload.productData, payload.searchQuery);
+      } catch (error) {
+        if (!payload.customTitle) throw error;
+        // A manually titled item may be saved without a catalog association.
+        resolved = { product: payload.productData, productEan: null };
       }
-
-      const fallbackProductCode = ean || upc || isbn || null;
-      const candidateProductEan = getProductCode(
-        productData,
-        fallbackProductCode,
-      );
-      let productEan: string | null = null;
-
-      if (candidateProductEan) {
-        if (productData) {
-          productEan = await upsertProduct(productData, candidateProductEan);
-        }
-        if (!productEan) {
-          productEan = await findExistingProductEan(candidateProductEan);
-        }
+      const { product: productData, productEan } = resolved;
+      // Preserve selected product details as personal fields if it has no
+      // shared record. Never write client-supplied metadata into the catalog.
+      const personalProduct = !productEan && !pokemonTcgCardId ? productData : null;
+      if (!productEan && !pokemonTcgCardId && !payload.customTitle && !personalProduct?.title) {
+        throw new Error("No matching product was found. Add a title to save it manually.");
       }
 
       // Handle Image Upload
@@ -573,15 +321,15 @@ export function useCreateItemWithProductLookup() {
           product_ean: productEan,
           pokemon_tcg_card_id: pokemonTcgCardId,
           is_verified: !!productEan || !!pokemonTcgCardId,
-          custom_title: payload.customTitle || null,
-          custom_brand: payload.customBrand || null,
+          custom_title: payload.customTitle || personalProduct?.title || null,
+          custom_brand: payload.customBrand || personalProduct?.brand || null,
           custom_publisher: payload.customPublisher || null,
-          custom_category: payload.customCategory || null,
+          custom_category: payload.customCategory || personalProduct?.category || null,
           condition: payload.condition,
-          user_description: payload.userDescription,
+          user_description: payload.userDescription ?? personalProduct?.description,
           for_sale: payload.forSale,
           price: payload.price,
-          image_url: finalImageUrl || null,
+          image_url: finalImageUrl || personalProduct?.images?.[0] || null,
         })
         .select()
         .single();
