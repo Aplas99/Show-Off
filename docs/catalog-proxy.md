@@ -6,8 +6,9 @@ Pokemon TCG, Barcode Lookup, UPCItemDB, and Magic/Scryfall requests use the auth
 `catalog-proxy` Edge Function. The client contains no vendor key and has no
 direct fallback to these providers. Magic results are validated and persisted
 by the server before being returned. Product responses are also normalized and
-saved by the server. Migrations revoke client writes to `magic_cards` and
-`products`; Pokemon card/roster and manual-card writes remain pending SEC-02.
+saved by the server. Pokemon and TCGTracking cards now follow the same trusted
+write boundary. Migrations revoke client table and column writes to all shared
+catalogs and Pokemon set manifests; manual cards use a bounded owner-only RPC.
 Existing cached records need integrity review; restricting future writes does
 not prove historical data is trustworthy.
 
@@ -16,7 +17,8 @@ not prove historical data is trustworthy.
 1. Verify migration history and apply
    `20260909160000_add_catalog_proxy_rate_limits.sql` and then
    `20260909200000_secure_magic_catalog_writes.sql`, followed by
-   `20260909210000_secure_product_catalog_writes.sql`, to a test environment.
+   `20260909210000_secure_product_catalog_writes.sql`, and the complete ordered
+   migration chain through `20260915180000_secure_pokemon_catalog.sql`, to a test environment.
 2. Configure `POKEMON_TCG_API_KEY` and `BARCODE_LOOKUP_API_KEY` as Supabase Edge
    Function secrets. They are not Expo environment variables.
 3. Deploy `catalog-proxy` with its `deno.json` and JWT verification enabled.
@@ -113,3 +115,28 @@ rollback strategy.
 Database tests in a local PostgreSQL engine do not replace live Supabase gateway,
 JWT, vendor credential, device, load, or deployment verification. No production
 database changes are required to run the isolated tests.
+
+## Pokemon trust and legacy data
+
+The Pokemon migration clears old complete-set flags and removes verified badges
+from existing Pokemon items, since the old shared cache was caller writable.
+Legacy entries remain available for existing item display, but catalog search
+and direct cache lookup require a trusted vendor refresh (or an owner manual
+entry). Refreshing vendor data does not automatically reverify old items.
+Do not bulk mark historical rows trusted without vendor reconciliation.
+
+Manual records use server-generated IDs, have a private owner, no vendor prices
+or media, and cannot receive verification through batch creation or direct item
+edits. Historical manual cards with one referenced owner are attributed to that
+owner; ambiguous/unreferenced legacy manual cards are excluded from searches.
+Review these records before migrating real user data. Account deletion cascades
+owned manual entries. The trusted flag is server controlled; it signifies catalog
+provenance, not authentication of a physical collectible.
+
+Complete rosters use a bounded server pagination operation: up to four pages,
+1,000 cards, and 30 seconds. Every additional vendor call consumes quota. Duplicate
+IDs, changed counts, wrong-set cards and incomplete downloads cannot create a
+complete manifest. TCGTracking uses a fixed host, strict read paths and Pokemon's
+request bucket; it needs no Pokemon API key. Deploy before testing manual saves,
+fallback searches and set completion. Client write revocation will break older
+clients which still populate the shared cache.

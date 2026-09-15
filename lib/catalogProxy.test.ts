@@ -1,16 +1,19 @@
 import { createCatalogProxyHandler } from "@/supabase/functions/_shared/catalogProxy";
 
+const pokemonCard = { id: "base1-4", name: "Charizard", supertype: "Pokemon", set: { id: "base1", name: "Base" }, number: "4", images: { small: "https://images.pokemontcg.io/base1/4.png", large: "https://images.pokemontcg.io/base1/4_hires.png" } };
 function setup() {
   const dependencies = {
     authenticate: jest.fn().mockResolvedValue("user-1"),
     consumeRequest: jest.fn().mockResolvedValue(true),
     reserveMagicRequest: jest.fn().mockResolvedValue(true),
     persistMagicCards: jest.fn().mockResolvedValue(undefined),
+    persistPokemonCards: jest.fn().mockResolvedValue(undefined),
+    persistPokemonRoster: jest.fn().mockResolvedValue(undefined),
     persistProducts: jest.fn().mockResolvedValue(undefined),
     reserveUpcRequest: jest.fn().mockResolvedValue(true),
     deferUpcRequests: jest.fn().mockResolvedValue(undefined),
     getSecret: jest.fn().mockReturnValue("server-only-key"),
-    fetch: jest.fn().mockResolvedValue(new Response(JSON.stringify({ data: [] }))),
+    fetch: jest.fn().mockResolvedValue(new Response(JSON.stringify({ data: pokemonCard }))),
   };
   return { dependencies, handler: createCatalogProxyHandler(dependencies) };
 }
@@ -24,6 +27,45 @@ function request(body: unknown = { provider: "pokemon", path: "/cards/base1-4" }
 }
 
 describe("authenticated catalog proxy", () => {
+  it("persists official Pokemon cards and rejects caller-written records", async () => {
+    const { handler, dependencies } = setup();
+    expect((await handler(request())).status).toBe(200);
+    expect(dependencies.persistPokemonCards).toHaveBeenCalledWith([expect.objectContaining({ id: "base1-4", catalog_trusted: true })], expect.any(AbortSignal));
+    expect((await handler(request({ provider: "pokemon", path: "/cards/base1-4", cards: [pokemonCard] }))).status).toBe(400);
+  });
+  it("does not return unsaved or forged vendor cards", async () => {
+    const { handler, dependencies } = setup();
+    dependencies.persistPokemonCards.mockRejectedValue(new Error("private details"));
+    expect((await handler(request())).status).toBe(503);
+    dependencies.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: { ...pokemonCard, id: "manual:forged" } })));
+    expect((await handler(request())).status).toBe(502);
+    expect(dependencies.persistPokemonCards).toHaveBeenCalledTimes(1);
+  });
+  it("uses server-only tracking requests without forwarding Pokemon secrets", async () => {
+    const { handler, dependencies } = setup();
+    dependencies.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ set_id: 12, set_name: "Base", products: [{ id: 34, name: "Charizard", number: "4" }] })));
+    expect((await handler(request({ provider: "tcgtracking", path: "/3/sets/12/cards" }))).status).toBe(200);
+    expect(dependencies.fetch.mock.calls[0][0].toString()).toBe("https://openapi.tcgtracking.com/v1/3/sets/12/cards");
+    expect(dependencies.getSecret).not.toHaveBeenCalled();
+    expect(dependencies.persistPokemonCards).toHaveBeenCalledWith([expect.objectContaining({ id: "tcgtracking:34" })], expect.any(AbortSignal));
+  });
+  it("marks only fully validated rosters complete", async () => {
+    const { handler, dependencies } = setup();
+    dependencies.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: [pokemonCard], page: 1, pageSize: 250, count: 1, totalCount: 2 })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ ...pokemonCard, id: "base1-5", number: "5" }], page: 2, pageSize: 250, count: 1, totalCount: 2 })));
+    const response = await handler(request({ provider: "pokemon", path: "/sets/base1/cards" }));
+    expect(response.status).toBe(200);
+    expect(dependencies.persistPokemonRoster).toHaveBeenCalledWith(expect.objectContaining({ set_id: "base1", cached_card_count: 2, is_complete: true }), expect.any(AbortSignal));
+    expect(dependencies.consumeRequest).toHaveBeenCalledTimes(2);
+  });
+  it.each(["duplicate", "changed-count", "wrong-set"])("rejects an inconsistent %s roster", async (scenario) => {
+    const { handler, dependencies } = setup();
+    dependencies.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: [pokemonCard], page: 1, pageSize: 250, count: 1, totalCount: 2 })))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ ...pokemonCard, id: scenario === "duplicate" ? pokemonCard.id : "base1-5", set: scenario === "wrong-set" ? { id: "base2", name: "Other" } : pokemonCard.set }], page: 2, pageSize: 250, count: 1, totalCount: scenario === "changed-count" ? 3 : 2 })));
+    expect((await handler(request({ provider: "pokemon", path: "/sets/base1/cards" }))).status).toBe(502);
+    expect(dependencies.persistPokemonRoster).not.toHaveBeenCalled();
+    expect(dependencies.persistPokemonCards).not.toHaveBeenCalled();
+  });
   it("caches barcode provider records before returning them", async () => {
     const { handler, dependencies } = setup();
     dependencies.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ products: [

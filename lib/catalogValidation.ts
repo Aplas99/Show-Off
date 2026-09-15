@@ -3,6 +3,7 @@ import { z } from "zod";
 const filterSchema = z.string().trim().max(160);
 
 export const catalogRequestSchema = z.discriminatedUnion("provider", [
+  z.object({ provider: z.literal("tcgtracking"), path: z.string().min(1).max(1000) }).strict(),
   z.object({
     provider: z.literal("upc"),
     query: z.string().trim().min(1).max(200),
@@ -40,6 +41,15 @@ export function validateCatalogRequest(input: unknown) {
   const request = catalogRequestSchema.parse(input);
   if (request.provider === "barcode" || request.provider === "upc") return request;
 
+  if (request.provider === "tcgtracking") {
+    if (/^\/3\/sets\/[1-9][0-9]{0,9}\/cards$/.test(request.path)) return request;
+    if (!request.path.startsWith("/3/search?")) throw new Error("Unsupported tracking request");
+    const entries = [...new URLSearchParams(request.path.slice(10)).entries()];
+    const params = z.object({ q: z.string().trim().min(1).max(160) }).strict().parse(Object.fromEntries(entries));
+    if (entries.length !== 1) throw new Error("Invalid tracking query");
+    return { ...request, path: `/3/search?${new URLSearchParams(params)}` };
+  }
+
   if (request.provider === "magic") {
     const prefix = request.path.startsWith("/cards/search?") ? "/cards/search?" : "/cards/named?";
     if (!request.path.startsWith(prefix)) throw new Error("Unsupported Magic catalog request.");
@@ -59,7 +69,7 @@ export function validateCatalogRequest(input: unknown) {
     ).toString() };
   }
 
-  if (/^\/cards\/[a-zA-Z0-9_-]{1,100}$/.test(request.path)) return request;
+  if (/^\/cards\/[a-zA-Z0-9_-]{1,100}$/.test(request.path) || /^\/sets\/[a-zA-Z0-9_-]{1,100}\/cards$/.test(request.path)) return request;
   if (!request.path.startsWith("/cards?")) {
     throw new Error("Unsupported Pokemon catalog request.");
   }

@@ -1,5 +1,6 @@
+import { supabase } from "@/lib/supabase";
+import { pokemonTcgCardSchema } from "@/lib/pokemonCatalog";
 import {
-  cachePokemonCards,
   searchPokemonCardsCacheFirst,
   type PokemonTcgCard,
 } from "./index";
@@ -95,7 +96,6 @@ export async function searchPokemonCardSources(
         number: input.number,
         limit: input.limit,
       });
-      await cachePokemonCards(fallback);
     } catch (error) {
       console.warn(
         "[Pokémon TCG] TCGTracking search failed:",
@@ -128,28 +128,9 @@ export async function createManualPokemonCard(input: {
     throw new Error("Card name and collection are required");
   }
 
-  const slug = `${name}-${collection}-${input.number ?? "unknown"}`
-    .toLowerCase()
-    .replace(/[^a-z0-9]+/g, "-")
-    .replace(/^-|-$/g, "")
-    .slice(0, 80);
-  const card: PokemonTcgCard = {
-    id: `manual:${slug}:${Date.now()}`,
-    name,
-    supertype: "Pokémon",
-    subtypes: [],
-    types: [],
-    set: {
-      id: `manual:${collection.toLowerCase().replace(/[^a-z0-9]+/g, "-")}`,
-      name: collection,
-    },
-    number: input.number?.trim() || "unknown",
-    nationalPokedexNumbers: [],
-    images: { small: "", large: "" },
-    source: "manual",
-  };
-
-  await cachePokemonCards([card]);
+  const { data, error } = await supabase.rpc("create_manual_pokemon_card", { p_name: name, p_collection: collection, p_number: input.number?.trim() || "unknown" });
+  if (error) throw new Error(error.message);
+  const card = pokemonTcgCardSchema.parse(data);
   cardScanDebug("manual-card.created", {
     card: summarizePokemonCard(card),
   });

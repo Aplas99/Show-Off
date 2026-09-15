@@ -2,6 +2,9 @@ import { validateCatalogRequest } from "@/lib/catalogValidation";
 import { magicCardSchema, magicCardToCacheRow, scryfallSearchResponseSchema } from "@/lib/magicCatalog";
 import { parseBarcodeProducts, parseUpcProducts, productsToCacheRows, upcRetryDelay } from "@/lib/productCatalog";
 
+import { pokemonCardResponseSchema, pokemonSearchResponseSchema, pokemonCardToCacheRow, type PokemonTcgCard } from "@/lib/pokemonCatalog";
+import { parseTrackingCards, setSearchSchema } from "@/lib/tcgTrackingCatalog";
+
 const REQUEST_LIMIT_BYTES = 8 * 1024;
 const RESPONSE_LIMIT_BYTES = 8 * 1024 * 1024;
 const UPSTREAM_TIMEOUT_MS = 15_000;
@@ -18,6 +21,8 @@ export interface CatalogProxyDependencies {
   consumeRequest: (userId: string, provider: "pokemon" | "barcode" | "magic" | "upc") => Promise<boolean>;
   reserveMagicRequest: () => Promise<boolean>;
   persistMagicCards: (rows: ReturnType<typeof magicCardToCacheRow>[]) => Promise<void>;
+  persistPokemonCards: (rows: ReturnType<typeof pokemonCardToCacheRow>[], signal: AbortSignal) => Promise<void>;
+  persistPokemonRoster: (row: Record<string, unknown>, signal: AbortSignal) => Promise<void>;
   persistProducts: (rows: ReturnType<typeof productsToCacheRows>, signal: AbortSignal) => Promise<void>;
   reserveUpcRequest: (isSearch: boolean) => Promise<boolean>;
   deferUpcRequests: (seconds: number) => Promise<void>;
@@ -88,7 +93,7 @@ export function createCatalogProxyHandler(dependencies: CatalogProxyDependencies
     }
 
     try {
-      if (!await dependencies.consumeRequest(userId, request.provider)) {
+      if (!await dependencies.consumeRequest(userId, request.provider === "tcgtracking" ? "pokemon" : request.provider)) {
         return json({ error: "Catalog request limit reached. Please try again later." }, 429);
       }
       if (request.provider === "upc" && !await dependencies.reserveUpcRequest(!/^\d+$/.test(request.query))) {
@@ -115,8 +120,15 @@ export function createCatalogProxyHandler(dependencies: CatalogProxyDependencies
     let url: URL;
     let body: string | undefined;
     const headers: Record<string, string> = { Accept: "application/json" };
-    if (request.provider === "pokemon") {
+    const rosterId = request.provider === "pokemon" ? request.path.match(/^\/sets\/([a-zA-Z0-9_-]+)\/cards$/)?.[1] : undefined;
+    if (request.provider === "tcgtracking") {
+      url = new URL(`https://openapi.tcgtracking.com/v1${request.path}`);
+    } else if (request.provider === "pokemon") {
       url = new URL(`https://api.pokemontcg.io/v2${request.path}`);
+      if (rosterId) {
+        url = new URL("https://api.pokemontcg.io/v2/cards");
+        url.search = new URLSearchParams({ q: `set.id:"${rosterId}"`, page: "1", pageSize: "250", orderBy: "number" }).toString();
+      }
       headers["X-Api-Key"] = key!;
     } else if (request.provider === "magic") {
       url = new URL(`https://api.scryfall.com${request.path}`);
@@ -140,7 +152,7 @@ export function createCatalogProxyHandler(dependencies: CatalogProxyDependencies
     }
 
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), UPSTREAM_TIMEOUT_MS);
+    const timeout = setTimeout(() => controller.abort(), rosterId ? 30_000 : UPSTREAM_TIMEOUT_MS);
     try {
       const response = await dependencies.fetch(url, {
         ...(body ? { method: "POST", body } : {}),
@@ -162,7 +174,52 @@ export function createCatalogProxyHandler(dependencies: CatalogProxyDependencies
         // Vendor responses and URLs can contain credentials. Never forward them.
         return json({ error: "The catalog provider is temporarily unavailable. Please try again." }, 502);
       }
-      const data = await readBoundedJson(response.body, RESPONSE_LIMIT_BYTES);
+      let data = await readBoundedJson(response.body, RESPONSE_LIMIT_BYTES);
+      if (request.provider === "pokemon" || request.provider === "tcgtracking") {
+        let cards: PokemonTcgCard[];
+        if (request.provider === "tcgtracking") {
+          if (request.path.startsWith("/3/search?")) {
+            setSearchSchema.parse(data);
+            return json(data);
+          }
+          cards = parseTrackingCards(data);
+        } else if (rosterId) {
+          const first = pokemonSearchResponseSchema.parse(data);
+          const total = first.totalCount;
+          if (!Number.isInteger(total) || total < 1 || total > 1000 || first.page !== 1) throw new Error("Invalid roster");
+          cards = [...first.data];
+          for (let page = 2; cards.length < total && page <= 4; page += 1) {
+            if (!await dependencies.consumeRequest(userId, "pokemon")) return json({ error: "Catalog request limit reached. Please try again later." }, 429);
+            url.searchParams.set("page", String(page));
+            const nextResponse = await dependencies.fetch(url, { headers, signal: controller.signal, redirect: "error" });
+            if (!nextResponse.ok) { await nextResponse.body?.cancel(); throw new Error("Roster page unavailable"); }
+            const next = pokemonSearchResponseSchema.parse(await readBoundedJson(nextResponse.body, RESPONSE_LIMIT_BYTES));
+            if (next.totalCount !== total || next.page !== page || next.data.length === 0) throw new Error("Inconsistent roster");
+            cards.push(...next.data);
+          }
+          if (cards.length !== total || new Set(cards.map(card => card.id)).size !== total || cards.some(card => card.set.id !== rosterId)) throw new Error("Incomplete roster");
+          data = { data: cards, page: 1, pageSize: total, count: total, totalCount: total };
+        } else {
+          cards = request.path.startsWith("/cards?") ? pokemonSearchResponseSchema.parse(data).data : [pokemonCardResponseSchema.parse(data).data];
+        }
+        // Keep manual/private IDs out of the shared vendor namespace.
+        for (const card of cards) {
+          const validId = request.provider === "pokemon" ? /^[a-zA-Z0-9_-]{1,100}$/ : /^tcgtracking:[1-9][0-9]{0,15}$/;
+          if (!validId.test(card.id) || !validId.test(card.set.id)) throw new Error("Invalid catalog ID");
+          for (const image of [card.images.small, card.images.large]) {
+            if (image && (new URL(image).protocol !== "https:" || new URL(image).username || new URL(image).password)) throw new Error("Invalid catalog image");
+          }
+        }
+        try {
+          if (cards.length) await dependencies.persistPokemonCards(cards.map(pokemonCardToCacheRow), controller.signal);
+          if (rosterId) {
+            const set = cards[0].set;
+            await dependencies.persistPokemonRoster({ set_id: rosterId, set_name: set.name, set_series: set.series ?? null, printed_total: set.printedTotal ?? null, total: set.total ?? null, cached_card_count: cards.length, is_complete: true, cached_at: new Date().toISOString(), updated_at: new Date().toISOString() }, controller.signal);
+          }
+        } catch {
+          return json({ error: "Could not save catalog results. Please try again." }, 503);
+        }
+      }
       if (request.provider === "barcode" || request.provider === "upc") {
         const products = request.provider === "barcode" ? parseBarcodeProducts(data) : parseUpcProducts(data);
         const rows = productsToCacheRows(products);

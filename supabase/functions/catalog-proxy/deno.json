@@ -3,6 +3,8 @@
     "zod": "npm:zod@4.3.6",
     "@/lib/catalogValidation": "../../../lib/catalogValidation.ts",
     "@/lib/magicCatalog": "../../../lib/magicCatalog.ts",
-    "@/lib/productCatalog": "../../../lib/productCatalog.ts"
+    "@/lib/productCatalog": "../../../lib/productCatalog.ts",
+    "@/lib/pokemonCatalog": "../../../lib/pokemonCatalog.ts",
+    "@/lib/tcgTrackingCatalog": "../../../lib/tcgTrackingCatalog.ts"
   }
 }
