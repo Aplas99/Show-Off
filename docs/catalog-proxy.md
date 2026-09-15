@@ -1,6 +1,8 @@
 # Catalog proxy rollout
 
-Status: local implementation on `codex/final-push`; not deployed.
+Status: deployed to the main Collector Supabase project on 2026-09-15.
+All catalog migrations and the function are live; Barcode Lookup secret is set.
+Pokemon API key and real signed-in provider tests remain.
 
 Pokemon TCG, Barcode Lookup, UPCItemDB, and Magic/Scryfall requests use the authenticated
 `catalog-proxy` Edge Function. The client contains no vendor key and has no

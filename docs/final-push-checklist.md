@@ -31,7 +31,8 @@ for the upload and backend sequence.
 - [x] Adult consent gates; minor ads withheld; ads and remote OCR disabled by default.
 - [x] Owner creation/RETURNING fixed under new read guards.
 - [x] Browser file upload support and Cloudflare Pages dynamic-route preparation.
-- [ ] Deploy the complete migration/function chain to the test backend and verify upgrade data.
+- [x] Deploy the complete migration/function chain to the chosen main backend; rollback-only live trigger/access checks pass.
+- [ ] Verify signed-in Storage/CORS, actual vendor requests and legacy upgrade UX.
 - [ ] Upload the final web export and allow the test host in Supabase Auth.
 - [ ] Exercise real auth, Storage/CORS, reports/resolution, deletion and catalog providers.
 - [ ] Configure and test RevenueCat/store products on native builds; web cannot test IAP.
@@ -100,7 +101,8 @@ checks: 27 suites / 291 tests, TypeScript pass, lint 0 errors / 11 warnings.
 Legacy public vendor/OCR values were not found in the generated JS/HTML export.
 
 Local work is being recorded in small commits on `codex/final-push` as requested.
-No remote push or live backend deployment has been performed.
+The main Supabase backend was deployed on 2026-09-15. Cloudflare frontend upload
+and provider/device checks remain; see the test rollout guide for evidence.
 Pokemon and TCGTracking shared writes and set manifests are now server controlled;
 manual cards are private and unverified. SEC-02 has a local implementation. Existing cached records also need
 integrity review; restricting future writes does not validate historical data.

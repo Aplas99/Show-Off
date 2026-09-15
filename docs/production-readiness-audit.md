@@ -28,7 +28,10 @@ auth screens and direct unavailable-showcase routing without runtime errors.
 Isolated PostgreSQL tests cover age, media, deletion, catalog grants/provenance,
 reporting/blocking/moderation and owner INSERT RETURNING. Catalog proxy Deno check
 passes. These tests do not establish full deployed migration/Storage behavior.
-No merge, remote push, live deployment or store submission has occurred.
+The main Supabase backend was deployed on 2026-09-15 with a validated pre-change
+logical backup. All pending migrations and five functions are deployed; live
+rollback-only trigger/access and HTTP authentication checks pass. Cloudflare
+frontend upload, real provider/device checks, merge and store submission remain.
 
 Remaining implementation includes orphan-upload cleanup, feed pagination ties,
 other social read errors, crash reporting, logging/lint/accessibility cleanup and

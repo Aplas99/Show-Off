@@ -1,6 +1,7 @@
 # Cloudflare production-like test rollout
 
-Status: local final-push implementation; no live deployment or merge performed.
+Status: main Supabase backend deployed on 2026-09-15; Cloudflare frontend pending.
+No merge to main performed.
 The owner accepts remaining implementation for testing. This is not a public
 launch or store-submission checklist; use final-push-checklist.md for those gates.
 
@@ -21,7 +22,8 @@ Expo describes [static rendering](https://docs.expo.dev/router/web/static-render
 
 ## Backend before client
 
-1. Use a separate test Supabase project where possible. Verify deployed migration
+1. The owner chose the existing main Supabase project (Collector,
+   yvgqiuewfhwrammwuglr) for this rollout. Verify deployed migration
    history against the repository; apply the complete ordered missing chain,
    through 20260915181000_filter_manual_pokemon_text.sql, after taking an appropriate
    backup if the backend contains retained data. Do not apply only the last file.
@@ -47,7 +49,7 @@ Expo describes [static rendering](https://docs.expo.dev/router/web/static-render
 
 ## Build and upload
 
-1. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_ANON_KEY to the test project.
+1. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_ANON_KEY to the chosen main project.
    Leave EXPO_PUBLIC_ADS_ENABLED=false and debug flags false. Remote OCR stays
    disabled in code. Remove obsolete public vendor/OCR credentials from the build
    environment, and rotate any previously exposed secrets.
@@ -103,3 +105,42 @@ and generated icon changes remain outside these implementation commits; review
 and commit them before expecting a checkout of main to reproduce that branding.
 Live Storage/CORS, actual Pages routing, vendor responses, provider credentials,
 upgrade fixtures and native purchase behavior still require deployed testing.
+
+## Main backend deployment - 2026-09-15
+
+The linked main project passed migration-history comparison and the complete
+pending chain in a rollback-only transaction. A logical backup of public, auth,
+storage and supabase_migrations was made with official portable PostgreSQL 15.19
+utilities, then fully read with pg_restore to validate the archive. Its location
+is %TEMP%/show-off-rollout-20260915/main-before-rollout.dump. Stored file bytes
+are not included. Previously deployed Stripe function sources were also saved
+in that folder. No actual restore has been attempted.
+
+All fourteen September migrations applied successfully. A subsequent dry-run
+reports the remote database up to date. Account/item/file counts remain 2/46/7;
+all upload buckets are private and both formerly public showcases now require
+owner classification/republishing. Existing users must complete age/standards
+onboarding in the new client. Legacy Pokemon verified badges/complete-set flags
+were reset as documented above.
+
+catalog-proxy, delete-account, revenuecat-webhook, stripe-checkout and
+stripe-webhook are ACTIVE. User endpoints retain JWT verification; provider
+webhooks use their handler's signature or secret-header checks. RevenueCat's
+JWT setting is explicitly recorded in config.toml. The existing Barcode Lookup
+key was configured as BARCODE_LOOKUP_API_KEY. POKEMON_TCG_API_KEY and RevenueCat
+server/public SDK credentials still need owner setup; unavailable features stay
+closed. Ads remain disabled by default.
+
+production_rollout_smoke.sql passed against the main backend with all fixtures
+rolled back: actual auth/profile/creation triggers, under-13 denial, owner
+creation/RETURNING, manual verification denial, protected reporting, blocking,
+public general access and mature access denial for teens. HTTP smoke checks pass
+for catalog OPTIONS and anonymous/invalid request rejection on catalog, deletion,
+RevenueCat and Stripe webhook endpoints. Actual signed-in Storage/CORS, catalog
+vendor lookups, OAuth/email flows, billing lifecycle and moderation resolution
+still need frontend/device testing.
+
+Pending owner input: the moderator username and Cloudflare HTTPS hostname.
+Set the Pages production branch to codex/final-push after it is published. The
+build command is npm run build:web; framework None; output dist; root blank.
+Do not use the older main branch for this client build.
