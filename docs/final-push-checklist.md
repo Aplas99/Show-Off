@@ -13,6 +13,35 @@ switching a private showcase to public requires classification. Under-18 and
 age-unverified visitors cannot access an 18+ public showcase's details or media.
 An 18+ designation does not permit content otherwise prohibited by store policy.
 
+## Production test push - 2026-09-15
+
+The owner has accepted an incomplete release for production-like testing.
+The checked items below describe local implementation, not store approval or
+successful deployment. Use [the test rollout guide](cloudflare-test-rollout.md)
+for the upload and backend sequence.
+
+- [x] 13+ screening, private age storage, shared onboarding and policy acceptance.
+- [x] Whole-public-showcase general/18+ classification and backend/media access gates.
+- [x] Content/account reporting, reciprocal blocking and protected moderation queue/actions.
+- [x] Configurable prohibited-text filtering and documented manual media review process.
+- [x] Server-only shared catalog writes, trusted Pokemon set manifests and private manual cards.
+- [x] PKCE/Apple login entry points, confirmation resend and recovery handling.
+- [x] Public policy/support/deletion pages and retryable account deletion.
+- [x] Native-only IAP, current store prices, disclosures, restore and verified membership snapshots.
+- [x] Adult consent gates; minor ads withheld; ads and remote OCR disabled by default.
+- [x] Owner creation/RETURNING fixed under new read guards.
+- [x] Browser file upload support and Cloudflare Pages dynamic-route preparation.
+- [ ] Deploy the complete migration/function chain to the test backend and verify upgrade data.
+- [ ] Upload the final web export and allow the test host in Supabase Auth.
+- [ ] Exercise real auth, Storage/CORS, reports/resolution, deletion and catalog providers.
+- [ ] Configure and test RevenueCat/store products on native builds; web cannot test IAP.
+- [ ] Complete native artifact/privacy/permissions/rights and operator/store declarations before public launch.
+
+Deferred implementation still includes orphan-upload cleanup, stable feed pagination,
+remaining social-query error handling, crash reporting, logging/lint/accessibility
+cleanup, and optional scope below. These remain visible rather than being treated
+as complete because a test upload is permitted.
+
 ## Implementation progress - updated 2026-09-15
 
 Implementation completed locally so far on `codex/final-push`:
@@ -20,13 +49,13 @@ Implementation completed locally so far on `codex/final-push`:
 | Item | Local result | Still required before closing |
 | --- | --- | --- |
 | SEC-01 | Pokemon and Barcode Lookup now use an authenticated, validated Edge Function with timeouts, byte limits, and atomic per-user/provider rate caps. | Deploy the migration/function, configure server secrets, and verify real searches/scans/rosters on device. |
-| SEC-02 (Magic/products) | Magic, Barcode Lookup, and UPCItemDB provider responses are validated and saved on the server. Migrations revoke client table/column writes to `magic_cards` and `products`. Item creation reads existing products and retains uncached custom details on personal items. | Deploy and verify search/scan/item saving and trial fallback; migrate Pokemon cards, set rosters, and TCGTracking/manual cards before closing SEC-02. |
-| SEC-05 | Removed both vendor-key reads from client code and public env examples. | Remove old values from deployment environments, rotate exposed keys, inspect release bundles, and address the optional OCR token. |
+| SEC-02 (Magic/products) | Magic, Barcode Lookup, and UPCItemDB provider responses are validated and saved on the server. Migrations revoke client table/column writes to `magic_cards` and `products`. Item creation reads existing products and retains uncached custom details on personal items. | Deploy and verify search/scan/item saving and trial fallback; verify the new Pokemon/TCGTracking/manual paths and legacy trust reset before closing SEC-02. |
+| SEC-05 | Removed both vendor-key reads from client code and public env examples. | Remove old values from deployment environments, rotate exposed keys, inspect release bundles, remove obsolete OCR credentials; remote OCR is disabled in code. |
 | SEC-03 (creation/link ownership) | Removed permissive item/showcase INSERT policies and added restrictive ownership guards. Client calls to privileged default-showcase provisioning are revoked. Links require ownership of both the showcase and item; batch RPCs retain atomic saves under the new policy. Isolated owner/other-user/anonymous/provisioning/link/rollback tests pass. | Deploy and test signup/item/showcase creation and batch saves with real membership triggers; review comment reads, existing links, and the remaining social/storage policies before closing SEC-03. |
 | SEC-03 (item comments, 2026-09-15) | Comment reads/inserts/edits now follow parent-item access. Restrictive checks block broad-policy bypasses and forged authors; clients may update only comment content. Private-showcase transitions and author/ownership cases pass isolated PostgreSQL tests. | Deploy and verify comment flows with actual triggers; review post interactions, other social/storage policies, and old links before closing SEC-03. |
-| QA-02 | Excluded nested worktrees from Jest/ESLint discovery; all 225 tests and the app TypeScript check pass after the comment changes. Full lint reports 0 errors. | Repeat on the final release candidate; 13 pre-existing lint warnings remain. |
+| QA-02 | Excluded nested worktrees from Jest/ESLint discovery; all 291 tests and the app TypeScript check pass on the current test candidate. Full lint reports 0 errors. | 27 suites / 291 tests and TypeScript pass; lint has 0 errors and 11 warnings. Repeat after further changes. |
 | QA-03 | Deno type-check passed. Isolated PostgreSQL assertions passed for role permissions, rate caps, rollover, isolation, retention cleanup, deletion cascade, Magic/product client write denial, service writes, shared admission, and UPC trial caps/cooldowns. | Verify real Supabase deployment/JWT/vendor behavior; load and concurrent-request checks remain. |
-| SAFE-07 | Updated requirements to the user-confirmed 13+ minimum and whole-public-showcase rating. | Implement signup age handling, publication classification, and backend/media access controls. |
+| SAFE-07 | Private age screening, onboarding, public classification and backend/media controls implemented. | Deploy and verify on real devices and Storage; complete audience/store declarations. |
 | UX-02 (item comment errors) | Failed comment-count queries now report an error instead of zero. The feed marks unavailable counts; successful submissions refresh counts. The comment modal keeps failed drafts, shows a retry message, and handles pending post/item submissions consistently. | Verify on device; likes/bookmarks and remaining social-query failures still need work. |
 
 Deletion cleanup is also implemented locally: both upload buckets, nested
@@ -63,10 +92,17 @@ contact: onistudiosupport@gmail.com. No domain has been chosen. These pages
 describe the intended release behavior; complete the remaining safety/ads work,
 verify contact delivery, retention practices, and operator review before launch.
 
+Final test-push web export succeeds: 52 static routes plus Cloudflare showcase
+shells/rewrites. Browser smoke checks cover policy/deletion pages, sign-in,
+signup age copy and direct unavailable-showcase routing without runtime errors.
+They do not prove a deployed Pages rewrite or live backend access. Full app
+checks: 27 suites / 291 tests, TypeScript pass, lint 0 errors / 11 warnings.
+Legacy public vendor/OCR values were not found in the generated JS/HTML export.
+
 Local work is being recorded in small commits on `codex/final-push` as requested.
 No remote push or live backend deployment has been performed.
-Pokemon client catalog writes remain present: SEC-02 and the overall
-shared-cache poisoning risk are not resolved. Existing cached records also need
+Pokemon and TCGTracking shared writes and set manifests are now server controlled;
+manual cards are private and unverified. SEC-02 has a local implementation. Existing cached records also need
 integrity review; restricting future writes does not validate historical data.
 See [catalog rollout](catalog-proxy.md) for
 the required backend-before-client deployment sequence. No release-gate checkbox

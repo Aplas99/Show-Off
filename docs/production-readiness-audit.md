@@ -6,13 +6,43 @@ clean, ESLint clean, 86/86 Jest tests passing.
 
 Legend: 🔴 blocker before launch · 🟠 should fix soon · 🟡 nice to have
 
+## Current test-push status - 2026-09-15
+
+The original findings and counts below are historical. Current work lives on
+`codex/final-push`; [the final checklist](final-push-checklist.md) separates local
+implementation from deployed release gates. The owner has accepted a test rollout
+with remaining work. Follow [the Cloudflare test guide](cloudflare-test-rollout.md).
+
+Major local revisions now cover private age/onboarding and public showcase ratings,
+authenticated media access, policy/support/deletion pages, PKCE and Apple login,
+native-only IAP and current prices, authoritative RevenueCat snapshot reconciliation,
+adult consent gates (minor ads withheld, ads off by default), disabled remote OCR,
+reporting/blocking/protected moderation, limited text filtering, server-only catalog
+writes including Pokemon/TCGTracking/rosters and private unverified manual cards,
+owner creation under read guards, and browser uploads/Cloudflare route preparation.
+
+Current app verification: 27 Jest suites / 291 tests pass; TypeScript passes;
+lint has 0 errors and 11 warnings. Web export passes with 52 static routes plus
+Cloudflare shells/rewrites. Browser smoke checks cover public policies, deletion,
+auth screens and direct unavailable-showcase routing without runtime errors.
+Isolated PostgreSQL tests cover age, media, deletion, catalog grants/provenance,
+reporting/blocking/moderation and owner INSERT RETURNING. Catalog proxy Deno check
+passes. These tests do not establish full deployed migration/Storage behavior.
+No merge, remote push, live deployment or store submission has occurred.
+
+Remaining implementation includes orphan-upload cleanup, feed pagination ties,
+other social read errors, crash reporting, logging/lint/accessibility cleanup and
+optional product scope. Public production release also requires backend upgrade
+checks, live auth/storage/catalog/deletion/moderation, native IAP lifecycle tests,
+store configuration/declarations, asset rights and staffed support/moderation.
+
 ## Implementation update - 2026-09-09
 
 The active work is now tracked in [the final push checklist](final-push-checklist.md)
 on `codex/final-push`, starting from `iap-memberships` at `6181a4a`. Audience is
 13+, with a whole-showcase 18+ designation required only for public showcases
-or when switching a private showcase to public. These age controls are planned,
-not yet implemented.
+or when switching a private showcase to public. These controls are now implemented
+locally; real backend/media and device verification remain.
 
 Item 3 is partially addressed locally: Pokemon and Barcode Lookup requests use
 the authenticated `catalog-proxy` Edge Function, and both vendor-key reads have
@@ -20,8 +50,8 @@ been removed from the client. Deployment, server secret configuration, key
 rotation, and device verification remain. Item 4 is partially addressed locally:
 Magic and barcode product catalog writes now happen inside the proxy, with
 migrations revoking client writes. UPCItemDB uses the proxy with a shared trial
-budget and Barcode Lookup fallback. Pokemon cards/rosters and manual cards still
-need migration. Existing cached data has not been independently revalidated.
+budget and Barcode Lookup fallback. Pokemon/TCGTracking cards, set rosters and
+manual-card provenance are now migrated locally. Existing cached data has not been independently revalidated.
 
 Local checks: 225/225 tests passing, app TypeScript and the new Edge Function's
 Deno type-check passing, and isolated PostgreSQL rate-limit and Magic/product write
