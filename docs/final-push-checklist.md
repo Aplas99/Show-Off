@@ -45,6 +45,13 @@ private profile table, as requested on 2026-09-15. No date of birth is requested
 Age progression for access is conservative because the birthday is unknown.
 Minors will not receive personalized advertising.
 
+Policy/support pages now exist at `/legal/privacy`, `/legal/terms`,
+`/legal/community`, `/legal/support`, and `/legal/deletion`, with Settings links
+and an email deletion-request option. Operator: Oni Studios;
+contact: onistudiosupport@gmail.com. No domain has been chosen. These pages
+describe the intended release behavior; complete the remaining safety/ads work,
+verify contact delivery, retention practices, and operator review before launch.
+
 Local work is being recorded in small commits on `codex/final-push` as requested.
 No remote push or live backend deployment has been performed.
 Pokemon client catalog writes remain present: SEC-02 and the overall

@@ -8,6 +8,7 @@ import {
     ActivityIndicator,
     Alert,
     Pressable,
+    ScrollView,
     StyleSheet,
     Text,
     TouchableOpacity,
@@ -39,7 +40,7 @@ export default function SettingsScreen() {
     const handleDeleteAccount = () => {
         Alert.alert(
             "Delete Account",
-            "This permanently deletes your account, items, showcases, and images. This cannot be undone.",
+            "This permanently deletes your account and content. Cancel recurring subscriptions with Apple, Google Play, or website billing first. Deletion cannot be undone.",
             [
                 { text: "Cancel", style: "cancel" },
                 {
@@ -74,7 +75,7 @@ export default function SettingsScreen() {
     };
 
     return (
-        <View style={[styles.container, { paddingTop: insets.top }]}>
+        <ScrollView style={styles.container} contentContainerStyle={{ paddingTop: insets.top, paddingBottom: insets.bottom + 24 }}>
             {/* Header */}
             <View style={styles.header}>
                 <TouchableOpacity
@@ -149,6 +150,14 @@ export default function SettingsScreen() {
                 </View>
             </Animated.View>
 
+            <View style={styles.themeCard}>
+                {([['privacy', 'Privacy Policy'], ['terms', 'Terms of Use'], ['community', 'Community Standards'], ['support', 'Support and Safety'], ['deletion', 'Request Account Deletion']] as const).map(([page, label]) => (
+                    <TouchableOpacity key={page} style={styles.infoRow} accessibilityRole="link" onPress={() => router.push({ pathname: "/legal/[page]", params: { page } })}>
+                        <Text style={styles.infoLabel}>{label}</Text>
+                        <Ionicons name="chevron-forward" size={18} color={colors.text} />
+                    </TouchableOpacity>
+                ))}
+            </View>
             {/* Danger Zone */}
             <Animated.View entering={FadeInDown.delay(350).springify()}>
                 <View style={styles.sectionHeader}>
@@ -174,7 +183,7 @@ export default function SettingsScreen() {
                     </TouchableOpacity>
                 </View>
             </Animated.View>
-        </View>
+        </ScrollView>
     );
 }
 

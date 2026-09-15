@@ -65,7 +65,7 @@ export default function AuthInitializer({ children }: { children: React.ReactNod
       inOnboardingGroup: segments[0] === "onboarding",
       // Public showcase links (app/s/[id].tsx) must stay reachable by
       // signed-out visitors — they sit outside every auth-gated segment.
-      inPublicGroup: segments[0] === "s",
+      inPublicGroup: segments[0] === "s" || segments[0] === "legal",
       // Recovery links sign the user in but must stay on the reset screen.
       isResettingPassword: (segments as string[])[1] === "reset-password",
     });

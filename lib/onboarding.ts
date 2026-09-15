@@ -64,6 +64,7 @@ export function resolveAuthRedirect({
   inPublicGroup: boolean;
   isResettingPassword: boolean;
 }): PostAuthDestination {
+  if (inPublicGroup) return null;
   if (!session) {
     if (inAuthGroup || inPublicGroup) return null;
     return { route: "/(auth)/signin" };
