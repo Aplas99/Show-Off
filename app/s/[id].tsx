@@ -1,3 +1,4 @@
+import ContentSafetyMenu from "@/src/components/social/ContentSafetyMenu";
 import { PublicShowcaseItem, usePublicShowcase } from "@/api/showcase/public";
 import { useColors } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
@@ -126,6 +127,7 @@ export default function PublicShowcaseScreen() {
               <Text style={[styles.showcaseName, { color: colors.text }]} numberOfLines={2}>
                 {showcase.name}
               </Text>
+              <ContentSafetyMenu type="showcase" id={showcase.id} ownerId={showcase.owner.id} />
               {showcase.audience_rating === "18_plus" && <Text style={{ color: colors.text }}>18+ showcase</Text>}
               <View style={styles.ownerRow}>
                 {showcase.owner.avatar_url ? (

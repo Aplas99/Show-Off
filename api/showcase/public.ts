@@ -30,6 +30,7 @@ export interface PublicShowcase {
   banner_image_url: string | null;
   created_at: string;
   owner: {
+    id: string;
     username: string | null;
     avatar_url: string | null;
   };

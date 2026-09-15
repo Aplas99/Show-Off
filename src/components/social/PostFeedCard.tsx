@@ -1,3 +1,4 @@
+import ContentSafetyMenu from "@/src/components/social/ContentSafetyMenu";
 import {
   useBookmarkPost,
   useIsPostBookmarked,
@@ -184,6 +185,7 @@ const PostFeedCard = ({
         </View>
       </View>
 
+      <ContentSafetyMenu type="post" id={post.id} ownerId={post.user_id} />
       {/* Media */}
       <View style={[styles.mediaSection, { height: mediaHeight }]}>
         <View style={styles.mediaCard}>

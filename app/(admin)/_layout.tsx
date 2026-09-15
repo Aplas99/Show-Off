@@ -1,36 +1,10 @@
-import { useGetCurrentUserProfile } from "@/api/profile";
-import { COLORS } from "@/constants/theme";
+import { useModeratorAccess } from "@/api/safety";
 import { Redirect, Slot } from "expo-router";
-import React from "react";
-import { ActivityIndicator, StyleSheet, View } from "react-native";
+import { ActivityIndicator, Text, View } from "react-native";
 
-/**
- * Gates every (admin) route on profile.is_admin. Non-admins (and signed-out
- * users, via AuthInitializer) are sent back to the main tabs.
- */
 export default function AdminLayout() {
-  const { data, isLoading } = useGetCurrentUserProfile();
-
-  if (isLoading) {
-    return (
-      <View style={styles.container}>
-        <ActivityIndicator size="large" color={COLORS.primary} />
-      </View>
-    );
-  }
-
-  if (!data?.profile?.is_admin) {
-    return <Redirect href="/(tabs)/discover" />;
-  }
-
-  return <Slot />;
+  const access = useModeratorAccess();
+  if (access.isLoading) return <ActivityIndicator />;
+  if (access.isError) return <View><Text onPress={() => void access.refetch()}>Moderator access could not be checked. Tap to retry.</Text></View>;
+  return access.data ? <Slot /> : <Redirect href="/(tabs)/discover" />;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: COLORS.background,
-  },
-});

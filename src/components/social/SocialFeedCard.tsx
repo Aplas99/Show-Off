@@ -1,3 +1,4 @@
+import ContentSafetyMenu from "@/src/components/social/ContentSafetyMenu";
 import { useGetItemCommentCount } from "@/api/social/comments";
 import { FeedItem } from "@/api/social/feed";
 import {
@@ -216,7 +217,7 @@ const SocialFeedCard = ({
           )}
         </TouchableOpacity>
         <View style={styles.userInfo}>
-          <Text style={styles.username}>{displayName}</Text>
+          <Text style={styles.username}>{displayName}</Text><ContentSafetyMenu type="item" id={item.id} ownerId={item.user_id} />
           <Text style={styles.timestamp}>{relativeTime}</Text>
         </View>
         <TouchableOpacity style={styles.moreButton} hitSlop={12}>

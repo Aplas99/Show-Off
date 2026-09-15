@@ -1,3 +1,4 @@
+import ContentSafetyMenu from "@/src/components/social/ContentSafetyMenu";
 import {
     useCreateComment,
     useGetItemComments,
@@ -51,7 +52,8 @@ interface CommentModalProps {
 
 /** Minimal shape shared by item comments and post comments. */
 interface AnyComment {
-    id: number;
+    id: string | number;
+    user_id: string;
     content: string;
     created_at: string;
     profile?: { username: string; avatar_url: string | null };
@@ -208,6 +210,7 @@ export default function CommentModal({
                     </View>
                     <Text style={styles.commentTextContent}>{item.content}</Text>
                     <Text style={styles.timestampBelow}>{dateLabel}</Text>
+                    <ContentSafetyMenu type={postId ? "post_comment" : "comment"} id={item.id} ownerId={item.user_id} />
                 </View>
             </Animated.View>
         );

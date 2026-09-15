@@ -1,3 +1,5 @@
+import BlockedAccounts from "@/src/components/social/BlockedAccounts";
+import { useModeratorAccess } from "@/api/safety";
 import { openAdPrivacyOptions } from "@/api/ads";
 import { useDeleteAccount } from "@/api/auth";
 import { useColors, type ThemeColors } from "@/constants/theme";
@@ -36,6 +38,7 @@ export default function SettingsScreen() {
     const router = useRouter();
     const { mode, setMode, isDark } = useThemeStore();
     const styles = getStyles(colors);
+    const moderator = useModeratorAccess();
     const deleteAccount = useDeleteAccount();
     const [privacyMessage, setPrivacyMessage] = useState("");
     const [privacyPending, setPrivacyPending] = useState(false);
@@ -175,6 +178,8 @@ export default function SettingsScreen() {
                     <Text style={styles.infoLabel}>Manage or cancel membership</Text>
                 </TouchableOpacity>
             </View>
+            <BlockedAccounts />
+            {moderator.data && <TouchableOpacity style={styles.infoRow} onPress={() => router.push("/(admin)")}><Text style={styles.infoLabel}>Moderation queue</Text></TouchableOpacity>}
             {/* Danger Zone */}
             <Animated.View entering={FadeInDown.delay(350).springify()}>
                 <View style={styles.sectionHeader}>
