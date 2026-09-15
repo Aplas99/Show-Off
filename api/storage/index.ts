@@ -102,7 +102,7 @@ export async function uploadImageToSupabase({
     const { error } = await supabase.storage
         .from(bucketName)
         .upload(filePath, formData, {
-            cacheControl: "3600",
+            cacheControl: "0",
             upsert: false,
         });
 

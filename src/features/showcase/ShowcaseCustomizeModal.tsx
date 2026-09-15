@@ -2,7 +2,7 @@ import { useUpdateShowcaseCustomization } from "@/api/showcase";
 import { useUploadImage } from "@/api/storage";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
+import { Image } from "@/src/components/media/ProtectedImage";
 import * as ImagePicker from "expo-image-picker";
 import React, { useState } from "react";
 import {

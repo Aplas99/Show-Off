@@ -5,7 +5,7 @@ import { useColors, type ThemeColors } from "@/constants/theme";
 import PriceHistoryChart from "@/src/components/charts/PriceHistoryChart";
 import { CuratorInlineGate } from "@/src/features/membership/CuratorGate";
 import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
+import { Image } from "@/src/components/media/ProtectedImage";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {

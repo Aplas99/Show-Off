@@ -1,6 +1,6 @@
 import { ItemWithProduct } from "@/api/items";
 import { COLORS } from "@/constants/theme";
-import { Image } from "expo-image";
+import { Image } from "@/src/components/media/ProtectedImage";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useRef, useState } from "react";
 import {

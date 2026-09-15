@@ -9,7 +9,7 @@ import BannerAdView from "@/src/components/ads/BannerAdView";
 import { CuratorGateModal } from "@/src/features/membership/CuratorGate";
 import ShowcaseCustomizeModal from "@/src/features/showcase/ShowcaseCustomizeModal";
 import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
+import { Image } from "@/src/components/media/ProtectedImage";
 import { LinearGradient } from "expo-linear-gradient";
 import { Link } from "expo-router";
 import React, { useState } from "react";

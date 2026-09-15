@@ -1,6 +1,7 @@
 import { ItemWithProduct, useGetItemsWithProductData } from "@/api/items";
 import { useMembership } from "@/api/memberships";
-import { useSetShowcasePublic } from "@/api/showcase";
+import { useGetShowcase } from "@/api/showcase";
+import ShowcaseSettingsModal from "@/src/features/showcase/ShowcaseSettingsModal";
 import { TAB_BAR_HEIGHT } from "@/constants/layoutConfig";
 import { CuratorGateModal } from "@/src/features/membership/CuratorGate";
 import ItemDetailModal from "@/src/features/showcase/ItemDetailModal";
@@ -11,7 +12,7 @@ import SetCompletionModal from "@/src/features/showcase/SetCompletionModal";
 import ShowcaseListItem from "@/src/features/showcase/ShowcaseListItem";
 import { useShowcaseFilters } from "@/src/features/showcase/useShowcaseFilters";
 import { Ionicons } from "@expo/vector-icons";
-import { Stack, useLocalSearchParams } from "expo-router";
+import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import React, {
   useCallback,
   useEffect,
@@ -29,7 +30,6 @@ import {
   Platform,
   RefreshControl,
   ScrollView,
-  Share,
   StyleSheet,
   Text,
   TextInput,
@@ -84,28 +84,22 @@ export default function ShowcaseDetail() {
   // Sharable public links are available to every membership tier.
   const { data: membership } = useMembership();
   const isCurator = membership?.isCurator ?? false;
-  const setShowcasePublic = useSetShowcasePublic();
+  const showcaseQuery = useGetShowcase(showcaseId ?? "");
+  const [settingsVisible, setSettingsVisible] = useState(false);
+  const router = useRouter();
 
   // Curator set-completion view
   const [setCompletionVisible, setSetCompletionVisible] = useState(false);
   const [setCompletionPaywallVisible, setSetCompletionPaywallVisible] =
     useState(false);
 
-  const handleShare = useCallback(async () => {
-    if (!showcaseId) return;
-    try {
-      await setShowcasePublic.mutateAsync({ showcaseId, isPublic: true });
-      await Share.share({
-        message: `Check out my showcase on Show-Off: showoff://s/${showcaseId}`,
-        url: `showoff://s/${showcaseId}`,
-      });
-    } catch (error: any) {
-      Alert.alert(
-        "Couldn't share",
-        error?.message ?? "Please try again.",
-      );
+  const handleShare = useCallback(() => {
+    if (showcaseQuery.data) setSettingsVisible(true);
+    else {
+      showcaseQuery.refetch();
+      Alert.alert("Showcase unavailable", "Could not load showcase settings. Please retry.");
     }
-  }, [showcaseId, setShowcasePublic]);
+  }, [showcaseQuery]);
 
   // Modal state
   const [selectedItem, setSelectedItem] = useState<ItemWithProduct | null>(
@@ -557,7 +551,7 @@ export default function ShowcaseDetail() {
         <TouchableOpacity
           style={styles.viewToggleButton}
           onPress={handleShare}
-          disabled={setShowcasePublic.isPending}
+          accessibilityLabel="Showcase settings and sharing"
         >
           <Ionicons name="share-social-outline" size={18} color="#9B5DE5" />
         </TouchableOpacity>
@@ -591,6 +585,8 @@ export default function ShowcaseDetail() {
         </TouchableOpacity>
       </Animated.View>
 
+      {settingsVisible && showcaseQuery.data && <ShowcaseSettingsModal showcase={showcaseQuery.data}
+        onClose={() => setSettingsVisible(false)} onDeleted={() => { setSettingsVisible(false); router.back(); }} />}
       <ItemDetailModal
         visible={modalVisible}
         item={selectedItem}

@@ -16,6 +16,8 @@ export interface ShowcaseRow {
   name: string;
   is_default: boolean;
   is_public: boolean;
+  audience_rating: "general" | "18_plus" | null;
+  description?: string | null;
   created_at: string;
   /** Curator-only customization; null unless the owner has set them. */
   accent_color?: string | null;
@@ -23,7 +25,7 @@ export interface ShowcaseRow {
 }
 
 const SHOWCASE_SELECT =
-  "id, profile_id, is_default, created_at, name, is_public, accent_color, banner_image_url";
+  "id, profile_id, is_default, created_at, name, is_public, audience_rating, description, accent_color, banner_image_url";
 
 /**
  * Fetch all visible showcases for the current user.
@@ -57,9 +59,10 @@ export function useCreateShowcase() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (input: { name: string; isPublic?: boolean }) => {
+    mutationFn: async (input: { name: string; isPublic?: boolean; audienceRating?: "general" | "18_plus" }) => {
       const name = input.name.replace(/\s+/g, " ").trim();
       if (!name) throw new Error("Showcase name is required");
+      if (input.isPublic && !input.audienceRating) throw new Error("Choose an audience for this public showcase.");
 
       const {
         data: { user },
@@ -73,6 +76,7 @@ export function useCreateShowcase() {
           name,
           is_default: false,
           is_public: input.isPublic ?? false,
+          audience_rating: input.isPublic ? input.audienceRating : null,
         })
         .select(SHOWCASE_SELECT)
         .single();
@@ -129,12 +133,9 @@ export function useGetShowcase(id: string) {
         .from("showcase")
         .select(SHOWCASE_SELECT)
         .eq("id", id)
-        .single();
+        .maybeSingle();
 
-      if (error) {
-        // Return null if not found
-        return null;
-      }
+      if (error) throw new Error("Could not load this showcase. Please retry.");
 
       return data as ShowcaseRow;
     },
@@ -153,10 +154,15 @@ export function useSetShowcasePublic() {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: async (input: { showcaseId: string; isPublic: boolean }) => {
+    mutationFn: async (input: { showcaseId: string; isPublic: boolean; audienceRating?: "general" | "18_plus"; name?: string; description?: string }) => {
+      if (input.isPublic && !input.audienceRating) throw new Error("Choose an audience for this public showcase.");
+      if (input.name !== undefined && (!input.name.trim() || input.name.trim().length > 100)) throw new Error("Use a showcase name between 1 and 100 characters.");
+      if (input.description && input.description.length > 2000) throw new Error("Keep the description under 2,000 characters.");
       const { data, error } = await supabase
         .from("showcase")
-        .update({ is_public: input.isPublic })
+        .update({ is_public: input.isPublic, audience_rating: input.isPublic ? input.audienceRating : null,
+          ...(input.name === undefined ? {} : { name: input.name.trim() }),
+          ...(input.description === undefined ? {} : { description: input.description.trim() }) })
         .eq("id", input.showcaseId)
         .select(SHOWCASE_SELECT)
         .single();
@@ -165,12 +171,22 @@ export function useSetShowcasePublic() {
       return data as ShowcaseRow;
     },
     onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["social"] });
+      queryClient.invalidateQueries({ queryKey: ["showcase", "public", vars.showcaseId] });
       queryClient.invalidateQueries({ queryKey: queryKeys.showcase.visible() });
       queryClient.invalidateQueries({
         queryKey: queryKeys.showcase.byId(vars.showcaseId),
       });
     },
   });
+}
+
+export function useDeleteShowcase() {
+  const qc = useQueryClient();
+  return useMutation({ mutationFn: async (id: string) => {
+    const { data, error } = await supabase.from("showcase").delete().eq("id", id).eq("is_default", false).select("id");
+    if (error || !data?.length) throw new Error("Could not delete this showcase. The default showcase cannot be deleted.");
+  }, onSuccess: () => { qc.invalidateQueries({ queryKey: ["showcase"] }); qc.invalidateQueries({ queryKey: ["social"] }); } });
 }
 
 /**

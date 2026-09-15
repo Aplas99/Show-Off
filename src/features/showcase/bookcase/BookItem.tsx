@@ -1,6 +1,6 @@
 import { ItemWithProduct } from "@/api/items";
 import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
+import { Image } from "@/src/components/media/ProtectedImage";
 import React from "react";
 import { Animated, Platform, Pressable, StyleSheet, View } from "react-native";
 import {

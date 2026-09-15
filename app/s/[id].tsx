@@ -1,7 +1,7 @@
 import { PublicShowcaseItem, usePublicShowcase } from "@/api/showcase/public";
 import { useColors } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
+import { Image } from "@/src/components/media/ProtectedImage";
 import { LinearGradient } from "expo-linear-gradient";
 import { Stack, useLocalSearchParams } from "expo-router";
 import React, { useCallback } from "react";
@@ -82,7 +82,7 @@ export default function PublicShowcaseScreen() {
           This showcase isn&apos;t available
         </Text>
         <Text style={[styles.notFoundSubText, { color: colors.onSurfaceVariant }]}>
-          The link may be wrong, or the owner has made it private.
+          The showcase may be private, removed, or unavailable for your age. Sign in with an eligible account to view an 18+ showcase.
         </Text>
       </View>
     );
@@ -126,6 +126,7 @@ export default function PublicShowcaseScreen() {
               <Text style={[styles.showcaseName, { color: colors.text }]} numberOfLines={2}>
                 {showcase.name}
               </Text>
+              {showcase.audience_rating === "18_plus" && <Text style={{ color: colors.text }}>18+ showcase</Text>}
               <View style={styles.ownerRow}>
                 {showcase.owner.avatar_url ? (
                   <Image

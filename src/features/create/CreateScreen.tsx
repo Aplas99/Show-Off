@@ -13,7 +13,7 @@ import {
   SkeletonSearchResults,
 } from "@/src/components/ui/SkeletonLoader";
 import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
+import { Image } from "@/src/components/media/ProtectedImage";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
