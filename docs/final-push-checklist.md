@@ -29,6 +29,12 @@ Implementation completed locally so far on `codex/final-push`:
 | SAFE-07 | Updated requirements to the user-confirmed 13+ minimum and whole-public-showcase rating. | Implement signup age handling, publication classification, and backend/media access controls. |
 | UX-02 (item comment errors) | Failed comment-count queries now report an error instead of zero. The feed marks unavailable counts; successful submissions refresh counts. The comment modal keeps failed drafts, shows a retry message, and handles pending post/item submissions consistently. | Verify on device; likes/bookmarks and remaining social-query failures still need work. |
 
+Deletion cleanup is also implemented locally: both upload buckets, nested
+folders, pagination beyond 1,000 files, checked errors, retryable auth retention,
+and database guards against new writes during cleanup. Six unit tests and
+isolated PostgreSQL guard tests pass. Provider subscription handling and live
+cascade/retry checks remain; see [deletion rollout](account-deletion-rollout.md).
+
 Local work is being recorded in small commits on `codex/final-push` as requested.
 No remote push or live backend deployment has been performed.
 Pokemon client catalog writes remain present: SEC-02 and the overall

@@ -138,10 +138,13 @@ export const useDeleteAccount = () => {
 
   return useMutation({
     mutationFn: async () => {
-      const { error } = await supabase.functions.invoke("delete-account");
-      if (error) throw new Error(error.message);
+      const { data, error } = await supabase.functions.invoke("delete-account");
+      if (error || data?.deleted !== true) {
+        throw new Error("Deletion could not finish. Please retry. Some data may already have been removed.");
+      }
       // Server already removed the user; drop the local session.
-      await supabase.auth.signOut().catch(() => undefined);
+      const { error: signOutError } = await supabase.auth.signOut({ scope: "local" });
+      if (signOutError) throw new Error("Your account was deleted. Restart the app to clear the local session.");
     },
     onSuccess: () => {
       queryClient.clear();
