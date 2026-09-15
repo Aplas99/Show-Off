@@ -42,3 +42,19 @@ Changes are committed locally in separate groups. Reverting a source commit
 does not undo a migration already applied to a database; deployed SQL changes
 need a reviewed forward migration. No database rollback is needed for the
 current local-only work.
+
+## Item comments - 2026-09-15
+
+`20260915120000_scope_item_comment_access.sql` removes unrestricted comment reads
+and bases read/insert/update access on the parent item's RLS. An item's legacy
+`is_public` flag is not used as a substitute for actual viewer access. Even the
+comment author loses access when the parent becomes inaccessible. Restrictive
+guards keep extra permissive policies from bypassing these rules. Client UPDATE
+privileges are narrowed to `content`, preventing author/parent/timestamp changes.
+
+`supabase/tests/item_comment_access.sql` passed in the isolated fixture database:
+owned and public-showcase comments remain accessible, private comments are
+hidden, forged authors and private commenting fail, other-author edits and
+parent reassignment fail, and changing a showcase to private hides its comments.
+Verify with the deployed notification/counter triggers before rollout. Post
+comments use separate tables and remain part of the wider social-policy review.
