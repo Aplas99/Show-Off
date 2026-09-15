@@ -48,7 +48,13 @@ Email signup validates age and standards acceptance server-side; OAuth and
 legacy users have shared onboarding. Protected profile columns and restrictive
 content/upload policies prevent direct age edits and writes before acceptance.
 Eight age unit tests and isolated PostgreSQL assertions pass. Public showcase
-ratings and media restrictions remain separate work; see [age rollout](age-safety-rollout.md).
+classification, backend access gates, private upload buckets, authenticated
+image/video delivery, strictest-rating reuse rules, and linked-post guards are
+also implemented locally. Sharing settings now support name/description edits
+and non-default showcase deletion. All 249 app tests pass. Real Storage/CORS,
+CDN invalidation, migration/legacy-file rollout, and device checks remain; see
+[age rollout](age-safety-rollout.md). Age-entry copy explains Google Play
+age-related policies and protecting under-18 users, as requested.
 
 Policy/support pages now exist at `/legal/privacy`, `/legal/terms`,
 `/legal/community`, `/legal/support`, and `/legal/deletion`, with Settings links

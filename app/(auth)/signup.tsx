@@ -1,6 +1,6 @@
 import { useSignUp, useSignInWithOAuth } from "@/api/auth";
 import { signUpSchema } from "@/lib/authValidation";
-import { reportedAgeSchema } from "@/lib/ageAccess";
+import { AGE_COLLECTION_EXPLANATION, reportedAgeSchema } from "@/lib/ageAccess";
 import { AppleSignInButton } from "@/src/components/auth/AppleSignInButton";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -138,7 +138,7 @@ export default function SignUp() {
             />
             <TextInput style={styles.input} placeholder="Your current age" placeholderTextColor="#9CA3AF"
               accessibilityLabel="Your current age" value={age} onChangeText={setAge} keyboardType="number-pad" maxLength={3} editable={!isPending} />
-            <Text style={styles.subtitle}>Age is private and helps apply audience restrictions. Show Off is for ages 13 and older.</Text>
+            <Text style={styles.subtitle}>{AGE_COLLECTION_EXPLANATION}</Text>
             <Link href={{ pathname: "/legal/[page]", params: { page: "terms" } }} style={styles.signinLink}>Terms of Use</Link>
             <Link href={{ pathname: "/legal/[page]", params: { page: "community" } }} style={styles.signinLink}>Community Standards</Link>
             <Link href={{ pathname: "/legal/[page]", params: { page: "privacy" } }} style={styles.signinLink}>Privacy Policy</Link>

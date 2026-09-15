@@ -1,7 +1,7 @@
 import { signOut } from "@/api/auth";
 import { useColors } from "@/constants/theme";
 import { useAuthStore } from "@/hooks/useAuthStore";
-import { reportedAgeSchema } from "@/lib/ageAccess";
+import { AGE_COLLECTION_EXPLANATION, reportedAgeSchema } from "@/lib/ageAccess";
 import { POLICY_VERSION } from "@/lib/policies";
 import { supabase } from "@/lib/supabase";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
@@ -38,7 +38,8 @@ export default function SafetyOnboarding() {
   } });
   return <KeyboardAwareScrollView contentContainerStyle={[styles.container, { backgroundColor: colors.background }]} keyboardShouldPersistTaps="handled">
     <Text style={[styles.heading, { color: colors.text }]} accessibilityRole="header">Before you start</Text>
-    <Text style={{ color: colors.text }}>Show Off is for ages 13 and older. Your age stays in your private profile. We record when you provide it to apply age restrictions as time passes. Contact support if it needs correction.</Text>
+    <Text style={{ color: colors.text }}>{AGE_COLLECTION_EXPLANATION}</Text>
+    <Text style={{ color: colors.text }}>We record when you provide your age to apply restrictions as time passes. Contact support if it needs correction.</Text>
     {profile.isPending ? <ActivityIndicator /> : profile.isError ? <TouchableOpacity onPress={() => profile.refetch()} style={styles.button}><Text style={{ color: colors.primary }}>Retry loading profile</Text></TouchableOpacity> : profile.data?.reported_age != null ?
       <Text style={{ color: colors.text }}>Age recorded at signup: {profile.data.reported_age}</Text> :
       <TextInput style={[styles.input, { color: colors.text, backgroundColor: colors.inputBg }]} accessibilityLabel="Your current age" placeholder="Your current age" placeholderTextColor={colors.textDim} keyboardType="number-pad" maxLength={3} value={age} onChangeText={setAge} />}
