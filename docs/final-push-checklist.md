@@ -35,6 +35,16 @@ and database guards against new writes during cleanup. Six unit tests and
 isolated PostgreSQL guard tests pass. Provider subscription handling and live
 cascade/retry checks remain; see [deletion rollout](account-deletion-rollout.md).
 
+AUTH-01/02/03 now have local implementations: explicit PKCE, a shared mobile/web
+callback, Apple OAuth entry points, confirmation resend with cooldown/errors,
+and recovery-link validation while already signed in. Provider setup and
+real-device/email tests remain; see [auth rollout](auth-rollout.md).
+
+Age implementation will store self-reported age and its recording date in the
+private profile table, as requested on 2026-09-15. No date of birth is requested.
+Age progression for access is conservative because the birthday is unknown.
+Minors will not receive personalized advertising.
+
 Local work is being recorded in small commits on `codex/final-push` as requested.
 No remote push or live backend deployment has been performed.
 Pokemon client catalog writes remain present: SEC-02 and the overall

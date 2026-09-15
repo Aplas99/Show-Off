@@ -13,7 +13,7 @@ export default function AuthLayout() {
   // still need to stay on the reset screen to choose a new password.
   const isResettingPassword = (segments as string[])[1] === "reset-password";
 
-  if (session && !isResettingPassword) {
+  if (session && !isResettingPassword && !(segments as string[]).includes("callback")) {
     return <Redirect href={"/(tabs)/discover"} />;
   }
 

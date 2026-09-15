@@ -56,6 +56,7 @@ export default function AuthInitializer({ children }: { children: React.ReactNod
 
   useEffect(() => {
     if (loading || !navigationState?.key) return;
+    if ((segments as string[]).includes("callback")) return;
 
     const destination = resolveAuthRedirect({
       session,

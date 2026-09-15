@@ -1,5 +1,6 @@
 import { useSignUp, useSignInWithOAuth } from "@/api/auth";
 import { signUpSchema } from "@/lib/authValidation";
+import { AppleSignInButton } from "@/src/components/auth/AppleSignInButton";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { Link, useRouter } from "expo-router";
@@ -26,7 +27,7 @@ export default function SignUp() {
   const { mutateAsync: signUp, isPending } = useSignUp();
   const signInWithOAuth = useSignInWithOAuth();
 
-  const handleOAuthSignIn = async (provider: "google" | "discord") => {
+  const handleOAuthSignIn = async (provider: "google" | "discord" | "apple") => {
     try {
       await signInWithOAuth.mutateAsync(provider);
     } catch (err: any) {
@@ -49,7 +50,7 @@ export default function SignUp() {
         Alert.alert(
           "Confirm your email",
           `We sent a confirmation link to ${email}. Please verify your email, then sign in.`,
-          [{ text: "OK", onPress: () => router.replace("/(auth)/signin") }],
+          [{ text: "OK", onPress: () => router.replace("/(auth)/confirm-email") }],
         );
         return;
       }
@@ -175,6 +176,7 @@ export default function SignUp() {
               </TouchableOpacity>
             </View>
 
+            <AppleSignInButton onPress={() => handleOAuthSignIn("apple")} disabled={isPending || signInWithOAuth.isPending} />
             {/* Already have an account? */}
             <Link href="/signin" asChild>
               <TouchableOpacity style={styles.haveAccountButton}>
