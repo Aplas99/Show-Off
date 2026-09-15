@@ -46,6 +46,39 @@ purchase/restore testing requires a native development or store build.
 
 ## Required release evidence
 
+### Server configuration and reconciliation
+
+Deploy migration `20260915160000_verified_membership_snapshots.sql` before the
+updated `revenuecat-webhook` function. Configure:
+
+- `REVENUECAT_WEBHOOK_AUTH_HEADER`: random secret sent verbatim by RevenueCat.
+- `REVENUECAT_SECRET_API_KEY`: private RevenueCat API key with customer read access.
+- `REVENUECAT_APP_IDS`: comma-separated RevenueCat iOS/Android app IDs.
+- `REVENUECAT_PRODUCT_PLANS`: optional JSON mapping exact store product identifiers
+  to `founding_curator`, `curator_monthly`, or `curator_annual`. Configure custom
+  IDs and Play base-plan suffixes explicitly; matching does not strip suffixes.
+- `REVENUECAT_ALLOW_SANDBOX=true` only in the isolated test backend. Default false.
+
+The webhook verifies its authorization and fetches current customer state from
+RevenueCat's API. Only an unexpired `curator` entitlement backed by a configured
+Apple/Play subscription can grant access. Transfers reconcile both participants;
+arbitrary aliases and unknown events cannot grant access. Provider failures
+return 503 for retry. A service-only transaction rejects older/duplicate
+snapshots, retires old transaction-keyed rows, and avoids recreating deleted or
+deleting accounts. Membership helpers require a future expiry even when an
+expiration webhook is delayed. No private API credential belongs in app env.
+
+Existing RevenueCat accounts require reconciliation during rollout (resend a
+recent lifecycle event from the provider dashboard). Verify that new API access
+works before switching traffic. Monitor repeated 503s and reconcile provider
+outages/refunds; a missing webhook can delay revocation until recorded expiry.
+Keep test and production backends separate.
+
+Local evidence: parser/routing/restore tests, Deno function type-check, and
+isolated PostgreSQL tests for duplicate/stale snapshots, expiry, deletion, and
+service-only privileges pass. Full migration upgrades and real store events
+remain release tests.
+
 Test purchase, cancelled sheet, renewal, expiration, refunds, billing problems,
 restore after reinstall, wrong store account, account switching, offline errors,
 price changes, retired offers, duplicate/delayed/out-of-order webhooks, and
@@ -57,6 +90,8 @@ credentials or store approval. No live store verification has been completed.
 ## References
 
 - [RevenueCat displaying products](https://www.revenuecat.com/docs/getting-started/displaying-products)
+- [RevenueCat customer state API](https://www.revenuecat.com/docs/api-v1/customers)
+- [RevenueCat webhook events](https://www.revenuecat.com/docs/integrations/webhooks/event-types-and-fields)
 - [Apple review guidelines](https://developer.apple.com/app-store/review/guidelines/)
 
 The launch choice does not claim U.S. external payment links are forbidden.

@@ -3,6 +3,7 @@ import {
   PLAN_STORE_PRODUCT_IDS,
   getActiveBillingProvider,
   getMembershipUploadLimitBytes,
+  hasUnexpiredMembership,
   isActiveMembershipStatus,
   subscriptionRowSchema,
 } from "@/api/memberships";
@@ -22,6 +23,14 @@ jest.mock("react-native", () => ({
 }));
 
 describe("isActiveMembershipStatus", () => {
+  it("requires a future expiration as well as an active status", () => {
+    const now = Date.parse("2026-09-15T12:00:00Z");
+    expect(hasUnexpiredMembership({ status: "active", current_period_end: "2026-10-15T12:00:00Z" }, now)).toBe(true);
+    for (const end of [null, "invalid", "2026-09-15T12:00:00Z", "2026-08-15T12:00:00Z"]) {
+      expect(hasUnexpiredMembership({ status: "active", current_period_end: end }, now)).toBe(false);
+    }
+    expect(hasUnexpiredMembership({ status: "canceled", current_period_end: "2026-10-15T12:00:00Z" }, now)).toBe(false);
+  });
   it("treats active and trialing as paid", () => {
     expect(isActiveMembershipStatus("active")).toBe(true);
     expect(isActiveMembershipStatus("trialing")).toBe(true);

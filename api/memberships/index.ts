@@ -124,6 +124,11 @@ export function isActiveMembershipStatus(status: string | null | undefined) {
   );
 }
 
+export function hasUnexpiredMembership(subscription: { status: string; current_period_end: string | null } | null | undefined, now = Date.now()): boolean {
+  return !!subscription && isActiveMembershipStatus(subscription.status) &&
+    !!subscription.current_period_end && Date.parse(subscription.current_period_end) > now;
+}
+
 export const membershipKeys = {
   all: () => ["membership"] as const,
   current: () => ["membership", "current"] as const,
@@ -139,8 +144,9 @@ export async function getHasActiveMembership(): Promise<boolean> {
   try {
     const { data, error } = await supabase
       .from("subscriptions")
-      .select("id, status")
+      .select("id, status, current_period_end")
       .in("status", [...ACTIVE_MEMBERSHIP_STATUSES])
+      .gt("current_period_end", new Date().toISOString())
       .limit(1);
 
     if (error) return false;
@@ -183,7 +189,7 @@ async function fetchCurrentSubscription(): Promise<SubscriptionRow | null> {
   }
 
   const subscription =
-    parsedRows.find((row) => isActiveMembershipStatus(row.status)) ??
+    parsedRows.find((row) => hasUnexpiredMembership(row)) ??
     parsedRows[0];
   membershipDebug.log("membership.subscription_resolved", {
     status: subscription.status,
@@ -264,7 +270,7 @@ async function invokeStripeSession(body: {
 export async function getCurrentMembershipAccess() {
   try {
     const subscription = await fetchCurrentSubscription();
-    const isPaidUser = isActiveMembershipStatus(subscription?.status);
+    const isPaidUser = hasUnexpiredMembership(subscription);
     const tier = isPaidUser ? (subscription?.tier ?? "collector") : null;
     const planId = isPaidUser ? (subscription?.plan_id ?? null) : null;
     return {
@@ -286,7 +292,8 @@ export function useMembership() {
   return useQuery({
     queryKey: membershipKeys.current(),
     queryFn: getCurrentMembershipAccess,
-    staleTime: 60 * 1000,
+    staleTime: 15 * 1000,
+    refetchInterval: 30 * 1000,
   });
 }
 
