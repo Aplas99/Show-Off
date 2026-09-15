@@ -1,6 +1,8 @@
 import { supabase } from "@/lib/supabase";
 import { authRedirectUrl, createAuthCodeExchanger } from "@/lib/authRedirect";
 import { emailSchema } from "@/lib/authValidation";
+import { reportedAgeSchema } from "@/lib/ageAccess";
+import { POLICY_VERSION } from "@/lib/policies";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import * as WebBrowser from "expo-web-browser";
 import { Platform } from "react-native";
@@ -16,7 +18,9 @@ export const completeAuthCallback = createAuthCodeExchanger(async (code) => {
 });
 
 // 1. Raw Supabase Auth Functions
-export const signUpWithEmail = async ({ email, password, username }: { email: string; password: string; username: string }) => {
+export const signUpWithEmail = async ({ email, password, username, age, accepted }: { email: string; password: string; username: string; age: number; accepted: boolean }) => {
+  reportedAgeSchema.parse(age);
+  if (!accepted) throw new Error("Please accept the terms and community standards.");
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
@@ -24,6 +28,8 @@ export const signUpWithEmail = async ({ email, password, username }: { email: st
       emailRedirectTo: redirectTo("auth/callback"),
       data: {
         username: username,
+        reported_age: age,
+        accepted_policy_version: POLICY_VERSION,
       },
     },
   });

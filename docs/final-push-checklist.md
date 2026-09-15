@@ -40,10 +40,15 @@ callback, Apple OAuth entry points, confirmation resend with cooldown/errors,
 and recovery-link validation while already signed in. Provider setup and
 real-device/email tests remain; see [auth rollout](auth-rollout.md).
 
-Age implementation will store self-reported age and its recording date in the
+Age implementation now stores self-reported age and its recording date in the
 private profile table, as requested on 2026-09-15. No date of birth is requested.
 Age progression for access is conservative because the birthday is unknown.
 Minors will not receive personalized advertising.
+Email signup validates age and standards acceptance server-side; OAuth and
+legacy users have shared onboarding. Protected profile columns and restrictive
+content/upload policies prevent direct age edits and writes before acceptance.
+Eight age unit tests and isolated PostgreSQL assertions pass. Public showcase
+ratings and media restrictions remain separate work; see [age rollout](age-safety-rollout.md).
 
 Policy/support pages now exist at `/legal/privacy`, `/legal/terms`,
 `/legal/community`, `/legal/support`, and `/legal/deletion`, with Settings links
