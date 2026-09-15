@@ -107,7 +107,8 @@ rollback strategy.
 - Run app lint, TypeScript, and the full Jest suite before release.
 - Product normalization, fallback/linking, and item-creation regressions are
   covered by `lib/productCatalog.test.ts`, `api/products/index.test.ts`, and
-  `api/items/catalogCreate.test.ts`. Current full suite: 221 tests passing.
+  `api/items/catalogCreate.test.ts`. The product batch passed 221 tests; see the
+  final-push checklist for the current full-suite result.
 
 Database tests in a local PostgreSQL engine do not replace live Supabase gateway,
 JWT, vendor credential, device, load, or deployment verification. No production

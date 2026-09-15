@@ -13,7 +13,7 @@ switching a private showcase to public requires classification. Under-18 and
 age-unverified visitors cannot access an 18+ public showcase's details or media.
 An 18+ designation does not permit content otherwise prohibited by store policy.
 
-## Implementation progress - 2026-09-09
+## Implementation progress - updated 2026-09-15
 
 Implementation completed locally so far on `codex/final-push`:
 
@@ -24,9 +24,10 @@ Implementation completed locally so far on `codex/final-push`:
 | SEC-05 | Removed both vendor-key reads from client code and public env examples. | Remove old values from deployment environments, rotate exposed keys, inspect release bundles, and address the optional OCR token. |
 | SEC-03 (creation/link ownership) | Removed permissive item/showcase INSERT policies and added restrictive ownership guards. Client calls to privileged default-showcase provisioning are revoked. Links require ownership of both the showcase and item; batch RPCs retain atomic saves under the new policy. Isolated owner/other-user/anonymous/provisioning/link/rollback tests pass. | Deploy and test signup/item/showcase creation and batch saves with real membership triggers; review comment reads, existing links, and the remaining social/storage policies before closing SEC-03. |
 | SEC-03 (item comments, 2026-09-15) | Comment reads/inserts/edits now follow parent-item access. Restrictive checks block broad-policy bypasses and forged authors; clients may update only comment content. Private-showcase transitions and author/ownership cases pass isolated PostgreSQL tests. | Deploy and verify comment flows with actual triggers; review post interactions, other social/storage policies, and old links before closing SEC-03. |
-| QA-02 | Excluded nested worktrees from Jest/ESLint discovery; all 221 tests and the app TypeScript check pass after the product changes. | Repeat on the final release candidate; 13 pre-existing lint warnings remain. |
+| QA-02 | Excluded nested worktrees from Jest/ESLint discovery; all 225 tests and the app TypeScript check pass after the comment changes. Full lint reports 0 errors. | Repeat on the final release candidate; 13 pre-existing lint warnings remain. |
 | QA-03 | Deno type-check passed. Isolated PostgreSQL assertions passed for role permissions, rate caps, rollover, isolation, retention cleanup, deletion cascade, Magic/product client write denial, service writes, shared admission, and UPC trial caps/cooldowns. | Verify real Supabase deployment/JWT/vendor behavior; load and concurrent-request checks remain. |
 | SAFE-07 | Updated requirements to the user-confirmed 13+ minimum and whole-public-showcase rating. | Implement signup age handling, publication classification, and backend/media access controls. |
+| UX-02 (item comment errors) | Failed comment-count queries now report an error instead of zero. The feed marks unavailable counts; successful submissions refresh counts. The comment modal keeps failed drafts, shows a retry message, and handles pending post/item submissions consistently. | Verify on device; likes/bookmarks and remaining social-query failures still need work. |
 
 Local work is being recorded in small commits on `codex/final-push` as requested.
 No remote push or live backend deployment has been performed.

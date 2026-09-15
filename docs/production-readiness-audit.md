@@ -23,7 +23,7 @@ migrations revoking client writes. UPCItemDB uses the proxy with a shared trial
 budget and Barcode Lookup fallback. Pokemon cards/rosters and manual cards still
 need migration. Existing cached data has not been independently revalidated.
 
-Local checks: 221/221 tests passing, app TypeScript and the new Edge Function's
+Local checks: 225/225 tests passing, app TypeScript and the new Edge Function's
 Deno type-check passing, and isolated PostgreSQL rate-limit and Magic/product write
 permission assertions passing.
 ESLint has 0 errors and 13 existing warnings. No backend deployment has occurred.
@@ -34,6 +34,20 @@ new link policy and preserve USD for unpriced items. Isolated policy tests pass;
 membership-trigger integration and live rollout remain unverified. Changes are
 now recorded in small local commits as requested.
 The original findings below are historical; use the checklist for current status.
+
+## Comment access and errors - 2026-09-15
+
+Item comments now follow parent-item RLS, with restrictive checks for reading,
+inserting, and editing. Client updates are limited to content. Isolated tests
+cover private/public/owner access, forged authors, forbidden edits, and a
+showcase becoming private. Post interactions still need their separate review.
+
+Comment count failures now surface as query errors instead of zero. The feed
+marks unavailable counts, successful submissions invalidate count queries, and
+the modal reports failed sends while preserving the draft. Pending post and item
+sends both disable duplicate submissions. These UI changes still need device QA.
+The current 19 Jest suites contain 225 passing tests; TypeScript passes and lint
+has 0 errors with 13 pre-existing warnings. No production changes were deployed.
 
 ## Status update (later on 2026-07-13)
 
