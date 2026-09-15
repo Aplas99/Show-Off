@@ -1,9 +1,10 @@
+import { openAdPrivacyOptions } from "@/api/ads";
 import { useDeleteAccount } from "@/api/auth";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { useThemeStore, type ThemeMode } from "@/hooks/useThemeStore";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
-import React, { useEffect } from "react";
+import React, { useEffect, useState } from "react";
 import {
     ActivityIndicator,
     Alert,
@@ -36,6 +37,8 @@ export default function SettingsScreen() {
     const { mode, setMode, isDark } = useThemeStore();
     const styles = getStyles(colors);
     const deleteAccount = useDeleteAccount();
+    const [privacyMessage, setPrivacyMessage] = useState("");
+    const [privacyPending, setPrivacyPending] = useState(false);
 
     const handleDeleteAccount = () => {
         Alert.alert(
@@ -157,6 +160,20 @@ export default function SettingsScreen() {
                         <Ionicons name="chevron-forward" size={18} color={colors.text} />
                     </TouchableOpacity>
                 ))}
+            </View>
+            <View style={styles.themeCard}>
+                <TouchableOpacity style={styles.infoRow} disabled={privacyPending} accessibilityRole="button" onPress={async () => {
+                    setPrivacyPending(true);
+                    try { setPrivacyMessage(await openAdPrivacyOptions()); }
+                    catch { setPrivacyMessage("Privacy choices could not be loaded. Please try again."); }
+                    finally { setPrivacyPending(false); }
+                }}>
+                    <Text style={styles.infoLabel}>{privacyPending ? "Loading privacy choices..." : "Advertising privacy choices"}</Text>
+                </TouchableOpacity>
+                {!!privacyMessage && <Text style={styles.infoLabel} accessibilityLiveRegion="polite">{privacyMessage}</Text>}
+                <TouchableOpacity style={styles.infoRow} accessibilityRole="link" onPress={() => router.push("/(tabs)/profile/membership")}>
+                    <Text style={styles.infoLabel}>Manage or cancel membership</Text>
+                </TouchableOpacity>
             </View>
             {/* Danger Zone */}
             <Animated.View entering={FadeInDown.delay(350).springify()}>
