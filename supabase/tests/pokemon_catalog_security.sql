@@ -18,6 +18,10 @@ DO $$ DECLARE v_card jsonb; v_item integer; BEGIN
     INSERT INTO public.pokemon_tcg_set_rosters(set_id,set_name,cached_card_count,is_complete) VALUES('fake','Fake',1,TRUE);
     RAISE EXCEPTION 'Client forged complete roster';
   EXCEPTION WHEN insufficient_privilege THEN NULL; END;
+  BEGIN
+    PERFORM public.create_manual_pokemon_card('kill yourself','Local set','1');
+    RAISE EXCEPTION 'Manual card bypassed text filtering';
+  EXCEPTION WHEN raise_exception THEN IF SQLERRM <> 'This text needs revision under the Community Standards. Contact support if this is a mistake' THEN RAISE; END IF; END;
   v_card=public.create_manual_pokemon_card('Local card','Local set','A1');
   IF v_card->>'id' NOT LIKE 'manual:' || auth.uid()::text || ':%' THEN RAISE EXCEPTION 'Wrong manual ownership'; END IF;
   INSERT INTO public.items(user_id,pokemon_tcg_card_id,is_verified) VALUES(auth.uid(),v_card->>'id',TRUE) RETURNING id INTO v_item;

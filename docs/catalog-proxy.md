@@ -18,7 +18,7 @@ not prove historical data is trustworthy.
    `20260909160000_add_catalog_proxy_rate_limits.sql` and then
    `20260909200000_secure_magic_catalog_writes.sql`, followed by
    `20260909210000_secure_product_catalog_writes.sql`, and the complete ordered
-   migration chain through `20260915180000_secure_pokemon_catalog.sql`, to a test environment.
+   migration chain through `20260915181000_filter_manual_pokemon_text.sql`, to a test environment.
 2. Configure `POKEMON_TCG_API_KEY` and `BARCODE_LOOKUP_API_KEY` as Supabase Edge
    Function secrets. They are not Expo environment variables.
 3. Deploy `catalog-proxy` with its `deno.json` and JWT verification enabled.
