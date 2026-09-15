@@ -396,6 +396,11 @@ verify_jwt = true
 enabled = true
 verify_jwt = true
 
+[functions.revenuecat-webhook]
+enabled = true
+# RevenueCat authenticates with the secret authorization header in the handler.
+verify_jwt = false
+
 [functions.stripe-checkout]
 enabled = true
 verify_jwt = true
