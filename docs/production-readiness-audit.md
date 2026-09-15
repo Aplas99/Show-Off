@@ -27,6 +27,12 @@ Local checks: 221/221 tests passing, app TypeScript and the new Edge Function's
 Deno type-check passing, and isolated PostgreSQL rate-limit and Magic/product write
 permission assertions passing.
 ESLint has 0 errors and 13 existing warnings. No backend deployment has occurred.
+Additional local fixes remove unrestricted item/showcase creation, restrict the
+privileged default-showcase helper to server use, and require ownership of both
+sides of a showcase-item link. Pokemon/Magic batch RPCs remain atomic under the
+new link policy and preserve USD for unpriced items. Isolated policy tests pass;
+membership-trigger integration and live rollout remain unverified. Changes are
+now recorded in small local commits as requested.
 The original findings below are historical; use the checklist for current status.
 
 ## Status update (later on 2026-07-13)
