@@ -2,10 +2,11 @@ import {
     getCurrentMembershipAccess,
     getMembershipUploadLimitBytes,
 } from "@/api/memberships";
+import { prepareWebUpload } from "@/lib/webUpload";
 import { supabase } from "@/lib/supabase";
 import { useMutation } from "@tanstack/react-query";
 import * as FileSystem from "expo-file-system/legacy";
-import { Alert } from "react-native";
+import { Alert, Platform } from "react-native";
 
 interface UploadImageParams {
     uri: string;
@@ -49,7 +50,8 @@ export async function uploadImageToSupabase({
     });
 
     // 1. Validate file size (measure it ourselves when not provided)
-    if (fileSize == null) {
+    const webFile = Platform.OS === "web" ? await prepareWebUpload(uri, MAX_FILE_SIZE_BYTES, kind === "media") : null;
+    if (!webFile && fileSize == null) {
         try {
             const info = await FileSystem.getInfoAsync(uri);
             if (info.exists && typeof info.size === "number") {
@@ -67,7 +69,7 @@ export async function uploadImageToSupabase({
     }
 
     // 2. Validate file type
-    const ext = uri.split(".").pop()?.toLowerCase();
+    const ext = webFile?.extension ?? uri.split(/[?#]/, 1)[0].split(".").pop()?.toLowerCase();
     const allowedExtensions =
         kind === "media"
             ? [...IMAGE_EXTENSIONS, ...VIDEO_EXTENSIONS]
@@ -92,7 +94,7 @@ export async function uploadImageToSupabase({
     const filePath = `${user.id}/${fileName}`;
 
     const formData = new FormData();
-    formData.append("file", {
+    if (!webFile) formData.append("file", {
         uri,
         name: fileName,
         type: MIME_BY_EXT[ext] ?? "application/octet-stream",
@@ -101,7 +103,8 @@ export async function uploadImageToSupabase({
     // 4. Upload to Supabase
     const { error } = await supabase.storage
         .from(bucketName)
-        .upload(filePath, formData, {
+        .upload(filePath, webFile?.body ?? formData, {
+            contentType: webFile?.contentType ?? MIME_BY_EXT[ext],
             cacheControl: "0",
             upsert: false,
         });
