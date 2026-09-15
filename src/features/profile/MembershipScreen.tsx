@@ -1,8 +1,12 @@
+import SubscriptionDisclosure from "@/src/components/membership/SubscriptionDisclosure";
 import {
     FREE_TIER_LIMITS,
     FREE_TIER_NAME,
     MEMBERSHIP_PLANS,
     getActiveBillingProvider,
+  PLAN_STORE_PRODUCT_IDS,
+  PURCHASE_UNAVAILABLE_MESSAGE,
+  useMembershipPrices,
     useManageMembership,
     useMembership,
     usePurchaseMembership,
@@ -55,7 +59,7 @@ const CURATOR_FEATURES = [
 const PLAN_FEATURES: Record<MembershipPlanId, readonly string[]> = {
     founding_curator: [
         "10MB uploads per file",
-        "Permanent Early Access founding rate",
+        "Monthly billing through your store",
         "Metallic Founding Curator profile badge",
     ],
     curator_monthly: [
@@ -65,8 +69,8 @@ const PLAN_FEATURES: Record<MembershipPlanId, readonly string[]> = {
     ],
     curator_annual: [
         "100MB uploads per file",
-        "Roughly two months free each year",
-        "Best-value Curator membership",
+        "One payment per year",
+        "Full Curator feature access",
     ],
 };
 
@@ -76,15 +80,15 @@ export default function MembershipScreen() {
     const router = useRouter();
     const styles = getStyles(colors);
 
-    const { data: membership, isLoading } = useMembership();
+    const { data: membership, isLoading, isError: membershipError, refetch: refetchMembership } = useMembership();
     const purchase = usePurchaseMembership();
     const manage = useManageMembership();
     const restore = useRestorePurchases();
+    const prices = useMembershipPrices();
     const [selectedPlan, setSelectedPlan] =
         useState<MembershipPlanId>("curator_monthly");
 
-    // On store builds the app sells through native IAP (App Store / Play) to
-    // stay policy-compliant; on web it uses Stripe checkout in the browser.
+    // New purchases use native store billing only.
     const isNativeBilling = getActiveBillingProvider() === "revenuecat";
     const storeName =
         Platform.OS === "ios" ? "the App Store" : "Google Play";
@@ -101,15 +105,12 @@ export default function MembershipScreen() {
     const handleUpgrade = async () => {
         try {
             const result = await purchase.mutateAsync(selectedPlan);
-            // Native purchases resolve synchronously with the store result;
-            // Stripe (web) confirms asynchronously via webhook, so only the
-            // native success path shows an immediate confirmation.
             if (result.success) {
                 Alert.alert(
                     selectedPlan === "founding_curator"
                         ? "Welcome, Founding Curator"
                         : "Welcome to Curator",
-                    "Your membership is now active.",
+                    "Your purchase was confirmed by the store. Membership access will update when the receipt is synchronized.",
                 );
             }
         } catch (error: any) {
@@ -138,7 +139,7 @@ export default function MembershipScreen() {
             Alert.alert(
                 active ? "Purchases restored" : "Nothing to restore",
                 active
-                    ? "Your Curator membership is active again."
+                    ? "The store found your membership. Access will update when the receipt is synchronized."
                     : `We couldn't find an active membership on your ${storeName} account.`,
             );
         } catch (error: any) {
@@ -184,6 +185,13 @@ export default function MembershipScreen() {
                     ]}
                     showsVerticalScrollIndicator={false}
                 >
+
+              {membershipError && <Text style={{ color: colors.text }} onPress={() => void refetchMembership()}>Unable to check your membership. Tap to retry before purchasing.</Text>}
+              {!isNativeBilling && <Text style={{ color: colors.text }}>{PURCHASE_UNAVAILABLE_MESSAGE}</Text>}
+              {isNativeBilling && <TouchableOpacity onPress={() => void prices.refetch()} disabled={prices.isFetching} accessibilityRole="button">
+                <Text style={{ color: colors.primary, paddingVertical: 12 }}>{prices.isFetching ? "Loading store prices..." : prices.isError ? "Prices unavailable. Tap to retry." : "Refresh store prices"}</Text>
+              </TouchableOpacity>}
+
                     {/* Current status */}
                     <Animated.View entering={FadeInDown.delay(100).springify()}>
                         <View style={styles.statusCard}>
@@ -296,7 +304,7 @@ export default function MembershipScreen() {
                             {isNativeBilling && (
                                 <TouchableOpacity
                                     onPress={handleRestore}
-                                    disabled={restore.isPending}
+                                    disabled={restore.isPending || purchase.isPending}
                                     style={styles.restoreButton}
                                     activeOpacity={0.7}
                                 >
@@ -353,7 +361,7 @@ export default function MembershipScreen() {
                                                     {plan.description}
                                                 </Text>
                                             </View>
-                                            <Text style={styles.planPrice}>{plan.priceLabel}</Text>
+                                            <Text style={styles.planPrice}>{prices.data?.[PLAN_STORE_PRODUCT_IDS[plan.id]] ? `${prices.data[PLAN_STORE_PRODUCT_IDS[plan.id]].price} / ${prices.data[PLAN_STORE_PRODUCT_IDS[plan.id]].interval}` : "Unavailable"}</Text>
                                         </TouchableOpacity>
                                     );
                                 })}
@@ -375,41 +383,27 @@ export default function MembershipScreen() {
                                 ))}
                             </View>
 
-                            {selectedPlan === "founding_curator" && (
-                                <View style={styles.earlyAccessNotice}>
-                                    <Ionicons
-                                        name="time-outline"
-                                        size={18}
-                                        color={colors.tertiary}
-                                    />
-                                    <Text style={styles.earlyAccessText}>
-                                        Founding Curator is available only during Early Access.
-                                        Join before the offer closes to keep the founding rate.
-                                    </Text>
-                                </View>
-                            )}
-
-                            <TouchableOpacity
+<TouchableOpacity
                                 style={styles.primaryButton}
                                 onPress={handleUpgrade}
-                                disabled={purchase.isPending}
+                                disabled={purchase.isPending || restore.isPending || membershipError || !prices.data?.[PLAN_STORE_PRODUCT_IDS[selectedPlan]]}
                                 activeOpacity={0.8}
                             >
                                 {purchase.isPending ? (
                                     <ActivityIndicator color="#FFF" />
                                 ) : (
-                                    <Text style={styles.primaryButtonText}>Upgrade</Text>
+                                    <Text style={styles.primaryButtonText}>{prices.data?.[PLAN_STORE_PRODUCT_IDS[selectedPlan]] ? "Subscribe" : "Purchase unavailable"}</Text>
                                 )}
                             </TouchableOpacity>
                             <Text style={styles.footnote}>
                                 {isNativeBilling
                                     ? `Billed through your ${storeName} account. Renews automatically — cancel anytime in ${storeName}.`
-                                    : "Secure checkout powered by Stripe. Membership renews automatically and can be cancelled anytime."}
+                                    : PURCHASE_UNAVAILABLE_MESSAGE}
                             </Text>
                             {isNativeBilling && (
                                 <TouchableOpacity
                                     onPress={handleRestore}
-                                    disabled={restore.isPending}
+                                    disabled={restore.isPending || purchase.isPending}
                                     style={styles.restoreButton}
                                     activeOpacity={0.7}
                                 >
@@ -422,6 +416,7 @@ export default function MembershipScreen() {
                             )}
                         </Animated.View>
                     )}
+                    <SubscriptionDisclosure />
                 </ScrollView>
             )}
         </View>

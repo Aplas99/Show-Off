@@ -1,3 +1,12 @@
+import {
+  MEMBERSHIP_UPLOAD_LIMITS_BYTES,
+  PLAN_STORE_PRODUCT_IDS,
+  getActiveBillingProvider,
+  getMembershipUploadLimitBytes,
+  isActiveMembershipStatus,
+  subscriptionRowSchema,
+} from "@/api/memberships";
+
 // expo-web-browser and expo-secure-store (via @/lib/supabase) ship
 // untranspiled ESM that ts-jest can't parse. react-native is likewise flow/ESM
 // (pulled in transitively via api/memberships/nativeBilling.ts); the node test
@@ -11,15 +20,6 @@ jest.mock("@/lib/supabase", () => ({
 jest.mock("react-native", () => ({
   Platform: { OS: "web", select: () => undefined },
 }));
-
-import {
-  MEMBERSHIP_UPLOAD_LIMITS_BYTES,
-  PLAN_STORE_PRODUCT_IDS,
-  getActiveBillingProvider,
-  getMembershipUploadLimitBytes,
-  isActiveMembershipStatus,
-  subscriptionRowSchema,
-} from "@/api/memberships";
 
 describe("isActiveMembershipStatus", () => {
   it("treats active and trialing as paid", () => {
@@ -155,10 +155,9 @@ describe("membership upload limits", () => {
 });
 
 describe("billing provider routing", () => {
-  it("falls back to Stripe when native billing is unavailable", () => {
-    // Under the node/web test env RevenueCat isn't linked, so new purchases
-    // must route to Stripe rather than a missing native module.
-    expect(getActiveBillingProvider()).toBe("stripe");
+  it("disables purchases when native billing is unavailable", () => {
+    // Web and unconfigured builds must never fall back to Stripe.
+    expect(getActiveBillingProvider()).toBeNull();
   });
 
   it("maps every plan to a store product id", () => {

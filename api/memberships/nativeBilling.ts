@@ -1,251 +1,126 @@
-// Native in-app purchase (IAP) billing via RevenueCat.
-//
-// WHY THIS EXISTS
-// ---------------
-// Apple App Store and Google Play require digital memberships bought *inside*
-// the app to go through their own billing (StoreKit / Play Billing), not an
-// external Stripe checkout. Steering users to a web checkout is only allowed in
-// specific storefronts/programs and is the fastest way to get an app removed.
-// So on native store builds we sell through IAP; the browser/Stripe flow
-// (`useStartCheckout`) is kept for the web target and out-of-app signups.
-//
-// RevenueCat wraps StoreKit/Play Billing and, crucially, sends renewal /
-// cancellation webhooks to `supabase/functions/revenuecat-webhook`, which
-// upserts the SAME `public.subscriptions` table the Stripe webhook writes to
-// (with `provider = 'revenuecat'`). Every existing gate — `isPaidUser`,
-// `has_active_membership()`, `subscriptions_with_tier` — therefore keeps
-// working unchanged, whichever rail the user paid on.
-//
-// The native module (`react-native-purchases`) is loaded with `require()`
-// inside functions — the same pattern the app already uses for
-// `react-native-mmkv` — so the web bundle and Expo Go (where it isn't linked)
-// never evaluate it. OCR-style rule: native billing only works in a dev/store
-// build, never in Expo Go.
-
+// Native purchases are the only new-purchase channel for this release.
 import { Platform } from "react-native";
+import { useAuthStore } from "@/hooks/useAuthStore";
 
-/** RevenueCat entitlement identifier that unlocks the Curator tier. Must match
- *  the entitlement configured in the RevenueCat dashboard. */
 export const CURATOR_ENTITLEMENT_ID = "curator";
+const API_KEY = Platform.select({
+  ios: process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY,
+  android: process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY,
+});
 
-/** Public SDK keys are safe to bundle (RevenueCat validates receipts server
- *  side). Set per platform; leaving them unset disables native billing so the
- *  app cleanly falls back / hides the purchase CTA. */
-const REVENUECAT_API_KEY =
-  Platform.select({
-    ios: process.env.EXPO_PUBLIC_REVENUECAT_IOS_KEY,
-    android: process.env.EXPO_PUBLIC_REVENUECAT_ANDROID_KEY,
-  }) ?? undefined;
-
-// --- Minimal structural types for the bits of the SDK we touch. Declared
-// locally so this file type-checks whether or not `react-native-purchases`
-// is installed yet (it's an optional native dependency). ---
-
-interface NativeStoreProduct {
+interface StoreProduct {
   identifier: string;
   priceString: string;
+  subscriptionPeriod: string | null;
 }
-interface NativePackage {
-  identifier: string;
-  product: NativeStoreProduct;
-}
-interface NativeOffering {
-  availablePackages: NativePackage[];
-}
-interface NativeCustomerInfo {
-  entitlements: { active: Record<string, unknown> };
-  activeSubscriptions: string[];
-}
+interface StorePackage { identifier: string; product: StoreProduct }
+interface CustomerInfo { entitlements: { active: Record<string, unknown> } }
 interface PurchasesModule {
-  configure(opts: { apiKey: string; appUserID?: string | null }): void;
-  logIn(
-    appUserID: string,
-  ): Promise<{ customerInfo: NativeCustomerInfo; created: boolean }>;
-  getOfferings(): Promise<{
-    current: NativeOffering | null;
-    all: Record<string, NativeOffering>;
-  }>;
-  getProducts(productIds: string[]): Promise<NativeStoreProduct[]>;
-  purchasePackage(
-    pkg: NativePackage,
-  ): Promise<{ customerInfo: NativeCustomerInfo }>;
-  purchaseStoreProduct(
-    product: NativeStoreProduct,
-  ): Promise<{ customerInfo: NativeCustomerInfo }>;
-  getCustomerInfo(): Promise<NativeCustomerInfo>;
-  restorePurchases(): Promise<NativeCustomerInfo>;
+  configure(options: { apiKey: string; appUserID: string }): void;
+  logIn(userId: string): Promise<unknown>;
+  getOfferings(): Promise<{ current: { availablePackages: StorePackage[] } | null }>;
+  purchasePackage(pkg: StorePackage): Promise<{ customerInfo: CustomerInfo }>;
+  getCustomerInfo(): Promise<CustomerInfo>;
+  restorePurchases(): Promise<CustomerInfo>;
   showManageSubscriptions(): Promise<void>;
 }
 
-/** Lazily require the native module. Returns null on web / Expo Go / when the
- *  package isn't installed, so callers can degrade gracefully. */
 function loadPurchases(): PurchasesModule | null {
   if (Platform.OS !== "ios" && Platform.OS !== "android") return null;
   try {
     // eslint-disable-next-line @typescript-eslint/no-require-imports
-    const mod = require("react-native-purchases");
-    return (mod?.default ?? mod) as PurchasesModule;
+    const module = require("react-native-purchases");
+    return module.default ?? module;
   } catch {
     return null;
   }
 }
 
-/** Whether native IAP is usable on this build: a store platform, the module is
- *  linked, and a RevenueCat key is configured. When false, the membership UI
- *  should not present a native purchase CTA. */
 export function isNativeBillingAvailable(): boolean {
-  return !!REVENUECAT_API_KEY && loadPurchases() !== null;
+  return !!API_KEY && !!loadPurchases();
 }
 
-let configuredForUser: string | null = null;
-
-/** Configure the SDK once and associate purchases with the Supabase user id
- *  (so the RevenueCat webhook can resolve `app_user_id` -> our `user_id`).
- *  Safe to call repeatedly; only reconfigures when the user changes. */
-export async function configureNativeBilling(userId: string): Promise<boolean> {
-  const Purchases = loadPurchases();
-  if (!Purchases || !REVENUECAT_API_KEY) return false;
-  if (configuredForUser === userId) return true;
-
-  if (configuredForUser === null) {
-    // `appUserID` set here means RevenueCat never mints an anonymous id for
-    // this session — the very first purchase is already tied to our user.
-    Purchases.configure({ apiKey: REVENUECAT_API_KEY, appUserID: userId });
-  } else {
-    await Purchases.logIn(userId);
-  }
-  configuredForUser = userId;
-  return true;
+let configuredUser: string | null = null;
+let queue: Promise<unknown> = Promise.resolve();
+// Serialize identity changes with store operations so two mounted paywalls or
+// an account switch cannot attribute a purchase/restore to the previous user.
+function withBillingUser<T>(userId: string, action: (sdk: PurchasesModule) => Promise<T>): Promise<T> {
+  const operation = queue.then(async () => {
+    const sdk = loadPurchases();
+    if (!sdk || !API_KEY) throw new Error("Store purchases are unavailable in this build.");
+    const checkUser = () => {
+      if (useAuthStore.getState().user?.id !== userId) {
+        throw new Error("Your account changed. Reopen Membership to continue.");
+      }
+    };
+    checkUser();
+    if (configuredUser === null) sdk.configure({ apiKey: API_KEY, appUserID: userId });
+    else if (configuredUser !== userId) await sdk.logIn(userId);
+    configuredUser = userId;
+    checkUser();
+    const result = await action(sdk);
+    checkUser();
+    return result;
+  });
+  queue = operation.catch(() => undefined);
+  return operation;
 }
 
-export interface NativePurchaseResult {
-  /** Entitlement is active on the returned customer info. */
-  success: boolean;
-  /** User dismissed the native purchase sheet — not an error to surface. */
-  cancelled: boolean;
+export interface StorePrice { price: string; interval: "month" | "year" }
+const displayedPrices = new Map<string, StorePrice>();
+function readPrice(product: StoreProduct): StorePrice | null {
+  const interval = product.subscriptionPeriod === "P1M" ? "month"
+    : product.subscriptionPeriod === "P1Y" ? "year" : null;
+  return interval && product.priceString ? { price: product.priceString, interval } : null;
 }
 
-function isUserCancelled(err: unknown): boolean {
-  return (
-    typeof err === "object" &&
-    err !== null &&
-    (err as { userCancelled?: boolean }).userCancelled === true
-  );
-}
-
-function hasCuratorEntitlement(info: NativeCustomerInfo): boolean {
-  return !!info.entitlements.active[CURATOR_ENTITLEMENT_ID];
-}
-
-/**
- * Buy the given store product through IAP. `storeProductId` is the App Store /
- * Play product identifier for the chosen plan (see `PLAN_STORE_PRODUCT_IDS`).
- * Prefers a matching RevenueCat Offering package (so promotional/intro pricing
- * configured in the dashboard applies) and falls back to a direct product buy.
- */
-export async function purchaseNativePlan(
-  storeProductId: string,
-): Promise<NativePurchaseResult> {
-  const Purchases = loadPurchases();
-  if (!Purchases) {
-    throw new Error("In-app purchases aren't available on this device.");
-  }
-
-  try {
-    const pkg = await findPackageForProduct(Purchases, storeProductId);
-    const { customerInfo } = pkg
-      ? await Purchases.purchasePackage(pkg)
-      : await Purchases.purchaseStoreProduct(
-          await resolveStoreProduct(Purchases, storeProductId),
-        );
-    return { success: hasCuratorEntitlement(customerInfo), cancelled: false };
-  } catch (err) {
-    if (isUserCancelled(err)) return { success: false, cancelled: true };
-    throw err instanceof Error
-      ? err
-      : new Error("The purchase could not be completed.");
-  }
-}
-
-async function findPackageForProduct(
-  Purchases: PurchasesModule,
-  storeProductId: string,
-): Promise<NativePackage | null> {
-  try {
-    const offerings = await Purchases.getOfferings();
-    const pools = [
-      offerings.current,
-      ...Object.values(offerings.all ?? {}),
-    ].filter((o): o is NativeOffering => !!o);
-    for (const offering of pools) {
-      const match = offering.availablePackages.find(
-        (p) => p.product.identifier === storeProductId,
-      );
-      if (match) return match;
+export async function getNativeProductPrices(userId: string, ids: string[]): Promise<Record<string, StorePrice>> {
+  return withBillingUser(userId, async (sdk) => {
+    const offering = (await sdk.getOfferings()).current;
+    const prices: Record<string, StorePrice> = {};
+    for (const id of ids) displayedPrices.delete(`${userId}:${id}`);
+    for (const pkg of offering?.availablePackages ?? []) {
+      const price = readPrice(pkg.product);
+      if (ids.includes(pkg.product.identifier) && price) {
+        prices[pkg.product.identifier] = price;
+        displayedPrices.set(`${userId}:${pkg.product.identifier}`, price);
+      }
     }
-  } catch {
-    // Offerings misconfigured — fall back to a direct product lookup.
-  }
-  return null;
+    return prices;
+  });
 }
 
-async function resolveStoreProduct(
-  Purchases: PurchasesModule,
-  storeProductId: string,
-): Promise<NativeStoreProduct> {
-  const products = await Purchases.getProducts([storeProductId]);
-  const product = products.find((p) => p.identifier === storeProductId);
-  if (!product) {
-    throw new Error(
-      `Product "${storeProductId}" isn't available on the store yet.`,
-    );
-  }
-  return product;
+export interface NativePurchaseResult { success: boolean; cancelled: boolean }
+export async function purchaseNativePlan(userId: string, productId: string): Promise<NativePurchaseResult> {
+  return withBillingUser(userId, async (sdk) => {
+    if ((await sdk.getCustomerInfo()).entitlements.active[CURATOR_ENTITLEMENT_ID]) {
+      throw new Error("This store account already has Curator. Restore purchases or manage your existing subscription.");
+    }
+    // Only the current offering is sellable. Retired founding plans must not be
+    // recovered from old offerings or a direct product lookup.
+    const pkg = (await sdk.getOfferings()).current?.availablePackages.find((entry) => entry.product.identifier === productId);
+    const current = pkg && readPrice(pkg.product);
+    const shown = displayedPrices.get(`${userId}:${productId}`);
+    if (!pkg || !current || !shown || current.price !== shown.price || current.interval !== shown.interval) {
+      throw new Error("This offer changed or is unavailable. Refresh store prices before purchasing.");
+    }
+    if (useAuthStore.getState().user?.id !== userId) throw new Error("Your account changed. Reopen Membership to continue.");
+    try {
+      const { customerInfo } = await sdk.purchasePackage(pkg);
+      return { success: !!customerInfo.entitlements.active[CURATOR_ENTITLEMENT_ID], cancelled: false };
+    } catch (error) {
+      if (typeof error === "object" && error !== null && "userCancelled" in error && error.userCancelled === true) {
+        return { success: false, cancelled: true };
+      }
+      throw error;
+    }
+  });
 }
 
-/** Restore prior purchases (required by App Store review; wire to a
- *  "Restore purchases" affordance). Returns whether Curator is now active. */
-export async function restoreNativePurchases(): Promise<boolean> {
-  const Purchases = loadPurchases();
-  if (!Purchases) return false;
-  const info = await Purchases.restorePurchases();
-  return hasCuratorEntitlement(info);
+export async function restoreNativePurchases(userId: string): Promise<boolean> {
+  return withBillingUser(userId, async (sdk) => !!(await sdk.restorePurchases()).entitlements.active[CURATOR_ENTITLEMENT_ID]);
 }
 
-/** Whether the current customer has an active Curator entitlement per the
- *  store (source of truth for gating on-device before the webhook lands). */
-export async function nativeHasActiveCurator(): Promise<boolean> {
-  const Purchases = loadPurchases();
-  if (!Purchases) return false;
-  try {
-    return hasCuratorEntitlement(await Purchases.getCustomerInfo());
-  } catch {
-    return false;
-  }
-}
-
-/** Open the native subscription-management sheet (App Store / Play), the IAP
- *  equivalent of the Stripe billing portal. Users cancel/change plans there. */
-export async function showNativeManageSubscriptions(): Promise<void> {
-  const Purchases = loadPurchases();
-  if (!Purchases) {
-    throw new Error("Subscription management isn't available on this device.");
-  }
-  await Purchases.showManageSubscriptions();
-}
-
-/** Localized store price strings keyed by store product id, for rendering the
- *  plan picker with real (currency-correct) prices instead of hardcoded copy.
- *  Returns an empty map when unavailable. */
-export async function getNativeProductPrices(
-  storeProductIds: string[],
-): Promise<Record<string, string>> {
-  const Purchases = loadPurchases();
-  if (!Purchases || storeProductIds.length === 0) return {};
-  try {
-    const products = await Purchases.getProducts(storeProductIds);
-    return Object.fromEntries(products.map((p) => [p.identifier, p.priceString]));
-  } catch {
-    return {};
-  }
+export async function showNativeManageSubscriptions(userId: string): Promise<void> {
+  return withBillingUser(userId, (sdk) => sdk.showManageSubscriptions());
 }

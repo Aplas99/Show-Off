@@ -1,17 +1,20 @@
+import SubscriptionDisclosure from "@/src/components/membership/SubscriptionDisclosure";
 import {
   MEMBERSHIP_PLANS,
   getActiveBillingProvider,
+  PLAN_STORE_PRODUCT_IDS,
+  PURCHASE_UNAVAILABLE_MESSAGE,
+  useMembershipPrices,
   useManageMembership,
   useMembership,
   usePurchaseMembership,
   useRestorePurchases,
-  useSyncMembership,
   type MembershipPlanId,
 } from "@/api/memberships";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
-import React, { useEffect, useRef, useState } from "react";
+import React, { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -37,7 +40,7 @@ const MEMBER_PERKS = [
 const PLAN_FEATURES: Record<MembershipPlanId, readonly string[]> = {
   founding_curator: [
     "10MB uploads per file",
-    "Permanent Early Access founding rate",
+    "Monthly billing through your store",
     "Metallic Founding Curator profile badge",
   ],
   curator_monthly: [
@@ -47,8 +50,8 @@ const PLAN_FEATURES: Record<MembershipPlanId, readonly string[]> = {
   ],
   curator_annual: [
     "100MB uploads per file",
-    "Roughly two months free each year",
-    "Best-value Curator membership",
+    "One payment per year",
+    "Full Curator feature access",
   ],
 };
 
@@ -66,12 +69,11 @@ export default function MembershipModal({
   const colors = useColors();
   const styles = getStyles(colors);
   const insets = useSafeAreaInsets();
-  const { data: membership, isLoading } = useMembership();
+  const { data: membership, isLoading, isError: membershipError, refetch: refetchMembership } = useMembership();
   const purchase = usePurchaseMembership();
   const manage = useManageMembership();
   const restore = useRestorePurchases();
-  const syncMembership = useSyncMembership();
-  const hasAutoSynced = useRef(false);
+  const prices = useMembershipPrices(visible);
   const [selectedPlan, setSelectedPlan] =
     useState<MembershipPlanId>("curator_monthly");
 
@@ -82,18 +84,6 @@ export default function MembershipModal({
   const isNativeBilling = getActiveBillingProvider() === "revenuecat";
   const storeName = Platform.OS === "ios" ? "the App Store" : "Google Play";
 
-  useEffect(() => {
-    if (
-      visible &&
-      !isPaidUser &&
-      !isNativeBilling &&
-      !hasAutoSynced.current
-    ) {
-      hasAutoSynced.current = true;
-      syncMembership.mutate();
-    }
-  }, [visible, isPaidUser, isNativeBilling, syncMembership]);
-
   const handleUpgrade = async () => {
     try {
       const result = await purchase.mutateAsync(selectedPlan);
@@ -102,7 +92,7 @@ export default function MembershipModal({
           selectedPlan === "founding_curator"
             ? "Welcome, Founding Curator"
             : "Welcome to Curator",
-          "Your membership is now active.",
+          "Your purchase was confirmed by the store. Membership access will update when the receipt is synchronized.",
         );
       }
     } catch (error: unknown) {
@@ -111,23 +101,6 @@ export default function MembershipModal({
         error instanceof Error
           ? error.message
           : "Could not start the purchase. Please try again.",
-      );
-    }
-  };
-
-  const handleSyncMembership = async () => {
-    try {
-      const synced = await syncMembership.mutateAsync();
-      Alert.alert(
-        synced ? "Membership refreshed" : "No active purchase found",
-        synced
-          ? "Your latest Stripe membership has been synchronized."
-          : "We could not find an active Stripe membership for this account.",
-      );
-    } catch (error: unknown) {
-      Alert.alert(
-        "Could not refresh membership",
-        error instanceof Error ? error.message : "Please try again.",
       );
     }
   };
@@ -151,7 +124,7 @@ export default function MembershipModal({
       Alert.alert(
         active ? "Purchases restored" : "Nothing to restore",
         active
-          ? "Your Curator membership is active again."
+          ? "The store found your membership. Access will update when the receipt is synchronized."
           : `No active membership was found on your ${storeName} account.`,
       );
     } catch (error: unknown) {
@@ -230,6 +203,13 @@ export default function MembershipModal({
                 </View>
               </LinearGradient>
 
+
+              {membershipError && <Text style={{ color: colors.text }} onPress={() => void refetchMembership()}>Unable to check your membership. Tap to retry before purchasing.</Text>}
+              {!isNativeBilling && <Text style={{ color: colors.text }}>{PURCHASE_UNAVAILABLE_MESSAGE}</Text>}
+              {isNativeBilling && <TouchableOpacity onPress={() => void prices.refetch()} disabled={prices.isFetching} accessibilityRole="button">
+                <Text style={{ color: colors.primary, paddingVertical: 12 }}>{prices.isFetching ? "Loading store prices..." : prices.isError ? "Prices unavailable. Tap to retry." : "Refresh store prices"}</Text>
+              </TouchableOpacity>}
+
               {!isPaidUser && (
                 <>
                   <Text style={styles.sectionTitle}>Choose your plan</Text>
@@ -256,7 +236,7 @@ export default function MembershipModal({
                           <Text style={styles.planName} numberOfLines={2}>
                             {plan.name}
                           </Text>
-                          <Text style={styles.planPrice}>{plan.priceLabel}</Text>
+                          <Text style={styles.planPrice}>{prices.data?.[PLAN_STORE_PRODUCT_IDS[plan.id]] ? `${prices.data[PLAN_STORE_PRODUCT_IDS[plan.id]].price} / ${prices.data[PLAN_STORE_PRODUCT_IDS[plan.id]].interval}` : "Unavailable"}</Text>
                         </TouchableOpacity>
                       );
                     })}
@@ -278,44 +258,20 @@ export default function MembershipModal({
                     ))}
                   </View>
 
-                  {selectedPlan === "founding_curator" && (
-                    <View style={styles.earlyAccessNotice}>
-                      <Ionicons name="time-outline" size={18} color={colors.tertiary} />
-                      <Text style={styles.earlyAccessText}>
-                        Founding Curator is available only during Early Access.
-                        Members who join now keep their founding rate after the
-                        offer closes.
-                      </Text>
-                    </View>
-                  )}
-
-                  <TouchableOpacity
+<TouchableOpacity
                     style={styles.primaryButton}
                     onPress={handleUpgrade}
-                    disabled={purchase.isPending}
+                    disabled={purchase.isPending || restore.isPending || membershipError || !prices.data?.[PLAN_STORE_PRODUCT_IDS[selectedPlan]]}
                     activeOpacity={0.85}
                   >
                     {purchase.isPending ? (
                       <ActivityIndicator color="#FFFFFF" />
                     ) : (
-                      <Text style={styles.primaryButtonText}>Upgrade now</Text>
+                      <Text style={styles.primaryButtonText}>{prices.data?.[PLAN_STORE_PRODUCT_IDS[selectedPlan]] ? "Subscribe" : "Purchase unavailable"}</Text>
                     )}
                   </TouchableOpacity>
 
-                  {!isNativeBilling && (
-                    <TouchableOpacity
-                      style={styles.refreshButton}
-                      onPress={handleSyncMembership}
-                      disabled={syncMembership.isPending}
-                    >
-                      <Ionicons name="refresh" size={16} color={colors.primary} />
-                      <Text style={styles.refreshText}>
-                        {syncMembership.isPending
-                          ? "Refreshing membership..."
-                          : "Already paid? Refresh membership"}
-                      </Text>
-                    </TouchableOpacity>
-                  )}
+
                 </>
               )}
 
@@ -356,13 +312,14 @@ export default function MembershipModal({
                 <TouchableOpacity
                   style={styles.restoreButton}
                   onPress={handleRestore}
-                  disabled={restore.isPending}
+                  disabled={restore.isPending || purchase.isPending}
                 >
                   <Text style={styles.restoreText}>
                     {restore.isPending ? "Restoring..." : "Restore purchases"}
                   </Text>
                 </TouchableOpacity>
               )}
+              <SubscriptionDisclosure onOpenPolicy={onClose} />
             </ScrollView>
           )}
         </View>

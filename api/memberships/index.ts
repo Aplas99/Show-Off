@@ -2,9 +2,11 @@ import { membershipDebug } from "@/lib/membershipDebug";
 import { supabase } from "@/lib/supabase";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as WebBrowser from "expo-web-browser";
+import { Linking, Platform } from "react-native";
+import { useAuthStore } from "@/hooks/useAuthStore";
 import { z } from "zod";
 import {
-  configureNativeBilling,
+  getNativeProductPrices,
   isNativeBillingAvailable,
   purchaseNativePlan,
   restoreNativePurchases,
@@ -12,7 +14,6 @@ import {
   type NativePurchaseResult,
 } from "./nativeBilling";
 
-const CHECKOUT_REDIRECT_URL = "showoff:///membership";
 const MEMBERSHIP_REDIRECT_URL = "showoff:///profile/membership";
 
 // --- Types & schemas ---
@@ -50,8 +51,7 @@ export interface MembershipPlan {
   id: MembershipPlanId;
   tier: MembershipTier;
   name: string;
-  /** Display-only. Real amounts live on the Stripe Price objects. */
-  priceLabel: string;
+  interval: "month" | "year";
   description: string;
 }
 
@@ -88,26 +88,20 @@ export function getMembershipUploadLimitBytes(access: {
   return MEMBERSHIP_UPLOAD_LIMITS_BYTES.foundingCurator;
 }
 
-// Placeholder copy — keep in sync with the Stripe Prices configured via
-// STRIPE_PRICE_ID_FOUNDING_CURATOR / STRIPE_PRICE_ID_CURATOR_MONTHLY /
-// STRIPE_PRICE_ID_CURATOR_ANNUAL on the Edge Function. Founding Curator is
-// a permanently-priced legacy rate for early subscribers — once retired,
-// archive its Stripe Price (existing subscribers keep billing at it;
-// new checkouts can no longer select it) rather than deleting it.
 export const MEMBERSHIP_PLANS: MembershipPlan[] = [
   {
     id: "founding_curator",
     tier: "curator",
     name: "Founding Curator",
-    priceLabel: "$3.99 / month",
+    interval: "month",
     description:
-      "Full Curator access at a permanent founding-member rate for early subscribers.",
+      "Curator access with 10MB uploads per file.",
   },
   {
     id: "curator_monthly",
     tier: "curator",
     name: "Curator",
-    priceLabel: "$5.99 / month",
+    interval: "month",
     description:
       "Full premium membership: price history, sharable showcases, set-completion tracking, and faster card recognition.",
   },
@@ -115,8 +109,8 @@ export const MEMBERSHIP_PLANS: MembershipPlan[] = [
     id: "curator_annual",
     tier: "curator",
     name: "Annual Curator",
-    priceLabel: "$59.99 / year",
-    description: "Everything in Curator, at roughly two months free.",
+    interval: "year",
+    description: "Curator access billed annually with 100MB uploads per file.",
   },
 ];
 
@@ -267,47 +261,6 @@ async function invokeStripeSession(body: {
   return url;
 }
 
-export async function syncMembershipFromBilling(): Promise<boolean> {
-  membershipDebug.log("stripe.sync.requested");
-  const { data, error } = await supabase.functions.invoke("stripe-checkout", {
-    body: { action: "sync" },
-  });
-  if (error) {
-    const details = await getFunctionErrorDetails(error);
-    membershipDebug.error("stripe.sync.failed", error, {
-      serverMessage: details.message,
-      requestId: details.requestId,
-    });
-    throw new Error(
-      details.requestId
-        ? `${details.message} (reference: ${details.requestId})`
-        : details.message,
-    );
-  }
-
-  const result = data as {
-    synced?: boolean;
-    status?: string;
-    plan?: string | null;
-  } | null;
-  membershipDebug.log("stripe.sync.completed", {
-    synced: result?.synced ?? false,
-    status: result?.status,
-    plan: result?.plan,
-  });
-  return result?.synced ?? false;
-}
-
-// --- Hooks ---
-
-/**
- * Current user's membership state.
- *
- * `isPaidUser` is kept as the flag pre-existing feature gates (upload
- * limits, the membership screen) already consume — it means "any active
- * paid tier," collector or curator. New Curator-only features should gate
- * on `isCurator` instead.
- */
 export async function getCurrentMembershipAccess() {
   try {
     const subscription = await fetchCurrentSubscription();
@@ -337,62 +290,6 @@ export function useMembership() {
   });
 }
 
-export function useSyncMembership() {
-  const qc = useQueryClient();
-  return useMutation({
-    mutationFn: syncMembershipFromBilling,
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: membershipKeys.all() });
-    },
-  });
-}
-
-/**
- * Starts a Stripe Checkout session for the given plan and opens it in an
- * auth browser session. Resolves when the browser is dismissed.
- */
-export function useStartCheckout() {
-  const qc = useQueryClient();
-
-  return useMutation({
-    mutationFn: async (plan: MembershipPlanId) => {
-      const url = await invokeStripeSession({ action: "checkout", plan });
-      return WebBrowser.openAuthSessionAsync(url, CHECKOUT_REDIRECT_URL);
-    },
-    onSettled: () => {
-      // The webhook updates the subscription row; refetch on return.
-      qc.invalidateQueries({ queryKey: membershipKeys.all() });
-    },
-  });
-}
-
-/**
- * Opens the Stripe Billing Portal (update payment method, cancel, invoices).
- */
-export function useOpenBillingPortal() {
-  const qc = useQueryClient();
-
-  return useMutation({
-    mutationFn: async () => {
-      const url = await invokeStripeSession({ action: "portal" });
-      return WebBrowser.openAuthSessionAsync(url, MEMBERSHIP_REDIRECT_URL);
-    },
-    onSettled: () => {
-      qc.invalidateQueries({ queryKey: membershipKeys.all() });
-    },
-  });
-}
-
-// --- Native IAP (App Store / Play) + provider routing ---
-//
-// Store policy requires in-app digital memberships to use native billing, not
-// an in-app web checkout. `usePurchaseMembership` / `useManageMembership` route
-// to RevenueCat IAP on store builds and Stripe-in-the-browser on web (and any
-// build where native billing isn't configured). Both rails reconcile into the
-// same `public.subscriptions` table via their respective webhooks, so the
-// membership state (`useMembership`) is identical regardless of how the user
-// paid. See `docs/iap-memberships.md`.
-
 export type BillingProvider = "stripe" | "revenuecat";
 
 /** App Store / Play product identifiers per plan. Must match the products
@@ -409,103 +306,40 @@ export const PLAN_STORE_PRODUCT_IDS: Record<MembershipPlanId, string> = {
     process.env.EXPO_PUBLIC_IAP_PRODUCT_CURATOR_ANNUAL ?? "curator_annual",
 };
 
-/**
- * Which billing rail this build should use for a *new* purchase: native IAP
- * when it's available (store build with RevenueCat configured), otherwise
- * Stripe web checkout. Managing an *existing* subscription instead follows the
- * rail it was bought on — see `useManageMembership`.
- */
-export function getActiveBillingProvider(): BillingProvider {
-  return isNativeBillingAvailable() ? "revenuecat" : "stripe";
+export const PURCHASE_UNAVAILABLE_MESSAGE = Platform.OS === "web"
+  ? "Purchases are available in the iOS or Android app. Web purchases are not available yet."
+  : "Store purchases are unavailable in this build. Please try again in the latest store version.";
+
+export function getActiveBillingProvider(): BillingProvider | null {
+  return isNativeBillingAvailable() ? "revenuecat" : null;
 }
 
-/**
- * Purchase a membership plan on the correct rail for this build. On store
- * builds this opens the native App Store / Play purchase sheet (compliant);
- * on web it opens Stripe Checkout in the system browser. The subscription row
- * is written by the provider's webhook, so callers should rely on the
- * `useMembership` refetch (invalidated here) for the authoritative state.
- */
+async function requireBillingUser(): Promise<string> {
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) throw new Error("Please sign in to manage purchases.");
+  return user.id;
+}
+
+export function useMembershipPrices(enabled = true) {
+  const userId = useAuthStore((state) => state.user?.id);
+  return useQuery({
+    queryKey: [...membershipKeys.all(), "prices", userId],
+    enabled: enabled && !!userId && isNativeBillingAvailable(),
+    queryFn: async () => getNativeProductPrices(await requireBillingUser(), Object.values(PLAN_STORE_PRODUCT_IDS)),
+    staleTime: 60_000,
+  });
+}
+
 export function usePurchaseMembership() {
   const qc = useQueryClient();
 
   return useMutation<NativePurchaseResult, Error, MembershipPlanId>({
     mutationFn: async (plan) => {
-      const provider = getActiveBillingProvider();
-      membershipDebug.log("purchase.started", { plan, provider });
-      if (provider === "revenuecat") {
-        const {
-          data: { user },
-        } = await supabase.auth.getUser();
-        if (!user) throw new Error("Please sign in to subscribe.");
-
-        await configureNativeBilling(user.id);
-        const productId = PLAN_STORE_PRODUCT_IDS[plan];
-        if (!productId) {
-          throw new Error(`No store product configured for plan "${plan}".`);
-        }
-        const result = await purchaseNativePlan(productId);
-        membershipDebug.log("purchase.native_completed", {
-          plan,
-          success: result.success,
-          cancelled: result.cancelled,
-        });
-        return result;
-      }
-
-      // Web / fallback: Stripe Checkout in the system browser. Payment success
-      // is confirmed asynchronously by the Stripe webhook, so we don't claim
-      // `success` here — the refetch below reflects the real state on return.
-      const url = await invokeStripeSession({ action: "checkout", plan });
-      const browserResult = await WebBrowser.openAuthSessionAsync(
-        url,
-        CHECKOUT_REDIRECT_URL,
-      );
-      membershipDebug.log("purchase.stripe_browser_closed", {
-        plan,
-        resultType: browserResult.type,
-      });
-
-      if (browserResult.type === "success") {
-        // Reconcile directly as a fallback in addition to the authoritative
-        // webhook. This covers delayed or misconfigured webhook delivery.
-        await syncMembershipFromBilling().catch((error) => {
-          membershipDebug.error("purchase.post_checkout_sync_failed", error, {
-            plan,
-          });
-        });
-
-        // Stripe writes membership state asynchronously through its webhook.
-        // Poll briefly so the UI usually reflects the upgrade immediately,
-        // while still allowing Stripe's normal webhook retry behavior.
-        for (let attempt = 1; attempt <= 6; attempt += 1) {
-          await new Promise((resolve) => setTimeout(resolve, 1000));
-          const subscription = await fetchCurrentSubscription().catch(
-            (error) => {
-              membershipDebug.error("purchase.confirmation_fetch_failed", error, {
-                plan,
-                attempt,
-              });
-              return null;
-            },
-          );
-          if (isActiveMembershipStatus(subscription?.status)) {
-            membershipDebug.log("purchase.stripe_confirmed", {
-              plan,
-              resolvedPlan: subscription?.plan_id,
-              attempt,
-            });
-            return { success: true, cancelled: false };
-          }
-        }
-        membershipDebug.log("purchase.stripe_webhook_pending", { plan });
-      }
-
-      return {
-        success: false,
-        cancelled:
-          browserResult.type === "cancel" || browserResult.type === "dismiss",
-      };
+      if (!isNativeBillingAvailable()) throw new Error(PURCHASE_UNAVAILABLE_MESSAGE);
+      const userId = await requireBillingUser();
+      const access = await getCurrentMembershipAccess();
+      if (access.isPaidUser) throw new Error("You already have a membership. Use Manage membership to change it.");
+      return purchaseNativePlan(userId, PLAN_STORE_PRODUCT_IDS[plan]);
     },
     onError: (error, plan) => {
       membershipDebug.error("purchase.failed", error, { plan });
@@ -529,17 +363,22 @@ export function useManageMembership() {
 
   return useMutation<void, Error, string | null | undefined>({
     mutationFn: async (provider) => {
-      const rail: BillingProvider =
+      const rail =
         provider === "revenuecat" || provider === "stripe"
           ? provider
           : getActiveBillingProvider();
 
       if (rail === "revenuecat") {
-        await showNativeManageSubscriptions();
+        if (!isNativeBillingAvailable()) {
+          throw new Error("Manage your subscription in the Apple App Store or Google Play account used to purchase it.");
+        }
+        await showNativeManageSubscriptions(await requireBillingUser());
         return;
       }
+      if (rail !== "stripe") throw new Error(PURCHASE_UNAVAILABLE_MESSAGE);
       const url = await invokeStripeSession({ action: "portal" });
-      await WebBrowser.openAuthSessionAsync(url, MEMBERSHIP_REDIRECT_URL);
+      if (Platform.OS === "web") await Linking.openURL(url);
+      else await WebBrowser.openAuthSessionAsync(url, MEMBERSHIP_REDIRECT_URL);
     },
     onSettled: () => {
       qc.invalidateQueries({ queryKey: membershipKeys.all() });
@@ -556,7 +395,7 @@ export function useRestorePurchases() {
   const qc = useQueryClient();
 
   return useMutation<boolean, Error, void>({
-    mutationFn: () => restoreNativePurchases(),
+    mutationFn: async () => restoreNativePurchases(await requireBillingUser()),
     onSettled: () => {
       qc.invalidateQueries({ queryKey: membershipKeys.all() });
     },

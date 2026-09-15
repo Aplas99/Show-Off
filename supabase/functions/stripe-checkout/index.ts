@@ -21,10 +21,10 @@
 //   MEMBERSHIP_SUCCESS_URL / MEMBERSHIP_CANCEL_URL / MEMBERSHIP_RETURN_URL
 //   (default to the showoff:// deep-link scheme used by the app).
 
-import { createClient } from "npm:@supabase/supabase-js@2";
-import Stripe from "npm:stripe@18";
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.89.0";
+import Stripe from "npm:stripe@18.5.0";
 
-const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") ?? "", {
+const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") ?? "stripe_disabled", {
   httpClient: Stripe.createFetchHttpClient(),
 });
 
@@ -69,8 +69,6 @@ function getPeriodEndIso(subscription: Stripe.Subscription): string | null {
 // Triple-slash custom-scheme URLs preserve the route as a path. Checkout
 // returns through /membership for its success animation; the billing portal
 // returns directly to the membership screen.
-const DEFAULT_SUCCESS_URL = "showoff:///membership?checkout=success";
-const DEFAULT_CANCEL_URL = "showoff:///membership?checkout=cancelled";
 const DEFAULT_RETURN_URL = "showoff:///profile/membership";
 
 function json(body: unknown, status = 200) {
@@ -81,7 +79,7 @@ function json(body: unknown, status = 200) {
 }
 
 async function getOrCreateStripeCustomer(
-  admin: ReturnType<typeof createClient>,
+  admin: SupabaseClient,
   user: { id: string; email?: string },
 ): Promise<string> {
   const { data: existing } = await admin
@@ -151,6 +149,9 @@ Deno.serve(async (req) => {
         : body?.action === "sync"
           ? "sync"
           : "checkout";
+    if (action === "checkout") {
+      return json({ error: "Web purchases are not available. Use the iOS or Android app.", requestId }, 403);
+    }
     const requestedPlan =
       typeof body?.plan === "string" ? body.plan : undefined;
 
@@ -218,46 +219,8 @@ Deno.serve(async (req) => {
       return json({ url: session.url, requestId });
     }
 
-    const plan = requestedPlan ?? "curator_monthly";
-    const priceEnvVar = PLAN_PRICE_ENV_VARS[plan];
-    const priceId = priceEnvVar ? Deno.env.get(priceEnvVar) : undefined;
+    return json({ error: "Unsupported billing action", requestId }, 400);
 
-    if (!priceId) {
-      console.error("[stripe-checkout] price missing", { requestId, plan });
-      return json(
-        {
-          error: `No Stripe price configured for plan "${plan}".`,
-          requestId,
-        },
-        400,
-      );
-    }
-
-    const session = await stripe.checkout.sessions.create({
-      mode: "subscription",
-      customer: customerId,
-      line_items: [{ price: priceId, quantity: 1 }],
-      success_url:
-        Deno.env.get("MEMBERSHIP_SUCCESS_URL") ?? DEFAULT_SUCCESS_URL,
-      cancel_url: Deno.env.get("MEMBERSHIP_CANCEL_URL") ?? DEFAULT_CANCEL_URL,
-      allow_promotion_codes: true,
-      metadata: {
-        supabase_user_id: user.id,
-        membership_plan: plan,
-      },
-      subscription_data: {
-        metadata: {
-          supabase_user_id: user.id,
-          membership_plan: plan,
-        },
-      },
-    });
-
-    console.log("[stripe-checkout] checkout session created", {
-      requestId,
-      plan,
-    });
-    return json({ url: session.url, requestId });
   } catch (err) {
     console.error("[stripe-checkout] error", { requestId, error: err });
     return json(

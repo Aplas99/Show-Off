@@ -189,8 +189,12 @@ has been marked complete solely on local test evidence.
 
 ## 4. Membership billing and purchase experience
 
-Proposed launch approach: native IAP on mobile; Stripe on web. This is an
-engineering recommendation, not a claim that U.S. external links are forbidden.
+Chosen launch approach: Apple and Google IAP only. Stripe integration and new
+web purchases are deferred by the owner. Unconfigured builds cannot purchase.
+Locally implemented: native-only routing, current-offering localized prices,
+renewal/cancellation disclosures and policy links on both purchase surfaces,
+identity-safe restore, duplicate-purchase checks, and server rejection of new
+Stripe checkouts. Focused billing tests pass; store lifecycle testing remains.
 
 - [ ] **BILL-01: Finalize purchase routing.** For the proposed native-IAP
   approach, missing keys or unavailable native modules must show a recoverable

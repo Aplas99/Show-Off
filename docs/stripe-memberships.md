@@ -92,3 +92,9 @@ Key pieces:
   100MB for monthly/annual Curator. Shareable showcases are free for all tiers.
 - The webhook is idempotent (upsert keyed by subscription id); Stripe
   retries failed deliveries automatically.
+# Deferred for launch
+
+The owner chose Apple/Google IAP only. New Stripe checkout is disabled in the
+client and `stripe-checkout` function. The historical setup below is retained
+for a future integration; do not use it to enable launch purchases. Legacy
+subscription management remains available to existing Stripe subscribers.
