@@ -1,0 +1,10 @@
+{
+  // ...
+  "vars": {
+    "EXPO_PUBLIC_ADS_ENABLED": "false",
+    "EXPO_PUBLIC_CARD_SCAN_DEBUG": "false",
+    "EXPO_PUBLIC_OCR_FALLBACK_URL": "",
+    "EXPO_PUBLIC_SUPABASE_URL": "https://yvgqiuewfhwrammwuglr.supabase.co"
+  },
+  // ...
+}
