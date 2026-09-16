@@ -1,11 +1,8 @@
 {
-  // ...
-  "vars": {
-    "EXPO_PUBLIC_ADS_ENABLED": "false",
-    "EXPO_PUBLIC_ANON_KEY": "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inl2Z3FpdWV3Zmh3cmFtbXd1Z2xyIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDg2MjYyNjQsImV4cCI6MjA2NDIwMjI2NH0.5mt_S6ucEb2Hl0Vrkzm6ALIAU1fRORN57FmZxHQGBmU",
-    "EXPO_PUBLIC_CARD_SCAN_DEBUG": "false",
-    "EXPO_PUBLIC_OCR_FALLBACK_URL": "",
-    "EXPO_PUBLIC_SUPABASE_URL": "https://yvgqiuewfhwrammwuglr.supabase.co"
-  },
-  // ...
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "show-off",
+  "compatibility_date": "2026-09-15",
+  "assets": {
+    "directory": "./dist"
+  }
 }
