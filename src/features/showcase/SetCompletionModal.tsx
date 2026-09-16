@@ -2,7 +2,7 @@ import { type ItemWithProduct } from "@/api/items";
 import { useSetCards, type PokemonTcgCard } from "@/api/pokemon";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
+import { Image } from "@/src/components/media/ProtectedImage";
 import React, { useMemo, useState } from "react";
 import {
   ActivityIndicator,

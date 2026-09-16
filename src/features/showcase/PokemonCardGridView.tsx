@@ -1,7 +1,7 @@
 import { ItemWithProduct } from "@/api/items";
 import { useColors } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
+import { Image } from "@/src/components/media/ProtectedImage";
 import React, { useCallback, useMemo } from "react";
 import {
   FlatList,

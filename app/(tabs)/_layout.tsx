@@ -1,5 +1,4 @@
 import { useAuthStore } from "@/hooks/useAuthStore";
-import { MembershipCelebration } from "@/src/features/profile/MembershipCelebration";
 import CustomTabBar from "@/src/components/navigation/CustomTabBar";
 import * as NavigationBar from "expo-navigation-bar";
 import { Redirect, Tabs } from "expo-router";
@@ -20,16 +19,14 @@ export default function TabLayout() {
   }
 
   return (
-    <>
-      <MembershipCelebration />
-      <Tabs
-        tabBar={(props) => <CustomTabBar {...props} />}
-        screenOptions={{
-          tabBarShowLabel: false,
-          headerShown: false,
-          tabBarHideOnKeyboard: true,
-        }}
-      >
+    <Tabs
+      tabBar={(props) => <CustomTabBar {...props} />}
+      screenOptions={{
+        tabBarShowLabel: false,
+        headerShown: false,
+        tabBarHideOnKeyboard: true,
+      }}
+    >
       <Tabs.Screen name="index" options={{ href: null }} />
       <Tabs.Screen
         name="discover"
@@ -82,7 +79,6 @@ export default function TabLayout() {
           tabBarLabel: "Profile",
         }}
       />
-      </Tabs>
-    </>
+    </Tabs>
   );
 }

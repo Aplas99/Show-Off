@@ -21,10 +21,10 @@
 //   MEMBERSHIP_SUCCESS_URL / MEMBERSHIP_CANCEL_URL / MEMBERSHIP_RETURN_URL
 //   (default to the showoff:// deep-link scheme used by the app).
 
-import { createClient } from "npm:@supabase/supabase-js@2";
-import Stripe from "npm:stripe@18";
+import { createClient, type SupabaseClient } from "npm:@supabase/supabase-js@2.89.0";
+import Stripe from "npm:stripe@18.5.0";
 
-const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") ?? "", {
+const stripe = new Stripe(Deno.env.get("STRIPE_SECRET_KEY") ?? "stripe_disabled", {
   httpClient: Stripe.createFetchHttpClient(),
 });
 
@@ -40,9 +40,36 @@ const PLAN_PRICE_ENV_VARS: Record<string, string> = {
   curator_annual: "STRIPE_PRICE_ID_CURATOR_ANNUAL",
 };
 
-const DEFAULT_SUCCESS_URL = "showoff://membership?checkout=success";
-const DEFAULT_CANCEL_URL = "showoff://membership?checkout=cancelled";
-const DEFAULT_RETURN_URL = "showoff://membership";
+const ACTIVE_SUBSCRIPTION_STATUSES = new Set(["active", "trialing"]);
+
+function resolveMembershipPlan(subscription: Stripe.Subscription): string | null {
+  const metadataPlan = subscription.metadata?.membership_plan;
+  if (metadataPlan && PLAN_PRICE_ENV_VARS[metadataPlan]) return metadataPlan;
+
+  const priceId = subscription.items?.data?.[0]?.price?.id;
+  if (!priceId) return null;
+  return (
+    Object.entries(PLAN_PRICE_ENV_VARS).find(
+      ([, envName]) => Deno.env.get(envName) === priceId,
+    )?.[0] ?? null
+  );
+}
+
+function getPeriodEndIso(subscription: Stripe.Subscription): string | null {
+  const itemPeriodEnd = subscription.items?.data?.[0]?.current_period_end;
+  const legacyPeriodEnd = (subscription as unknown as {
+    current_period_end?: number;
+  }).current_period_end;
+  const periodEnd = itemPeriodEnd ?? legacyPeriodEnd;
+  return typeof periodEnd === "number"
+    ? new Date(periodEnd * 1000).toISOString()
+    : null;
+}
+
+// Triple-slash custom-scheme URLs preserve the route as a path. Checkout
+// returns through /membership for its success animation; the billing portal
+// returns directly to the membership screen.
+const DEFAULT_RETURN_URL = "showoff:///profile/membership";
 
 function json(body: unknown, status = 200) {
   return new Response(JSON.stringify(body), {
@@ -52,7 +79,7 @@ function json(body: unknown, status = 200) {
 }
 
 async function getOrCreateStripeCustomer(
-  admin: ReturnType<typeof createClient>,
+  admin: SupabaseClient,
   user: { id: string; email?: string },
 ): Promise<string> {
   const { data: existing } = await admin
@@ -93,6 +120,8 @@ Deno.serve(async (req) => {
     return new Response("ok", { headers: corsHeaders });
   }
 
+  const requestId = crypto.randomUUID();
+
   try {
     const admin = createClient(
       Deno.env.get("SUPABASE_URL")!,
@@ -109,17 +138,76 @@ Deno.serve(async (req) => {
     } = await admin.auth.getUser(jwt);
 
     if (userError || !user) {
-      return json({ error: "Unauthorized" }, 401);
+      console.error("[stripe-checkout] unauthorized", { requestId });
+      return json({ error: "Unauthorized", requestId }, 401);
     }
 
     const body = await req.json().catch(() => ({}));
-    const action: "checkout" | "portal" =
-      body?.action === "portal" ? "portal" : "checkout";
+    const action: "checkout" | "portal" | "sync" =
+      body?.action === "portal"
+        ? "portal"
+        : body?.action === "sync"
+          ? "sync"
+          : "checkout";
+    if (action === "checkout") {
+      return json({ error: "Web purchases are not available. Use the iOS or Android app.", requestId }, 403);
+    }
+    const requestedPlan =
+      typeof body?.plan === "string" ? body.plan : undefined;
+
+    console.log("[stripe-checkout] request", {
+      requestId,
+      action,
+      plan: requestedPlan,
+    });
 
     const customerId = await getOrCreateStripeCustomer(admin, {
       id: user.id,
       email: user.email ?? undefined,
     });
+
+    if (action === "sync") {
+      const subscriptions = await stripe.subscriptions.list({
+        customer: customerId,
+        status: "all",
+        limit: 10,
+      });
+      const subscription =
+        subscriptions.data.find((candidate) =>
+          ACTIVE_SUBSCRIPTION_STATUSES.has(candidate.status),
+        ) ?? subscriptions.data[0];
+
+      if (!subscription) {
+        console.log("[stripe-checkout] no subscription to sync", { requestId });
+        return json({ synced: false, requestId });
+      }
+
+      const planId = resolveMembershipPlan(subscription);
+      const { error: syncError } = await admin.from("subscriptions").upsert({
+        id: subscription.id,
+        user_id: user.id,
+        status: subscription.status,
+        price_id: subscription.items?.data?.[0]?.price?.id ?? null,
+        plan_id: planId,
+        cancel_at_period_end: subscription.cancel_at_period_end ?? false,
+        current_period_end: getPeriodEndIso(subscription),
+        provider: "stripe",
+        updated_at: new Date().toISOString(),
+      });
+      if (syncError) throw syncError;
+
+      console.log("[stripe-checkout] subscription synced", {
+        requestId,
+        status: subscription.status,
+        plan: planId,
+      });
+      return json({
+        synced: true,
+        status: subscription.status,
+        plan: planId,
+        requestId,
+      });
+    }
 
     if (action === "portal") {
       const session = await stripe.billingPortal.sessions.create({
@@ -127,38 +215,17 @@ Deno.serve(async (req) => {
         return_url:
           Deno.env.get("MEMBERSHIP_RETURN_URL") ?? DEFAULT_RETURN_URL,
       });
-      return json({ url: session.url });
+      console.log("[stripe-checkout] portal session created", { requestId });
+      return json({ url: session.url, requestId });
     }
 
-    const plan =
-      typeof body?.plan === "string" ? body.plan : "curator_monthly";
-    const priceEnvVar = PLAN_PRICE_ENV_VARS[plan];
-    const priceId = priceEnvVar ? Deno.env.get(priceEnvVar) : undefined;
+    return json({ error: "Unsupported billing action", requestId }, 400);
 
-    if (!priceId) {
-      return json(
-        { error: `No Stripe price configured for plan "${plan}".` },
-        400,
-      );
-    }
-
-    const session = await stripe.checkout.sessions.create({
-      mode: "subscription",
-      customer: customerId,
-      line_items: [{ price: priceId, quantity: 1 }],
-      success_url:
-        Deno.env.get("MEMBERSHIP_SUCCESS_URL") ?? DEFAULT_SUCCESS_URL,
-      cancel_url: Deno.env.get("MEMBERSHIP_CANCEL_URL") ?? DEFAULT_CANCEL_URL,
-      allow_promotion_codes: true,
-      metadata: { supabase_user_id: user.id },
-      subscription_data: {
-        metadata: { supabase_user_id: user.id },
-      },
-    });
-
-    return json({ url: session.url });
   } catch (err) {
-    console.error("[stripe-checkout] error:", err);
-    return json({ error: "Internal error creating Stripe session" }, 500);
+    console.error("[stripe-checkout] error", { requestId, error: err });
+    return json(
+      { error: "Internal error creating Stripe session", requestId },
+      500,
+    );
   }
 });

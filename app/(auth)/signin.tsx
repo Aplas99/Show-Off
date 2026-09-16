@@ -1,5 +1,6 @@
 import { signInWithEmail, useSignInWithOAuth } from "@/api/auth/index";
 import { signInSchema } from "@/lib/authValidation";
+import { AppleSignInButton } from "@/src/components/auth/AppleSignInButton";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { Link, useRouter } from "expo-router";
@@ -48,7 +49,7 @@ export default function SignIn() {
     }
   };
 
-  const handleOAuthSignIn = async (provider: "google" | "discord") => {
+  const handleOAuthSignIn = async (provider: "google" | "discord" | "apple") => {
     try {
       await signInWithOAuth.mutateAsync(provider);
     } catch (err: any) {
@@ -159,6 +160,8 @@ export default function SignIn() {
               </TouchableOpacity>
             </View>
 
+            <AppleSignInButton onPress={() => handleOAuthSignIn("apple")} disabled={loading || signInWithOAuth.isPending} />
+            <Link href="/(auth)/confirm-email" style={styles.forgotPasswordButtonText}>Resend confirmation email</Link>
             <Link href="/signup" asChild>
               <TouchableOpacity style={styles.dontHaveAccountButton}>
                 <Text style={styles.dontHaveAccountText}>

@@ -1,20 +1,27 @@
 import { useMembership } from "@/api/memberships";
-import { ShowcaseRow, useGetVisibleShowcases } from "@/api/showcase";
+import {
+  ShowcaseRow,
+  useCreateShowcase,
+  useGetVisibleShowcases,
+} from "@/api/showcase";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import BannerAdView from "@/src/components/ads/BannerAdView";
 import { CuratorGateModal } from "@/src/features/membership/CuratorGate";
 import ShowcaseCustomizeModal from "@/src/features/showcase/ShowcaseCustomizeModal";
 import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
+import { Image } from "@/src/components/media/ProtectedImage";
 import { LinearGradient } from "expo-linear-gradient";
 import { Link } from "expo-router";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
+  Alert,
   FlatList,
+  Modal,
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -45,12 +52,17 @@ export default function ShowcaseScreen() {
   const accents = getAccents(colors);
   const { data: showcases, isLoading, error } = useGetVisibleShowcases();
   const { data: membership } = useMembership();
+  const isPaidUser = membership?.isPaidUser ?? false;
   const isCurator = membership?.isCurator ?? false;
+  const createShowcase = useCreateShowcase();
 
   const [customizeTarget, setCustomizeTarget] = useState<ShowcaseRow | null>(
     null,
   );
   const [paywallVisible, setPaywallVisible] = useState(false);
+  const [createPaywallVisible, setCreatePaywallVisible] = useState(false);
+  const [createModalVisible, setCreateModalVisible] = useState(false);
+  const [showcaseName, setShowcaseName] = useState("");
 
   const showcaseCount = showcases?.length ?? 0;
 
@@ -59,6 +71,29 @@ export default function ShowcaseScreen() {
       setCustomizeTarget(item);
     } else {
       setPaywallVisible(true);
+    }
+  };
+
+  const handleCreatePress = () => {
+    if (!isPaidUser) {
+      setCreatePaywallVisible(true);
+      return;
+    }
+    setCreateModalVisible(true);
+  };
+
+  const handleCreateShowcase = async () => {
+    const name = showcaseName.replace(/\s+/g, " ").trim();
+    if (!name) return;
+    try {
+      await createShowcase.mutateAsync({ name });
+      setShowcaseName("");
+      setCreateModalVisible(false);
+    } catch (caught: unknown) {
+      Alert.alert(
+        "Could not create showcase",
+        caught instanceof Error ? caught.message : "Please try again.",
+      );
     }
   };
 
@@ -223,10 +258,41 @@ export default function ShowcaseScreen() {
               end={{ x: 1, y: 0 }}
               style={styles.heroUnderline}
             />
-            <View style={styles.heroPill}>
-              <View style={styles.heroPillDot} />
-              <Text style={styles.heroPillLabel}>Active</Text>
-              <Text style={styles.heroPillValue}>{showcaseCount}</Text>
+            <View style={styles.heroActions}>
+              <View style={styles.heroPill}>
+                <View style={styles.heroPillDot} />
+                <Text style={styles.heroPillLabel}>Active</Text>
+                <Text style={styles.heroPillValue}>{showcaseCount}</Text>
+              </View>
+
+              <TouchableOpacity
+                style={[
+                  styles.createButton,
+                  !isPaidUser && styles.createButtonLocked,
+                ]}
+                onPress={handleCreatePress}
+                activeOpacity={0.8}
+                accessibilityRole="button"
+                accessibilityLabel={
+                  isPaidUser
+                    ? "Create a new showcase"
+                    : "Additional showcases require Curator membership"
+                }
+              >
+                <Ionicons
+                  name={isPaidUser ? "add" : "lock-closed"}
+                  size={17}
+                  color={isPaidUser ? "#FFFFFF" : colors.grey}
+                />
+                <Text
+                  style={[
+                    styles.createButtonText,
+                    !isPaidUser && styles.createButtonTextLocked,
+                  ]}
+                >
+                  New showcase
+                </Text>
+              </TouchableOpacity>
             </View>
           </Animated.View>
         }
@@ -255,6 +321,61 @@ export default function ShowcaseScreen() {
         }
       />
 
+      <Modal
+        visible={createModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setCreateModalVisible(false)}
+      >
+        <Pressable
+          style={styles.modalBackdrop}
+          onPress={() => setCreateModalVisible(false)}
+        >
+          <Pressable style={styles.createModal} onPress={(event) => event.stopPropagation()}>
+            <View style={styles.createModalIcon}>
+              <Ionicons name="albums" size={26} color={colors.primary} />
+            </View>
+            <Text style={styles.createModalTitle}>New showcase</Text>
+            <Text style={styles.createModalDescription}>
+              Give this collection a memorable name. You can customize its look
+              afterward.
+            </Text>
+            <TextInput
+              value={showcaseName}
+              onChangeText={setShowcaseName}
+              placeholder="Showcase name"
+              placeholderTextColor={colors.grey}
+              style={styles.createInput}
+              autoFocus
+              maxLength={80}
+              returnKeyType="done"
+              onSubmitEditing={handleCreateShowcase}
+            />
+            <TouchableOpacity
+              style={[
+                styles.createConfirmButton,
+                (!showcaseName.trim() || createShowcase.isPending) &&
+                  styles.createConfirmButtonDisabled,
+              ]}
+              onPress={handleCreateShowcase}
+              disabled={!showcaseName.trim() || createShowcase.isPending}
+            >
+              {createShowcase.isPending ? (
+                <ActivityIndicator color="#FFFFFF" />
+              ) : (
+                <Text style={styles.createConfirmText}>Create showcase</Text>
+              )}
+            </TouchableOpacity>
+            <TouchableOpacity
+              style={styles.createCancelButton}
+              onPress={() => setCreateModalVisible(false)}
+            >
+              <Text style={styles.createCancelText}>Cancel</Text>
+            </TouchableOpacity>
+          </Pressable>
+        </Pressable>
+      </Modal>
+
       {customizeTarget && (
         <ShowcaseCustomizeModal
           visible={!!customizeTarget}
@@ -270,6 +391,13 @@ export default function ShowcaseScreen() {
         feature="Showcase customization"
         description="Give your showcase a custom accent color and banner image with Curator."
         onDismiss={() => setPaywallVisible(false)}
+      />
+
+      <CuratorGateModal
+        visible={createPaywallVisible}
+        feature="Additional showcases"
+        description="Collector accounts are limited to one showcase. Upgrade to Curator to create unlimited showcases."
+        onDismiss={() => setCreatePaywallVisible(false)}
       />
     </View>
   );
@@ -324,6 +452,12 @@ const getStyles = (colors: ThemeColors) =>
       borderRadius: 3,
       marginBottom: 16,
     },
+    heroActions: {
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "space-between",
+      gap: 12,
+    },
     heroPill: {
       flexDirection: "row",
       alignItems: "center",
@@ -353,6 +487,30 @@ const getStyles = (colors: ThemeColors) =>
       fontSize: 12,
       fontWeight: "800",
       color: colors.text,
+    },
+    createButton: {
+      minHeight: 38,
+      flexDirection: "row",
+      alignItems: "center",
+      justifyContent: "center",
+      gap: 7,
+      paddingHorizontal: 15,
+      borderRadius: 999,
+      backgroundColor: colors.primary,
+    },
+    createButtonLocked: {
+      backgroundColor: colors.surfaceContainerHigh,
+      borderWidth: 1,
+      borderColor: colors.outlineVariant,
+      opacity: 0.72,
+    },
+    createButtonText: {
+      color: "#FFFFFF",
+      fontSize: 12,
+      fontWeight: "800",
+    },
+    createButtonTextLocked: {
+      color: colors.grey,
     },
     // --- Card ---
     card: {
@@ -486,5 +644,80 @@ const getStyles = (colors: ThemeColors) =>
     adFooter: {
       marginTop: 12,
       alignItems: "center",
+    },
+    modalBackdrop: {
+      flex: 1,
+      justifyContent: "center",
+      padding: 24,
+      backgroundColor: "rgba(0,0,0,0.72)",
+    },
+    createModal: {
+      alignItems: "center",
+      padding: 22,
+      borderRadius: 24,
+      backgroundColor: colors.surfaceContainer,
+      borderWidth: 1,
+      borderColor: colors.outlineVariant,
+    },
+    createModalIcon: {
+      width: 54,
+      height: 54,
+      borderRadius: 17,
+      alignItems: "center",
+      justifyContent: "center",
+      marginBottom: 14,
+      backgroundColor: `${colors.primary}18`,
+    },
+    createModalTitle: {
+      color: colors.text,
+      fontSize: 22,
+      fontWeight: "900",
+    },
+    createModalDescription: {
+      color: colors.onSurfaceVariant,
+      fontSize: 13,
+      lineHeight: 19,
+      textAlign: "center",
+      marginTop: 7,
+      marginBottom: 18,
+    },
+    createInput: {
+      width: "100%",
+      height: 50,
+      paddingHorizontal: 15,
+      borderRadius: 14,
+      color: colors.text,
+      fontSize: 15,
+      fontWeight: "600",
+      backgroundColor: colors.surfaceContainerHigh,
+      borderWidth: 1,
+      borderColor: colors.outlineVariant,
+    },
+    createConfirmButton: {
+      width: "100%",
+      height: 50,
+      alignItems: "center",
+      justifyContent: "center",
+      marginTop: 14,
+      borderRadius: 25,
+      backgroundColor: colors.primary,
+    },
+    createConfirmButtonDisabled: {
+      opacity: 0.45,
+    },
+    createConfirmText: {
+      color: "#FFFFFF",
+      fontSize: 15,
+      fontWeight: "800",
+    },
+    createCancelButton: {
+      paddingHorizontal: 18,
+      paddingVertical: 10,
+      marginTop: 5,
+    },
+    createCancelText: {
+      color: colors.onSurfaceVariant,
+      fontSize: 14,
+      fontWeight: "700",
     },
   });

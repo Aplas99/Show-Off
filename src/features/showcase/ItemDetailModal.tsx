@@ -1,3 +1,4 @@
+import ContentSafetyMenu from "@/src/components/social/ContentSafetyMenu";
 import {
   ItemWithProduct,
   useAddItemImages,
@@ -279,6 +280,7 @@ export default function ItemDetailModal({ visible, item, onClose }: Props) {
               contentContainerStyle={{ paddingBottom: 100 }}
               scrollEventThrottle={16}
             >
+              {item && <ContentSafetyMenu type="item" id={item.id} ownerId={item.user_id} />}
               {/* Content */}
               <View style={styles.contentSheet}>
                 <PanGestureHandler

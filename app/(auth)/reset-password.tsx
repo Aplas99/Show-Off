@@ -1,4 +1,4 @@
-import { useUpdatePassword } from "@/api/auth";
+import { completeAuthCallback, useUpdatePassword } from "@/api/auth";
 import { useAuthStore } from "@/hooks/useAuthStore";
 import { passwordSchema } from "@/lib/authValidation";
 import { supabase } from "@/lib/supabase";
@@ -8,6 +8,7 @@ import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Alert,
+  Platform,
   StyleSheet,
   Text,
   TextInput,
@@ -44,17 +45,20 @@ function parseAuthParams(url: string) {
 
 export default function ResetPassword() {
   const router = useRouter();
-  const url = Linking.useURL();
+  const nativeUrl = Linking.useURL();
+  const url = Platform.OS === "web" && typeof window !== "undefined" ? window.location.href : nativeUrl;
   const session = useAuthStore((s) => s.session);
   const { mutateAsync: updatePassword, isPending } = useUpdatePassword();
 
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [linkError, setLinkError] = useState<string | null>(null);
+  const [linkReady, setLinkReady] = useState(false);
 
   // Exchange the recovery link for a session so updateUser can run.
   useEffect(() => {
-    if (!url || session) return;
+    if (!url) return;
+    setLinkReady(false);
 
     const { accessToken, refreshToken, code, errorDescription } =
       parseAuthParams(url);
@@ -72,9 +76,12 @@ export default function ResetPassword() {
             refresh_token: refreshToken,
           });
           if (error) throw error;
+          setLinkReady(true);
         } else if (code) {
-          const { error } = await supabase.auth.exchangeCodeForSession(code);
-          if (error) throw error;
+          await completeAuthCallback(url);
+          setLinkReady(true);
+        } else {
+          setLinkError("This reset link is missing its code. Request another reset email.");
         }
       } catch (error: any) {
         setLinkError(
@@ -82,9 +89,10 @@ export default function ResetPassword() {
         );
       }
     })();
-  }, [url, session]);
+  }, [url]);
 
   const handleUpdatePassword = async () => {
+    if (!linkReady || !session) return;
     const parsed = passwordSchema.safeParse(password);
     if (!parsed.success) {
       Alert.alert(
@@ -111,7 +119,7 @@ export default function ResetPassword() {
     }
   };
 
-  const waitingForSession = !session && !linkError;
+  const waitingForSession = (!session || !linkReady) && !linkError;
 
   return (
     <KeyboardAwareScrollView

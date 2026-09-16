@@ -1,10 +1,11 @@
+import { supabase } from "@/lib/supabase";
 import type { PokemonTcgCard } from "./index";
-import { cachePokemonCards, searchPokemonCardsCacheFirst } from "./index";
+import { searchPokemonCardsCacheFirst } from "./index";
 import { createManualPokemonCard, searchPokemonCardSources } from "./search";
 import { searchTcgTrackingPokemonCards } from "./tcgTracking";
+jest.mock("@/lib/supabase", () => ({ supabase: { rpc: jest.fn() } }));
 
 jest.mock("./index", () => ({
-  cachePokemonCards: jest.fn(),
   searchPokemonCardsCacheFirst: jest.fn(),
 }));
 
@@ -52,10 +53,11 @@ describe("multi-source Pokémon search", () => {
     });
 
     expect(cards).toEqual([baseCard]);
-    expect(cachePokemonCards).toHaveBeenCalled();
+    expect(supabase.rpc).not.toHaveBeenCalled();
   });
 
   it("creates and caches a manual card when providers have no result", async () => {
+    jest.mocked(supabase.rpc).mockResolvedValue({ data: { ...baseCard, id: "manual:user:card", name: "Unknown Pikachu", number: "A1", source: "manual" }, error: null } as never);
     const card = await createManualPokemonCard({
       name: "Unknown Pikachu",
       collection: "Local Promo",
@@ -67,6 +69,6 @@ describe("multi-source Pokémon search", () => {
       number: "A1",
       source: "manual",
     });
-    expect(cachePokemonCards).toHaveBeenCalledWith([card]);
+    expect(supabase.rpc).toHaveBeenCalledWith("create_manual_pokemon_card", { p_name: "Unknown Pikachu", p_collection: "Local Promo", p_number: "A1" });
   });
 });

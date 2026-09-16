@@ -1,5 +1,7 @@
 import { useSignUp, useSignInWithOAuth } from "@/api/auth";
 import { signUpSchema } from "@/lib/authValidation";
+import { AGE_COLLECTION_EXPLANATION, reportedAgeSchema } from "@/lib/ageAccess";
+import { AppleSignInButton } from "@/src/components/auth/AppleSignInButton";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { Link, useRouter } from "expo-router";
@@ -10,6 +12,7 @@ import {
   Image,
   SafeAreaView,
   StyleSheet,
+  Switch,
   Text,
   TextInput,
   TouchableOpacity,
@@ -23,10 +26,12 @@ export default function SignUp() {
   const [username, setUsername] = useState("");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [age, setAge] = useState("");
+  const [accepted, setAccepted] = useState(false);
   const { mutateAsync: signUp, isPending } = useSignUp();
   const signInWithOAuth = useSignInWithOAuth();
 
-  const handleOAuthSignIn = async (provider: "google" | "discord") => {
+  const handleOAuthSignIn = async (provider: "google" | "discord" | "apple") => {
     try {
       await signInWithOAuth.mutateAsync(provider);
     } catch (err: any) {
@@ -42,14 +47,15 @@ export default function SignUp() {
       // Validate inputs using Zod
       signUpSchema.parse({ email, password, username });
 
-      const { session } = await signUp({ email, password, username });
+      const reportedAge = reportedAgeSchema.parse(Number(age));
+      const { session } = await signUp({ email, password, username, age: reportedAge, accepted });
 
       if (!session) {
         // Email confirmation is enabled — no session until the user verifies.
         Alert.alert(
           "Confirm your email",
           `We sent a confirmation link to ${email}. Please verify your email, then sign in.`,
-          [{ text: "OK", onPress: () => router.replace("/(auth)/signin") }],
+          [{ text: "OK", onPress: () => router.replace("/(auth)/confirm-email") }],
         );
         return;
       }
@@ -130,6 +136,16 @@ export default function SignUp() {
               accessibilityLabel="Password"
               editable={!isPending}
             />
+            <TextInput style={styles.input} placeholder="Your current age" placeholderTextColor="#9CA3AF"
+              accessibilityLabel="Your current age" value={age} onChangeText={setAge} keyboardType="number-pad" maxLength={3} editable={!isPending} />
+            <Text style={styles.subtitle}>{AGE_COLLECTION_EXPLANATION}</Text>
+            <Link href={{ pathname: "/legal/[page]", params: { page: "terms" } }} style={styles.signinLink}>Terms of Use</Link>
+            <Link href={{ pathname: "/legal/[page]", params: { page: "community" } }} style={styles.signinLink}>Community Standards</Link>
+            <Link href={{ pathname: "/legal/[page]", params: { page: "privacy" } }} style={styles.signinLink}>Privacy Policy</Link>
+            <View style={{ flexDirection: "row", alignItems: "center", gap: 12, marginVertical: 12 }}>
+              <Switch accessibilityLabel="Accept terms and community standards" value={accepted} onValueChange={setAccepted} />
+              <Text style={[styles.subtitle, { flex: 1 }]}>I accept the terms and community standards and have read the privacy policy. If required for my age, my parent or guardian agrees.</Text>
+            </View>
             <TouchableOpacity
               style={[styles.signUpButton, isPending && styles.buttonDisabled]}
               onPress={handleSignUp}
@@ -175,6 +191,7 @@ export default function SignUp() {
               </TouchableOpacity>
             </View>
 
+            <AppleSignInButton onPress={() => handleOAuthSignIn("apple")} disabled={isPending || signInWithOAuth.isPending} />
             {/* Already have an account? */}
             <Link href="/signin" asChild>
               <TouchableOpacity style={styles.haveAccountButton}>

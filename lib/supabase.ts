@@ -114,6 +114,7 @@ export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
     storage: ExpoSecureStoreAdapter as any,
     autoRefreshToken: true,
     persistSession: true,
+    flowType: "pkce",
     detectSessionInUrl: false,
   },
 });

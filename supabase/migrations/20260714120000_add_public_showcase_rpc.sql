@@ -1,4 +1,4 @@
--- Sharable public showcase links (Curator feature).
+-- Sharable public showcase links (available to every membership tier).
 --
 -- `showcase.is_public` already exists and its RLS policy
 -- ("read_public_showcases") already grants both `authenticated` and

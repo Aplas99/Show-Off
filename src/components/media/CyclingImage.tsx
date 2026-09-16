@@ -1,4 +1,4 @@
-import { Image } from "expo-image";
+import { Image } from "@/src/components/media/ProtectedImage";
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import { Animated, Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from "react-native";
 

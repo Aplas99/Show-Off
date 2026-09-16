@@ -2,15 +2,17 @@
 
 ## Environment
 
-The Expo client currently reads the Pokémon TCG API key from:
+The `catalog-proxy` Edge Function reads the Pokemon TCG API key from its
+server-side secret:
 
 ```text
-EXPO_PUBLIC_POKE_KEY
+POKEMON_TCG_API_KEY
 ```
 
-`EXPO_PUBLIC_*` values are bundled into the application. This is acceptable for
-the initial provider spike, but cache writes and external API requests should be
-moved to a Supabase Edge Function before production release.
+Never add this key as an `EXPO_PUBLIC_*` variable. See
+[catalog proxy rollout](catalog-proxy.md) for deployment order and validation.
+External requests now pass through the proxy; shared-cache writes still need
+to move to trusted server code before production release.
 
 ## Database
 
@@ -44,8 +46,9 @@ Do not run `db push` until the local and remote migration histories agree.
 2. Set the category filter to `TCG`.
 3. Search by Pokémon card name.
 4. The app calls `search_pokemon_tcg_cards` first.
-5. A cache miss calls `GET https://api.pokemontcg.io/v2/cards` and upserts the
-   returned cards into `pokemon_tcg_cards`.
+5. A cache miss invokes `catalog-proxy`, which calls the Pokemon provider with
+   server credentials. The client still upserts the returned cards into
+   `pokemon_tcg_cards` pending the trusted-cache migration.
 6. Creating the selected card stores its provider ID in
    `items.pokemon_tcg_card_id` and links the item to the selected showcase.
 

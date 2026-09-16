@@ -7,6 +7,7 @@ import { useRouter } from "expo-router";
 import React, { useMemo } from "react";
 import {
   ActivityIndicator,
+  Alert,
   Modal,
   Pressable,
   StyleSheet,
@@ -39,6 +40,8 @@ export default function SearchQuotaModal({
       await grantBonusSearches.mutateAsync(5);
       await haptics.success();
       onClose();
+    } else if (result === "failed") {
+      Alert.alert("Ad unavailable", "Please try again later. Your normal daily allowance resets tomorrow.");
     }
   };
 
@@ -61,17 +64,17 @@ export default function SearchQuotaModal({
           <Text style={styles.title}>Out of free searches for today</Text>
           <Text style={styles.description}>
             Free accounts get 15 searches a day across the whole app. Watch a
-            short ad for 5 more, or upgrade to Curator for unlimited searches.
+            short ad for 5 more when available, or upgrade to Curator for unlimited searches.
           </Text>
           <TouchableOpacity
             style={styles.primaryButton}
             onPress={handleWatchAd}
-            disabled={isBusy}
+            disabled={isBusy || !rewardedAd.isAvailable}
           >
             {isBusy ? (
               <ActivityIndicator color="#000" size="small" />
             ) : (
-              <Text style={styles.primaryButtonText}>Watch ad for +5 searches</Text>
+              <Text style={styles.primaryButtonText}>{rewardedAd.isAvailable ? "Watch ad for +5 searches" : "Rewarded ads unavailable"}</Text>
             )}
           </TouchableOpacity>
           <TouchableOpacity

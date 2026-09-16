@@ -10,7 +10,7 @@ import { TAB_BAR_HEIGHT } from "@/constants/layoutConfig";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
+import { Image } from "@/src/components/media/ProtectedImage";
 import * as ImagePicker from "expo-image-picker";
 import { Stack, useRouter } from "expo-router";
 import React, { useMemo, useState } from "react";
@@ -186,8 +186,8 @@ export default function CreatePostScreen() {
         {!isPaidUser && (
           <Text style={styles.limitNote}>
             Free accounts: up to {FREE_MAX_MEDIA_PER_POST} attachments and 5MB
-            per file. Curators get {PAID_MAX_MEDIA_PER_POST} attachments and
-            200MB per file.
+            per file. Founding Curators get {PAID_MAX_MEDIA_PER_POST}
+            attachments and 10MB per file; Curators get 100MB per file.
           </Text>
         )}
 

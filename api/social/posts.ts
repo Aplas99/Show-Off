@@ -12,7 +12,8 @@ import {
 const postDebug = createActionLogger("Posts");
 
 /** Media attachments per post: free tier vs Curator. Per-file size limits
- * (5MB free / 200MB paid) are enforced in api/storage. */
+ * (5MB free / 10MB Founding Curator / 100MB Curator) are enforced in
+ * api/storage. */
 export const FREE_MAX_MEDIA_PER_POST = 3;
 export const PAID_MAX_MEDIA_PER_POST = 10;
 

@@ -62,9 +62,8 @@ interface CuratorGateModalProps extends CuratorGateContentProps {
 }
 
 /**
- * Modal upsell for action-triggered Curator entry points (e.g. tapping
- * "Get shareable link" as a free/Collector user). Caller owns `visible`
- * state and should only show this after confirming `!isCurator`.
+ * Modal upsell for action-triggered Curator entry points. Caller owns
+ * `visible` state and should only show this after confirming `!isCurator`.
  */
 export function CuratorGateModal({
   visible,

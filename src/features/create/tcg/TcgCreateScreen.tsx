@@ -38,7 +38,7 @@ import { useColors, type ThemeColors } from "@/constants/theme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
-import { Image } from "expo-image";
+import { Image } from "@/src/components/media/ProtectedImage";
 import { Stack, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -916,13 +916,13 @@ function ScannerStep({
             <TouchableOpacity
               style={styles.quotaPrimaryButton}
               onPress={handleWatchAdForBonusScans}
-              disabled={rewardedAd.isLoading || grantBonusScans.isPending}
+              disabled={!rewardedAd.isAvailable || rewardedAd.isLoading || grantBonusScans.isPending}
             >
               {rewardedAd.isLoading || grantBonusScans.isPending ? (
                 <ActivityIndicator color="#000" size="small" />
               ) : (
                 <Text style={styles.quotaPrimaryButtonText}>
-                  Watch ad for +5 scans
+                  {rewardedAd.isAvailable ? "Watch ad for +5 scans" : "Rewarded ads unavailable"}
                 </Text>
               )}
             </TouchableOpacity>

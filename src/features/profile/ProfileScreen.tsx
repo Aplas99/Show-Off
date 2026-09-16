@@ -3,10 +3,12 @@ import { useMembership } from "@/api/memberships";
 import { useGetCurrentUserProfile } from "@/api/profile/index";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { useThemeStore } from "@/hooks/useThemeStore";
+import MembershipModal from "@/src/features/profile/MembershipModal";
+import { Image } from "@/src/components/media/ProtectedImage";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router } from "expo-router";
-import React from "react";
+import React, { useState } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -19,6 +21,15 @@ import {
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
+const GOLD_RIM_COLORS = [
+  "#7A4F00",
+  "#FFF1A8",
+  "#C89419",
+  "#FFE789",
+  "#8A5A00",
+] as const;
+const CLEAR_RIM_COLORS = ["transparent", "transparent"] as const;
+
 export default function ProfileScreen() {
   const { data, isLoading, error } = useGetCurrentUserProfile();
   const { data: membership } = useMembership();
@@ -26,6 +37,7 @@ export default function ProfileScreen() {
   const insets = useSafeAreaInsets();
   const colors = useColors();
   const isDark = useThemeStore((s) => s.isDark);
+  const [isMembershipVisible, setIsMembershipVisible] = useState(false);
   const styles = getStyles(colors);
 
   if (isLoading) {
@@ -50,6 +62,15 @@ export default function ProfileScreen() {
   }
 
   const { user, profile, socialStats } = data;
+  const displayName =
+    profile?.full_name || profile?.username || "Collector";
+  const membershipType = membership?.isFoundingCurator
+    ? "Founding Curator"
+    : membership?.isCurator
+      ? "Curator Member"
+      : "Collector Member";
+  const hasGoldMembershipRim =
+    membership?.isCurator || membership?.isFoundingCurator;
 
   const handleLogout = () => {
     Alert.alert("Sign Out", "Are you sure you want to sign out?", [
@@ -98,45 +119,76 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </Animated.View>
 
-        {/* Profile Header Section */}
-        <Animated.View
-          entering={FadeInDown.delay(100).duration(500)}
-          style={styles.header}
-        >
-          {/* Avatar with Gradient Ring */}
-          <View style={styles.avatarOuter}>
+        {/* Member badge card — opens membership details and plans. */}
+        <Animated.View entering={FadeInDown.delay(100).duration(500)}>
+          <TouchableOpacity
+            onPress={() => setIsMembershipVisible(true)}
+            activeOpacity={0.88}
+            accessibilityRole="button"
+            accessibilityLabel="Open membership"
+          >
             <LinearGradient
-              colors={[colors.primary, colors.surfaceVariant]}
+              colors={hasGoldMembershipRim ? GOLD_RIM_COLORS : CLEAR_RIM_COLORS}
               start={{ x: 0, y: 0 }}
               end={{ x: 1, y: 1 }}
-              style={styles.avatarGradientRing}
+              style={[
+                styles.memberBadgeRim,
+                hasGoldMembershipRim && styles.curatorGoldRim,
+              ]}
             >
-              <View style={styles.avatarContainer}>
-                <Ionicons
-                  name="person"
-                  size={44}
-                  color={isDark ? "#FFF" : colors.primary}
-                />
+              <LinearGradient
+                colors={[colors.primaryContainer, colors.primary, "#7587FF"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 1 }}
+                style={styles.memberBadgeCard}
+              >
+                <View style={styles.badgeAvatarOuter}>
+                <View style={styles.badgeAvatar}>
+                  {profile?.avatar_url ? (
+                    <Image
+                      source={{ uri: profile.avatar_url }}
+                      style={styles.avatarImage}
+                    />
+                  ) : (
+                    <Ionicons
+                      name="person"
+                      size={34}
+                      color={isDark ? "#FFF" : colors.primary}
+                    />
+                  )}
+                </View>
+                {!!profile?.is_admin && (
+                  <View style={styles.verifiedBadge}>
+                    <Ionicons name="checkmark" size={13} color="#000" />
+                  </View>
+                )}
               </View>
-            </LinearGradient>
-            {/* Verified Badge */}
-            {!!profile?.is_admin && (
-              <View style={styles.verifiedBadge}>
-                <Ionicons name="checkmark-circle" size={16} color="#000" />
-              </View>
-            )}
-          </View>
 
-          <Text style={styles.name}>
-            {profile?.full_name || profile?.username || "Collector"}
-          </Text>
-          {!!membership?.isCurator && (
-            <View style={styles.curatorBadge}>
-              <Ionicons name="ribbon" size={12} color="#000" />
-              <Text style={styles.curatorBadgeText}>CURATOR</Text>
-            </View>
-          )}
-          <Text style={styles.email}>{user?.email}</Text>
+              <View style={styles.badgeIdentity}>
+                <Text style={styles.badgeName} numberOfLines={1}>
+                  {displayName}
+                </Text>
+                <Text style={styles.badgeMembershipType}>{membershipType}</Text>
+                <Text style={styles.badgeEmail} numberOfLines={1}>
+                  {user?.email}
+                </Text>
+              </View>
+
+              <View style={styles.memberBadgeIcon}>
+                <Ionicons name="ribbon" size={27} color="#FFFFFF" />
+              </View>
+
+                <View style={styles.membershipAction}>
+                  <Text style={styles.membershipActionText}>
+                    {membership?.isCurator
+                      ? "Manage membership"
+                      : "View membership"}
+                  </Text>
+                  <Ionicons name="chevron-forward" size={16} color="#FFFFFF" />
+                </View>
+              </LinearGradient>
+            </LinearGradient>
+          </TouchableOpacity>
         </Animated.View>
 
         {/* Stats Row */}
@@ -158,47 +210,6 @@ export default function ProfileScreen() {
             value={String(socialStats.followers)}
             colors={colors}
           />
-        </Animated.View>
-
-        {/* Membership Card */}
-        <Animated.View
-          entering={FadeInDown.delay(250).duration(500)}
-          style={styles.membershipSection}
-        >
-          <TouchableOpacity
-            activeOpacity={0.85}
-            onPress={() => router.push("/(tabs)/profile/membership" as any)}
-          >
-            <LinearGradient
-              colors={[colors.primary, colors.secondary]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 1 }}
-              style={styles.membershipCard}
-            >
-              <View style={styles.membershipIconBg}>
-                <Ionicons
-                  name={membership?.isCurator ? "diamond" : "diamond-outline"}
-                  size={24}
-                  color="#FFF"
-                />
-              </View>
-              <View style={{ flex: 1 }}>
-                <Text style={styles.membershipTitle}>
-                  {membership?.isCurator ? "Curator Member" : "Go Curator"}
-                </Text>
-                <Text style={styles.membershipSubtitle}>
-                  {membership?.isCurator
-                    ? "Manage your membership & billing"
-                    : "Unlock price history, sharing & more"}
-                </Text>
-              </View>
-              <Ionicons
-                name="chevron-forward"
-                size={20}
-                color="rgba(255,255,255,0.9)"
-              />
-            </LinearGradient>
-          </TouchableOpacity>
         </Animated.View>
 
         {/* Account Details Section */}
@@ -255,6 +266,12 @@ export default function ProfileScreen() {
           </TouchableOpacity>
         </Animated.View>
       </ScrollView>
+
+      <MembershipModal
+        visible={isMembershipVisible}
+        onClose={() => setIsMembershipVisible(false)}
+        displayName={displayName}
+      />
     </View>
   );
 }
@@ -403,70 +420,108 @@ const getStyles = (colors: ThemeColors) =>
       justifyContent: "center",
       alignItems: "center",
     },
-    header: {
-      alignItems: "center",
+    memberBadgeRim: {
+      borderRadius: 28,
       marginBottom: 32,
     },
-    avatarOuter: {
+    curatorGoldRim: {
+      padding: 3,
+      shadowColor: "#E7BC45",
+      shadowOffset: { width: 0, height: 2 },
+      shadowOpacity: 0.55,
+      shadowRadius: 8,
+      elevation: 7,
+    },
+    memberBadgeCard: {
+      minHeight: 168,
+      borderRadius: 25,
+      padding: 18,
+      paddingBottom: 52,
+      flexDirection: "row",
+      alignItems: "center",
+      overflow: "hidden",
+    },
+    badgeAvatarOuter: {
       position: "relative",
-      marginBottom: 24,
     },
-    avatarGradientRing: {
-      width: 116,
-      height: 116,
-      borderRadius: 58,
-      padding: 2,
-    },
-    avatarContainer: {
-      flex: 1,
-      borderRadius: 56,
+    badgeAvatar: {
+      width: 70,
+      height: 70,
+      borderRadius: 35,
       backgroundColor: colors.surfaceContainer,
-      borderWidth: 4,
-      borderColor: colors.background,
+      borderWidth: 3,
+      borderColor: "rgba(255,255,255,0.85)",
       justifyContent: "center",
       alignItems: "center",
       overflow: "hidden",
     },
+    avatarImage: {
+      width: "100%",
+      height: "100%",
+    },
     verifiedBadge: {
       position: "absolute",
-      bottom: 0,
-      right: 0,
-      width: 32,
-      height: 32,
-      borderRadius: 16,
-      backgroundColor: colors.primary,
+      bottom: -1,
+      right: -1,
+      width: 24,
+      height: 24,
+      borderRadius: 12,
+      backgroundColor: colors.tertiary,
       justifyContent: "center",
       alignItems: "center",
       borderWidth: 2,
-      borderColor: colors.background,
+      borderColor: "#FFFFFF",
     },
-    name: {
-      fontSize: 28,
+    badgeIdentity: {
+      flex: 1,
+      marginLeft: 14,
+      marginRight: 8,
+    },
+    badgeName: {
+      fontSize: 20,
       fontWeight: "800",
-      color: colors.text,
-      letterSpacing: -0.5,
-      marginBottom: 4,
+      color: "#FFFFFF",
+      letterSpacing: -0.3,
     },
-    curatorBadge: {
+    badgeMembershipType: {
+      marginTop: 3,
+      fontSize: 13,
+      fontWeight: "700",
+      color: "rgba(255,255,255,0.9)",
+    },
+    badgeEmail: {
+      marginTop: 4,
+      fontSize: 11,
+      color: "rgba(255,255,255,0.7)",
+    },
+    memberBadgeIcon: {
+      width: 50,
+      height: 50,
+      borderRadius: 25,
+      justifyContent: "center",
+      alignItems: "center",
+      borderWidth: 1,
+      borderColor: "rgba(255,255,255,0.65)",
+      backgroundColor: "rgba(255,255,255,0.16)",
+    },
+    membershipAction: {
+      position: "absolute",
+      left: 18,
+      right: 18,
+      bottom: 0,
+      height: 42,
       flexDirection: "row",
       alignItems: "center",
-      gap: 4,
-      paddingHorizontal: 8,
-      paddingVertical: 3,
-      borderRadius: 999,
-      backgroundColor: colors.tertiary,
-      marginBottom: 8,
+      justifyContent: "space-between",
+      borderTopWidth: 1,
+      borderTopColor: "rgba(255,255,255,0.22)",
     },
-    curatorBadgeText: {
-      fontSize: 10,
+    membershipActionText: {
+      color: "#FFFFFF",
+      fontSize: 12,
       fontWeight: "800",
-      letterSpacing: 1,
-      color: "#000",
-    },
-    email: {
-      fontSize: 14,
-      color: colors.onSurfaceVariant,
-      fontWeight: "500",
+      textTransform: "uppercase",
+      letterSpacing: 0.7,
     },
     statsRow: {
       flexDirection: "row",
@@ -481,40 +536,6 @@ const getStyles = (colors: ThemeColors) =>
       width: 1,
       height: 32,
       backgroundColor: `${colors.outlineVariant}4D`,
-    },
-    membershipSection: {
-      marginBottom: 40,
-    },
-    membershipCard: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 14,
-      padding: 18,
-      borderRadius: 24,
-      shadowColor: colors.primary,
-      shadowOffset: { width: 0, height: 8 },
-      shadowOpacity: 0.3,
-      shadowRadius: 16,
-      elevation: 6,
-    },
-    membershipIconBg: {
-      width: 48,
-      height: 48,
-      borderRadius: 16,
-      backgroundColor: "rgba(255,255,255,0.2)",
-      justifyContent: "center",
-      alignItems: "center",
-    },
-    membershipTitle: {
-      fontSize: 17,
-      fontWeight: "800",
-      color: "#FFF",
-      marginBottom: 3,
-    },
-    membershipSubtitle: {
-      fontSize: 13,
-      color: "rgba(255,255,255,0.85)",
-      fontWeight: "500",
     },
     section: {
       marginBottom: 48,

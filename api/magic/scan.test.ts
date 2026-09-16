@@ -70,7 +70,6 @@ describe("extractMagicNameCandidates", () => {
 describe("identifyMagicCardImage", () => {
   const baseDependencies = {
     prepareImage: jest.fn().mockResolvedValue("file://prepared.jpg"),
-    cacheCards: jest.fn().mockResolvedValue(undefined),
   };
 
   afterEach(() => {
