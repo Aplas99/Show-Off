@@ -1,3 +1,4 @@
+import ContentSafetyMenu from "@/src/components/social/ContentSafetyMenu";
 import {
     useCreateComment,
     useGetItemComments,
@@ -9,9 +10,10 @@ import {
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { useThemeStore } from "@/hooks/useThemeStore";
 import { Ionicons } from "@expo/vector-icons";
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
     ActivityIndicator,
+    Alert,
     FlatList,
     Keyboard,
     Modal,
@@ -50,7 +52,8 @@ interface CommentModalProps {
 
 /** Minimal shape shared by item comments and post comments. */
 interface AnyComment {
-    id: number;
+    id: string | number;
+    user_id: string;
     content: string;
     created_at: string;
     profile?: { username: string; avatar_url: string | null };
@@ -86,6 +89,8 @@ export default function CommentModal({
     const { isLoading, isError, error, refetch } = activeThread;
     const createComment = useCreateComment();
     const createPostComment = useCreatePostComment();
+    const isSubmitting = postId ? createPostComment.isPending : createComment.isPending;
+    const submitLock = useRef(false);
 
     // Animation values
     const translateY = useSharedValue(SCREEN_HEIGHT);
@@ -159,7 +164,8 @@ export default function CommentModal({
     };
 
     const handleSubmit = async () => {
-        if (!commentText.trim()) return;
+        if (!commentText.trim() || submitLock.current || (!postId && !itemId)) return;
+        submitLock.current = true;
 
         try {
             if (postId) {
@@ -174,8 +180,10 @@ export default function CommentModal({
                 });
             }
             setCommentText("");
-        } catch (error) {
-            console.error("Failed to create comment:", error);
+        } catch {
+            Alert.alert("Comment not sent", "Your draft is still here. Check your connection and try again.");
+        } finally {
+            submitLock.current = false;
         }
     };
 
@@ -202,6 +210,7 @@ export default function CommentModal({
                     </View>
                     <Text style={styles.commentTextContent}>{item.content}</Text>
                     <Text style={styles.timestampBelow}>{dateLabel}</Text>
+                    <ContentSafetyMenu type={postId ? "post_comment" : "comment"} id={item.id} ownerId={item.user_id} />
                 </View>
             </Animated.View>
         );
@@ -288,6 +297,7 @@ export default function CommentModal({
                             placeholderTextColor={colors.grey}
                             value={commentText}
                             onChangeText={setCommentText}
+                            editable={!isSubmitting}
                             multiline
                             maxLength={500}
                             returnKeyType="send"
@@ -296,13 +306,15 @@ export default function CommentModal({
                         />
                         <TouchableOpacity
                             onPress={handleSubmit}
-                            disabled={!commentText.trim() || createComment.isPending}
+                            accessibilityRole="button"
+                            accessibilityLabel="Send comment"
+                            disabled={!commentText.trim() || isSubmitting}
                             style={[
                                 styles.submitButton,
-                                (!commentText.trim() || createComment.isPending) && styles.submitButtonDisabled
+                                (!commentText.trim() || isSubmitting) && styles.submitButtonDisabled
                             ]}
                         >
-                            {createComment.isPending ? (
+                            {isSubmitting ? (
                                 <ActivityIndicator size="small" color="#FFF" />
                             ) : (
                                 <Ionicons name="arrow-up" size={24} color="#FFF" />

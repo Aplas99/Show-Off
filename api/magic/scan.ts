@@ -2,7 +2,6 @@ import { cleanOcrText, deduplicateLines } from "@/api/pokemon/ocrPostprocessing"
 import { createActionLogger } from "@/lib/actionDebug";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import {
-  cacheMagicCards,
   fetchScryfallApi,
   MagicApiError,
   magicCardSchema,
@@ -39,7 +38,6 @@ export interface MagicScanDependencies {
   recognizeText: (imageUri: string) => Promise<MagicOcrResult>;
   findCardByFuzzyName: (name: string) => Promise<MagicCard | null>;
   searchCardsByName: (name: string) => Promise<MagicCard[]>;
-  cacheCards: (cards: MagicCard[]) => Promise<void>;
 }
 
 /**
@@ -165,7 +163,6 @@ const defaultDependencies: MagicScanDependencies = {
   recognizeText: recognizeTextWithMlKit,
   findCardByFuzzyName,
   searchCardsByName,
-  cacheCards: cacheMagicCards,
 };
 
 /**
@@ -240,7 +237,6 @@ export async function identifyMagicCardImage(
   }
 
   const cards = [...matches.values()];
-  await dependencies.cacheCards(cards);
   magicScanDebug.log("scan.completed", {
     matchCount: cards.length,
     durationMs: Date.now() - startedAt,

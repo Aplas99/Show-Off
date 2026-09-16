@@ -362,13 +362,13 @@ export default function BarcodeScannerModal({
               <TouchableOpacity
                 style={styles.quotaPrimaryButton}
                 onPress={handleWatchAdForBonusScans}
-                disabled={rewardedAd.isLoading || grantBonusScans.isPending}
+                disabled={!rewardedAd.isAvailable || rewardedAd.isLoading || grantBonusScans.isPending}
               >
                 {rewardedAd.isLoading || grantBonusScans.isPending ? (
                   <ActivityIndicator color="#000" size="small" />
                 ) : (
                   <Text style={styles.quotaPrimaryButtonText}>
-                    Watch ad for +5 scans
+                    {rewardedAd.isAvailable ? "Watch ad for +5 scans" : "Rewarded ads unavailable"}
                   </Text>
                 )}
               </TouchableOpacity>

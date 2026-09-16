@@ -24,11 +24,7 @@ export function useGetItemCommentCount({ itemId, enabled = true }: { itemId: num
                 .eq("item_id", itemId);
 
             if (error) {
-                // An empty message usually means an RLS policy is blocking the request.
-                // The count is a non-critical UI decoration — return 0 gracefully.
-                // Fix: add a SELECT policy on the comments table in Supabase Dashboard.
-                console.warn("[Comments] Count query blocked (check RLS policy):", error);
-                return 0;
+                throw new Error("Could not load the comment count. Please try again.");
             }
 
             return count ?? 0;
@@ -102,6 +98,7 @@ export function useCreateComment() {
         },
         onSuccess: (_, vars) => {
             qc.invalidateQueries({ queryKey: ["social", "comments", vars.itemId] });
+            qc.invalidateQueries({ queryKey: ["social", "comments", "count", vars.itemId] });
             qc.invalidateQueries({ queryKey: ["social", "feed"] });
         },
     });

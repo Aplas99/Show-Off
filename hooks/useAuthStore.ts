@@ -10,6 +10,8 @@ interface AuthState {
    * step. null = unknown (not yet checked for this session).
    */
   needsUsername: boolean | null;
+  needsSafety: boolean | null;
+  setNeedsSafety: (value: boolean | null) => void;
   setSession: (session: Session | null) => void;
   setLoading: (loading: boolean) => void;
   setNeedsUsername: (needsUsername: boolean | null) => void;
@@ -21,6 +23,8 @@ export const useAuthStore = create<AuthState>((set) => ({
   user: null,
   loading: true,
   needsUsername: null,
+  needsSafety: null,
+  setNeedsSafety: (needsSafety) => set({ needsSafety }),
   setSession: (session) =>
     set((state) => ({
       session,
@@ -31,9 +35,10 @@ export const useAuthStore = create<AuthState>((set) => ({
         session?.user?.id === state.session?.user?.id
           ? state.needsUsername
           : null,
+      needsSafety: session?.user?.id === state.session?.user?.id ? state.needsSafety : null,
     })),
   setLoading: (loading) => set({ loading }),
   setNeedsUsername: (needsUsername) => set({ needsUsername }),
   signOut: () =>
-    set({ session: null, user: null, loading: false, needsUsername: null }),
+    set({ session: null, user: null, loading: false, needsUsername: null, needsSafety: null }),
 }));

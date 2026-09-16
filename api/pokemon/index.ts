@@ -1,79 +1,9 @@
+import { CatalogRequestError, fetchCatalog } from "@/api/catalog";
 import { supabase } from "@/lib/supabase";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { z } from "zod";
+import { pokemonTcgCardSchema, pokemonSearchResponseSchema, pokemonCardResponseSchema, type PokemonTcgCard } from "@/lib/pokemonCatalog";
 
-const pokemonPriceSchema = z
-  .object({
-    low: z.number().nullable().optional(),
-    mid: z.number().nullable().optional(),
-    high: z.number().nullable().optional(),
-    market: z.number().nullable().optional(),
-    directLow: z.number().nullable().optional(),
-  })
-  .passthrough();
-
-const pokemonMarketplaceSchema = z
-  .object({
-    url: z.string().optional(),
-    updatedAt: z.string().optional(),
-    prices: z.record(z.string(), pokemonPriceSchema).optional(),
-  })
-  .passthrough();
-
-const pokemonCardmarketSchema = z
-  .object({
-    url: z.string().optional(),
-    updatedAt: z.string().optional(),
-    prices: z.record(z.string(), z.number().nullable()).optional(),
-  })
-  .passthrough();
-
-export const pokemonTcgCardSchema = z
-  .object({
-    id: z.string().min(1),
-    name: z.string().min(1),
-    supertype: z.string(),
-    subtypes: z.array(z.string()).optional().default([]),
-    hp: z.string().optional(),
-    types: z.array(z.string()).optional().default([]),
-    set: z
-      .object({
-        id: z.string(),
-        name: z.string(),
-        series: z.string().optional(),
-        printedTotal: z.number().optional(),
-        total: z.number().optional(),
-        ptcgoCode: z.string().optional(),
-        releaseDate: z.string().optional(),
-      })
-      .passthrough(),
-    number: z.string(),
-    artist: z.string().optional(),
-    rarity: z.string().optional(),
-    regulationMark: z.string().optional(),
-    nationalPokedexNumbers: z.array(z.number()).optional().default([]),
-    images: z.object({
-      small: z.string(),
-      large: z.string(),
-    }),
-    tcgplayer: pokemonMarketplaceSchema.optional(),
-    cardmarket: pokemonCardmarketSchema.optional(),
-  })
-  .passthrough();
-
-const pokemonSearchResponseSchema = z.object({
-  data: z.array(pokemonTcgCardSchema),
-  page: z.number(),
-  pageSize: z.number(),
-  count: z.number(),
-  totalCount: z.number(),
-});
-
-const pokemonCardResponseSchema = z.object({
-  data: pokemonTcgCardSchema,
-});
-
-export type PokemonTcgCard = z.infer<typeof pokemonTcgCardSchema>;
+export { pokemonTcgCardSchema, pokemonCardToCacheRow, type PokemonTcgCard } from "@/lib/pokemonCatalog";
 
 export interface PokemonCardSearchResult {
   cards: PokemonTcgCard[];
@@ -86,6 +16,12 @@ export interface PokemonCardSearchResult {
 interface PokemonCardCacheRow {
   id: string;
   raw_data: unknown;
+}
+
+interface PokemonSetRosterCacheRow {
+  set_id: string;
+  cached_card_count: number;
+  is_complete: boolean;
 }
 
 export interface SearchPokemonCardsInput {
@@ -119,9 +55,6 @@ export interface PokemonTcgDependencies {
   fetchCardById: (id: string) => Promise<PokemonTcgCard>;
   cacheCards: (cards: PokemonTcgCard[]) => Promise<void>;
 }
-
-const POKEMON_TCG_API_URL = "https://api.pokemontcg.io/v2";
-const PokemonTcgAPIKey = process.env.EXPO_PUBLIC_POKE_KEY || "";
 
 export class PokemonTcgApiError extends Error {
   status: number;
@@ -183,57 +116,15 @@ export function buildPokemonCardQuery(
     .join(" ");
 }
 
-export function pokemonCardToCacheRow(card: PokemonTcgCard) {
-  return {
-    id: card.id,
-    name: card.name,
-    supertype: card.supertype,
-    subtypes: card.subtypes,
-    hp: card.hp ?? null,
-    types: card.types,
-    set_id: card.set.id,
-    set_name: card.set.name,
-    set_series: card.set.series ?? null,
-    set_printed_total: card.set.printedTotal ?? null,
-    set_total: card.set.total ?? null,
-    set_ptcgo_code: card.set.ptcgoCode ?? null,
-    set_release_date: card.set.releaseDate?.replaceAll("/", "-") ?? null,
-    number: card.number,
-    artist: card.artist ?? null,
-    rarity: card.rarity ?? null,
-    regulation_mark: card.regulationMark ?? null,
-    national_pokedex_numbers: card.nationalPokedexNumbers,
-    image_small: card.images.small,
-    image_large: card.images.large,
-    tcgplayer: card.tcgplayer ?? null,
-    cardmarket: card.cardmarket ?? null,
-    raw_data: card,
-    cached_at: new Date().toISOString(),
-  };
-}
-
-function pokemonHeaders() {
-  const headers: Record<string, string> = {
-    Accept: "application/json",
-  };
-
-  if (PokemonTcgAPIKey) {
-    headers["X-Api-Key"] = PokemonTcgAPIKey;
-  }
-
-  return headers;
-}
-
 async function fetchPokemonApi(path: string) {
-  const response = await fetch(`${POKEMON_TCG_API_URL}${path}`, {
-    headers: pokemonHeaders(),
-  });
-
-  if (!response.ok) {
-    throw new PokemonTcgApiError(response.status, path);
+  try {
+    return await fetchCatalog({ provider: "pokemon", path });
+  } catch (error) {
+    if (error instanceof CatalogRequestError && error.status === 404) {
+      throw new PokemonTcgApiError(404, path);
+    }
+    throw error;
   }
-
-  return response.json();
 }
 
 const defaultDependencies: PokemonTcgDependencies = {
@@ -258,6 +149,7 @@ const defaultDependencies: PokemonTcgDependencies = {
       .from("pokemon_tcg_cards")
       .select("id, raw_data")
       .eq("id", id)
+      .or("catalog_trusted.eq.true,id.like.manual:%")
       .maybeSingle();
 
     if (error) {
@@ -302,17 +194,8 @@ const defaultDependencies: PokemonTcgDependencies = {
     const raw = await fetchPokemonApi(`/cards/${encodeURIComponent(id)}`);
     return pokemonCardResponseSchema.parse(raw).data;
   },
-  cacheCards: async (cards) => {
-    if (cards.length === 0) return;
-
-    const { error } = await supabase
-      .from("pokemon_tcg_cards")
-      .upsert(cards.map(pokemonCardToCacheRow), { onConflict: "id" });
-
-    if (error) {
-      console.warn("[Pokémon TCG] Failed to update cache:", error.message);
-    }
-  },
+  // The proxy persists trusted results before returning them.
+  cacheCards: async () => undefined,
 };
 
 export async function searchPokemonCardsCacheFirst(
@@ -432,14 +315,63 @@ export async function getPokemonCardCacheFirst(
   return { card, source: "api" as const };
 }
 
-export async function cachePokemonCards(cards: PokemonTcgCard[]) {
-  await defaultDependencies.cacheCards(cards);
+async function getCompleteSetRosterFromCache(
+  setId: string,
+): Promise<PokemonTcgCard[] | null> {
+  const { data: manifest, error: manifestError } = await supabase
+    .from("pokemon_tcg_set_rosters")
+    .select("set_id, cached_card_count, is_complete")
+    .eq("set_id", setId)
+    .maybeSingle();
+
+  if (manifestError) {
+    console.warn(
+      "[Pokémon TCG] Set roster manifest unavailable:",
+      manifestError.message,
+    );
+    return null;
+  }
+
+  const parsedManifest = manifest as PokemonSetRosterCacheRow | null;
+  if (!parsedManifest?.is_complete) return null;
+
+  const { data: rows, error: cardsError } = await supabase
+    .from("pokemon_tcg_cards")
+    .select("id, raw_data")
+    .eq("set_id", setId)
+    .eq("catalog_trusted", true)
+    .limit(1000);
+
+  if (cardsError) {
+    console.warn("[Pokémon TCG] Cached set lookup failed:", cardsError.message);
+    return null;
+  }
+
+  const cards = ((rows ?? []) as PokemonCardCacheRow[])
+    .map(parseCachedCard)
+    .filter((card): card is PokemonTcgCard => card !== null)
+    .sort((a, b) =>
+      a.number.localeCompare(b.number, undefined, {
+        numeric: true,
+        sensitivity: "base",
+      }),
+    );
+
+  // Never serve a partial roster. Search and scanning also populate the card
+  // table, so only the manifest's exact count proves this set cache is whole.
+  if (cards.length !== parsedManifest.cached_card_count) return null;
+
+  console.log("[Pokémon TCG] Set roster cache hit", {
+    setId,
+    cardCount: cards.length,
+  });
+  return cards;
 }
 
 /**
- * Fetch the complete card roster for one set, paginating until the API's
- * reported total is reached. Results are cached to Supabase. Intended for
- * on-demand use (set-completion view), never proactively across all sets.
+ * Returns a complete set roster from Supabase first. Only a missing or partial
+ * database roster reaches the Pokémon API; successful API responses populate
+ * both the shared card cache and the complete-roster manifest.
  */
 export async function fetchAllCardsInSet(
   setId: string,
@@ -447,34 +379,20 @@ export async function fetchAllCardsInSet(
   const normalizedSetId = setId.trim();
   if (!normalizedSetId) return [];
 
-  const allCards: PokemonTcgCard[] = [];
-  let page = 1;
-  for (;;) {
-    const params = new URLSearchParams({
-      q: `set.id:"${normalizedSetId.replace(/([\\"])/g, "\\$1")}"`,
-      page: String(page),
-      pageSize: "250",
-      orderBy: "number",
-    });
-    const raw = await fetchPokemonApi(`/cards?${params.toString()}`);
-    const parsed = pokemonSearchResponseSchema.parse(raw);
-    allCards.push(...parsed.data);
-    if (
-      parsed.data.length === 0 ||
-      page * parsed.pageSize >= parsed.totalCount
-    ) {
-      break;
-    }
-    page += 1;
-  }
+  const cachedRoster = await getCompleteSetRosterFromCache(normalizedSetId);
+  if (cachedRoster) return cachedRoster;
 
-  await defaultDependencies.cacheCards(allCards);
-  return allCards;
+  console.log("[Pokémon TCG] Set roster cache miss", {
+    setId: normalizedSetId,
+  });
+
+  const raw = await fetchPokemonApi(`/sets/${encodeURIComponent(normalizedSetId)}/cards`);
+  return pokemonSearchResponseSchema.parse(raw).data;
 }
 
 /**
- * Full roster for a set, for the Curator set-completion view. Cached a day —
- * set rosters only change when a new set releases.
+ * Full roster for the Curator set-completion view. TanStack Query handles the
+ * current session; Supabase provides the persistent cross-user roster cache.
  */
 export function useSetCards(setId: string | null) {
   return useQuery({

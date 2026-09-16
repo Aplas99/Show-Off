@@ -1,3 +1,4 @@
+import ContentSafetyMenu from "@/src/components/social/ContentSafetyMenu";
 import { useGetItemCommentCount } from "@/api/social/comments";
 import { FeedItem } from "@/api/social/feed";
 import {
@@ -11,7 +12,7 @@ import {
 import { COLORS } from "@/constants/theme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
+import { Image } from "@/src/components/media/ProtectedImage";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useCallback, useRef, useState } from "react";
 import {
@@ -72,7 +73,7 @@ const SocialFeedCard = ({
   const itemId = typeof item.id === "number" ? item.id : parseInt(item.id);
   const { data: isLiked } = useIsItemLiked(itemId);
   const { data: isBookmarked } = useIsItemBookmarked(itemId);
-  const { data: commentCountData } = useGetItemCommentCount({
+  const { data: commentCountData, isError: commentCountError } = useGetItemCommentCount({
     itemId,
     enabled: !!isActive,
   });
@@ -91,7 +92,7 @@ const SocialFeedCard = ({
   const lastTapRef = useRef(0);
 
   const likeCount = item.like_count;
-  const commentCount = commentCountData ?? item.comment_count ?? 0;
+  const commentCount = commentCountError ? "?" : commentCountData ?? item.comment_count ?? 0;
 
   const displayName = item.profile?.username || "User";
   const displayAvatar = item.profile?.avatar_url;
@@ -216,7 +217,7 @@ const SocialFeedCard = ({
           )}
         </TouchableOpacity>
         <View style={styles.userInfo}>
-          <Text style={styles.username}>{displayName}</Text>
+          <Text style={styles.username}>{displayName}</Text><ContentSafetyMenu type="item" id={item.id} ownerId={item.user_id} />
           <Text style={styles.timestamp}>{relativeTime}</Text>
         </View>
         <TouchableOpacity style={styles.moreButton} hitSlop={12}>
@@ -310,7 +311,7 @@ const SocialFeedCard = ({
             onPress={handleComment}
           >
             <Ionicons name="chatbubble" size={24} color="#FFF" />
-            <Text style={styles.sidebarCount}>{commentCount}</Text>
+            <Text style={styles.sidebarCount} accessibilityLabel={commentCountError ? "Comment count unavailable" : undefined}>{commentCount}</Text>
           </TouchableOpacity>
 
           {/* Bookmark */}

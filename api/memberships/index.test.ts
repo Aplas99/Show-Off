@@ -1,18 +1,36 @@
+import {
+  MEMBERSHIP_UPLOAD_LIMITS_BYTES,
+  PLAN_STORE_PRODUCT_IDS,
+  getActiveBillingProvider,
+  getMembershipUploadLimitBytes,
+  hasUnexpiredMembership,
+  isActiveMembershipStatus,
+  subscriptionRowSchema,
+} from "@/api/memberships";
+
 // expo-web-browser and expo-secure-store (via @/lib/supabase) ship
-// untranspiled ESM that ts-jest can't parse.
+// untranspiled ESM that ts-jest can't parse. react-native is likewise flow/ESM
+// (pulled in transitively via api/memberships/nativeBilling.ts); the node test
+// env only needs Platform, which resolves native billing to "unavailable" here.
 jest.mock("expo-web-browser", () => ({
   openAuthSessionAsync: jest.fn(),
 }));
 jest.mock("@/lib/supabase", () => ({
   supabase: {},
 }));
-
-import {
-  isActiveMembershipStatus,
-  subscriptionRowSchema,
-} from "@/api/memberships";
+jest.mock("react-native", () => ({
+  Platform: { OS: "web", select: () => undefined },
+}));
 
 describe("isActiveMembershipStatus", () => {
+  it("requires a future expiration as well as an active status", () => {
+    const now = Date.parse("2026-09-15T12:00:00Z");
+    expect(hasUnexpiredMembership({ status: "active", current_period_end: "2026-10-15T12:00:00Z" }, now)).toBe(true);
+    for (const end of [null, "invalid", "2026-09-15T12:00:00Z", "2026-08-15T12:00:00Z"]) {
+      expect(hasUnexpiredMembership({ status: "active", current_period_end: end }, now)).toBe(false);
+    }
+    expect(hasUnexpiredMembership({ status: "canceled", current_period_end: "2026-10-15T12:00:00Z" }, now)).toBe(false);
+  });
   it("treats active and trialing as paid", () => {
     expect(isActiveMembershipStatus("active")).toBe(true);
     expect(isActiveMembershipStatus("trialing")).toBe(true);
@@ -78,6 +96,7 @@ describe("subscriptionRowSchema", () => {
     if (result.success) {
       expect(result.data.tier).toBe("collector");
       expect(result.data.provider).toBe("stripe");
+      expect(result.data.plan_id).toBeNull();
     }
   });
 
@@ -92,9 +111,67 @@ describe("subscriptionRowSchema", () => {
     }
   });
 
-  it("rejects an unrecognized tier", () => {
+  it("accepts a founding curator plan", () => {
+    const result = subscriptionRowSchema.safeParse({
+      ...validRow,
+      tier: "curator",
+      plan_id: "founding_curator",
+    });
+    expect(result.success).toBe(true);
+    if (result.success) {
+      expect(result.data.plan_id).toBe("founding_curator");
+    }
+  });
+
+  it("rejects an unrecognized tier or plan", () => {
     expect(
       subscriptionRowSchema.safeParse({ ...validRow, tier: "platinum" }).success,
     ).toBe(false);
+    expect(
+      subscriptionRowSchema.safeParse({ ...validRow, plan_id: "vip" }).success,
+    ).toBe(false);
+  });
+});
+
+describe("membership upload limits", () => {
+  it("allows 5MB for free members", () => {
+    expect(getMembershipUploadLimitBytes({ isPaidUser: false })).toBe(
+      MEMBERSHIP_UPLOAD_LIMITS_BYTES.free,
+    );
+  });
+
+  it("allows 10MB for Founding Curator", () => {
+    expect(
+      getMembershipUploadLimitBytes({
+        isPaidUser: true,
+        tier: "curator",
+        planId: "founding_curator",
+      }),
+    ).toBe(MEMBERSHIP_UPLOAD_LIMITS_BYTES.foundingCurator);
+  });
+
+  it("allows 100MB for monthly and annual Curator", () => {
+    for (const planId of ["curator_monthly", "curator_annual"] as const) {
+      expect(
+        getMembershipUploadLimitBytes({
+          isPaidUser: true,
+          tier: "curator",
+          planId,
+        }),
+      ).toBe(MEMBERSHIP_UPLOAD_LIMITS_BYTES.curator);
+    }
+  });
+});
+
+describe("billing provider routing", () => {
+  it("disables purchases when native billing is unavailable", () => {
+    // Web and unconfigured builds must never fall back to Stripe.
+    expect(getActiveBillingProvider()).toBeNull();
+  });
+
+  it("maps every plan to a store product id", () => {
+    expect(PLAN_STORE_PRODUCT_IDS.founding_curator).toBeTruthy();
+    expect(PLAN_STORE_PRODUCT_IDS.curator_monthly).toBeTruthy();
+    expect(PLAN_STORE_PRODUCT_IDS.curator_annual).toBeTruthy();
   });
 });

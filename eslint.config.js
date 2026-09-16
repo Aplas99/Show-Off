@@ -7,6 +7,6 @@ module.exports = defineConfig([
   {
     // supabase/functions are Deno modules (npm: imports, Deno globals);
     // server/paddleocr is a Python service (its .venv contains JS artifacts)
-    ignores: ['dist/*', 'supabase/functions/*', 'server/paddleocr/*'],
+    ignores: ['dist/*', '.claude/**', 'supabase/functions/**', 'server/paddleocr/**'],
   },
 ]);

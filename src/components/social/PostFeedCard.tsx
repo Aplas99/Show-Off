@@ -1,3 +1,4 @@
+import ContentSafetyMenu from "@/src/components/social/ContentSafetyMenu";
 import {
   useBookmarkPost,
   useIsPostBookmarked,
@@ -10,8 +11,9 @@ import {
 import { COLORS } from "@/constants/theme";
 import { useHaptics } from "@/hooks/useHaptics";
 import CyclingImage from "@/src/components/media/CyclingImage";
+import { useProtectedVideoSource } from "@/hooks/useProtectedVideoSource";
 import { Ionicons } from "@expo/vector-icons";
-import { Image } from "expo-image";
+import { Image } from "@/src/components/media/ProtectedImage";
 import { LinearGradient } from "expo-linear-gradient";
 import { useVideoPlayer, VideoView } from "expo-video";
 import React, { useEffect, useRef, useState } from "react";
@@ -58,7 +60,8 @@ function getRelativeTime(isoString: string): string {
 
 /** Muted, looping, tap-to-toggle-play video for the feed. */
 function FeedVideo({ url, isActive }: { url: string; isActive: boolean }) {
-  const player = useVideoPlayer(url, (p) => {
+  const source = useProtectedVideoSource(url);
+  const player = useVideoPlayer(source, (p) => {
     p.loop = true;
     p.muted = true;
   });
@@ -182,6 +185,7 @@ const PostFeedCard = ({
         </View>
       </View>
 
+      <ContentSafetyMenu type="post" id={post.id} ownerId={post.user_id} />
       {/* Media */}
       <View style={[styles.mediaSection, { height: mediaHeight }]}>
         <View style={styles.mediaCard}>

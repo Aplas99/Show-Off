@@ -11,7 +11,8 @@ App (api/memberships hooks)
   └─ supabase.functions.invoke("stripe-checkout")   ← user JWT verified
        └─ creates Stripe Checkout / Billing Portal session, returns URL
   └─ expo-web-browser opens the URL (openAuthSessionAsync)
-       └─ Stripe redirects back to showoff://membership deep link
+       └─ Stripe redirects to showoff:///membership for the payment animation
+          and then the app opens /profile/membership
 
 Stripe ──(webhook)──▶ supabase/functions/stripe-webhook
   └─ verifies signature, upserts public.subscriptions (service role)
@@ -33,10 +34,10 @@ Key pieces:
 ## Setup
 
 1. **Stripe Dashboard**
-   - Create a Product ("Curator Membership") with three recurring Prices —
-     a Founder rate, a standard monthly, and an annual. Note each
-     `price_...` id (they map to `STRIPE_PRICE_ID_FOUNDING_CURATOR`,
-     `STRIPE_PRICE_ID_CURATOR_MONTHLY`, `STRIPE_PRICE_ID_CURATOR_ANNUAL`).
+   - Create a Product ("Curator Membership") with three recurring Prices:
+     Founding Curator, Curator Monthly, and Curator Annual. Founding Curator is
+     available only during Early Access; archive its Price when Early Access
+     ends so existing subscribers retain it while new signups cannot select it.
    - Developers → Webhooks → Add endpoint:
      `https://<project-ref>.functions.supabase.co/stripe-webhook`
      with events `checkout.session.completed`,
@@ -58,11 +59,6 @@ Key pieces:
      STRIPE_PRICE_ID_CURATOR_ANNUAL=price_...
    ```
 
-   > The Edge Function reads exactly these three `STRIPE_PRICE_ID_*` names
-   > (see `PLAN_PRICE_ENV_VARS` in `stripe-checkout/index.ts`). A missing or
-   > misnamed price secret makes checkout return
-   > `No Stripe price configured for plan "..."`.
-
 4. **Deploy functions**
    ```bash
    npx supabase functions deploy stripe-checkout
@@ -71,6 +67,9 @@ Key pieces:
 
 5. **Test** with Stripe test cards (`4242 4242 4242 4242`). The
    `stripe listen --forward-to` CLI can proxy webhooks against local dev.
+   Development clients emit safe `[Membership]` lifecycle logs by default;
+   Edge Function logs include a request/event id and selected plan. Set
+   `EXPO_PUBLIC_MEMBERSHIP_DEBUG=false` to silence client diagnostics.
 
 ## Gating features on membership
 
@@ -83,9 +82,19 @@ Key pieces:
 - **Apple / Google store policy:** digital memberships sold in-app normally
   must use In-App Purchase / Play Billing. Web-checkout via external links
   is only permitted in limited jurisdictions (e.g. US external-purchase
-  entitlements). Decide the compliance strategy before shipping this flow
-  in store builds.
+  entitlements). Store builds therefore sell through **native IAP via
+  RevenueCat** — see [`docs/iap-memberships.md`](./iap-memberships.md). This
+  Stripe flow remains the rail for the **web** target and out-of-app signups;
+  both write into the same `public.subscriptions` table.
 - Plan copy/prices in `MEMBERSHIP_PLANS` (`api/memberships/index.ts`) are
   display-only placeholders — keep them in sync with the Stripe Prices.
+- Upload limits are 5MB for free Collector, 10MB for Founding Curator, and
+  100MB for monthly/annual Curator. Shareable showcases are free for all tiers.
 - The webhook is idempotent (upsert keyed by subscription id); Stripe
   retries failed deliveries automatically.
+# Deferred for launch
+
+The owner chose Apple/Google IAP only. New Stripe checkout is disabled in the
+client and `stripe-checkout` function. The historical setup below is retained
+for a future integration; do not use it to enable launch purchases. Legacy
+subscription management remains available to existing Stripe subscribers.

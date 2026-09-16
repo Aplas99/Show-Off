@@ -1,7 +1,20 @@
+import { membershipDebug } from "@/lib/membershipDebug";
 import { supabase } from "@/lib/supabase";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import * as WebBrowser from "expo-web-browser";
+import { Linking, Platform } from "react-native";
+import { useAuthStore } from "@/hooks/useAuthStore";
 import { z } from "zod";
+import {
+  getNativeProductPrices,
+  isNativeBillingAvailable,
+  purchaseNativePlan,
+  restoreNativePurchases,
+  showNativeManageSubscriptions,
+  type NativePurchaseResult,
+} from "./nativeBilling";
+
+const MEMBERSHIP_REDIRECT_URL = "showoff:///profile/membership";
 
 // --- Types & schemas ---
 
@@ -21,6 +34,10 @@ export const subscriptionRowSchema = z.object({
   // should still parse, falling back to the base paid tier.
   tier: z.enum(["collector", "curator"]).default("collector"),
   provider: z.string().default("stripe"),
+  plan_id: z
+    .enum(["founding_curator", "curator_monthly", "curator_annual"])
+    .nullable()
+    .default(null),
 });
 
 export type SubscriptionRow = z.infer<typeof subscriptionRowSchema>;
@@ -34,8 +51,7 @@ export interface MembershipPlan {
   id: MembershipPlanId;
   tier: MembershipTier;
   name: string;
-  /** Display-only. Real amounts live on the Stripe Price objects. */
-  priceLabel: string;
+  interval: "month" | "year";
   description: string;
 }
 
@@ -50,26 +66,42 @@ export const FREE_TIER_LIMITS = {
   maxShowcases: 1,
 } as const;
 
-// Placeholder copy — keep in sync with the Stripe Prices configured via
-// STRIPE_PRICE_ID_FOUNDING_CURATOR / STRIPE_PRICE_ID_CURATOR_MONTHLY /
-// STRIPE_PRICE_ID_CURATOR_ANNUAL on the Edge Function. Founding Curator is
-// a permanently-priced legacy rate for early subscribers — once retired,
-// archive its Stripe Price (existing subscribers keep billing at it;
-// new checkouts can no longer select it) rather than deleting it.
+export const MEMBERSHIP_UPLOAD_LIMITS_BYTES = {
+  free: 5 * 1024 * 1024,
+  foundingCurator: 10 * 1024 * 1024,
+  curator: 100 * 1024 * 1024,
+} as const;
+
+export function getMembershipUploadLimitBytes(access: {
+  isPaidUser: boolean;
+  tier?: MembershipTier | null;
+  planId?: MembershipPlanId | null;
+}): number {
+  if (!access.isPaidUser) return MEMBERSHIP_UPLOAD_LIMITS_BYTES.free;
+  if (access.planId === "founding_curator") {
+    return MEMBERSHIP_UPLOAD_LIMITS_BYTES.foundingCurator;
+  }
+  if (access.tier === "curator") {
+    return MEMBERSHIP_UPLOAD_LIMITS_BYTES.curator;
+  }
+  // Legacy paid rows without a mapped plan fail safely to the lower paid cap.
+  return MEMBERSHIP_UPLOAD_LIMITS_BYTES.foundingCurator;
+}
+
 export const MEMBERSHIP_PLANS: MembershipPlan[] = [
   {
     id: "founding_curator",
     tier: "curator",
     name: "Founding Curator",
-    priceLabel: "$3.99 / month",
+    interval: "month",
     description:
-      "Full Curator access at a permanent founding-member rate for early subscribers.",
+      "Curator access with 10MB uploads per file.",
   },
   {
     id: "curator_monthly",
     tier: "curator",
     name: "Curator",
-    priceLabel: "$5.99 / month",
+    interval: "month",
     description:
       "Full premium membership: price history, sharable showcases, set-completion tracking, and faster card recognition.",
   },
@@ -77,41 +109,10 @@ export const MEMBERSHIP_PLANS: MembershipPlan[] = [
     id: "curator_annual",
     tier: "curator",
     name: "Annual Curator",
-    priceLabel: "$59.99 / year",
-    description: "Everything in Curator, at roughly two months free.",
+    interval: "year",
+    description: "Curator access billed annually with 100MB uploads per file.",
   },
 ];
-
-/**
- * Client-visible Stripe Price ids, used only to label which plan a subscriber
- * is currently on (the subscription row already exposes `price_id`, which is
- * not secret). Server-side checkout still resolves prices from Edge Function
- * secrets — these are display-only and overridable per environment. Defaults
- * are the test-mode Prices; set the env vars for live mode.
- */
-export const PLAN_PRICE_IDS: Record<MembershipPlanId, string> = {
-  founding_curator:
-    process.env.EXPO_PUBLIC_STRIPE_PRICE_FOUNDING_CURATOR ??
-    "price_1Tw7eIDWVhDBLzJE6TtFiBUm",
-  curator_monthly:
-    process.env.EXPO_PUBLIC_STRIPE_PRICE_CURATOR_MONTHLY ??
-    "price_1Tw7eKDWVhDBLzJEqlb0cvh7",
-  curator_annual:
-    process.env.EXPO_PUBLIC_STRIPE_PRICE_CURATOR_ANNUAL ??
-    "price_1Tw7eKDWVhDBLzJErtrm0WYB",
-};
-
-/** Resolves the subscriber's plan from their subscription `price_id`. */
-export function planIdFromPriceId(
-  priceId: string | null | undefined,
-): MembershipPlanId | null {
-  if (!priceId) return null;
-  return (
-    (Object.keys(PLAN_PRICE_IDS) as MembershipPlanId[]).find(
-      (id) => PLAN_PRICE_IDS[id] === priceId,
-    ) ?? null
-  );
-}
 
 /** Stripe statuses that count as a paid membership. */
 const ACTIVE_MEMBERSHIP_STATUSES = ["active", "trialing"] as const;
@@ -121,6 +122,11 @@ export function isActiveMembershipStatus(status: string | null | undefined) {
     !!status &&
     (ACTIVE_MEMBERSHIP_STATUSES as readonly string[]).includes(status)
   );
+}
+
+export function hasUnexpiredMembership(subscription: { status: string; current_period_end: string | null } | null | undefined, now = Date.now()): boolean {
+  return !!subscription && isActiveMembershipStatus(subscription.status) &&
+    !!subscription.current_period_end && Date.parse(subscription.current_period_end) > now;
 }
 
 export const membershipKeys = {
@@ -138,8 +144,9 @@ export async function getHasActiveMembership(): Promise<boolean> {
   try {
     const { data, error } = await supabase
       .from("subscriptions")
-      .select("id, status")
+      .select("id, status, current_period_end")
       .in("status", [...ACTIVE_MEMBERSHIP_STATUSES])
+      .gt("current_period_end", new Date().toISOString())
       .limit(1);
 
     if (error) return false;
@@ -155,125 +162,247 @@ async function fetchCurrentSubscription(): Promise<SubscriptionRow | null> {
   } = await supabase.auth.getUser();
   if (!user) return null;
 
+  // Select the whole own-row view for rolling-deploy compatibility: before
+  // the plan_id migration reaches a backend, Zod safely defaults it to null.
   const { data, error } = await supabase
     .from("subscriptions_with_tier")
-    .select(
-      "id, user_id, status, price_id, cancel_at_period_end, current_period_end, created_at, updated_at, tier, provider",
-    )
+    .select("*")
     .eq("user_id", user.id)
     .order("updated_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .limit(10);
 
   if (error) throw new Error(error.message);
-  if (!data) return null;
+  if (!data || data.length === 0) {
+    membershipDebug.log("membership.no_subscription");
+    return null;
+  }
 
-  const parsed = subscriptionRowSchema.safeParse(data);
-  return parsed.success ? parsed.data : null;
+  const parsedRows = data
+    .map((row) => subscriptionRowSchema.safeParse(row))
+    .filter((result) => result.success)
+    .map((result) => result.data);
+  if (parsedRows.length === 0) {
+    membershipDebug.log("membership.invalid_subscription_rows", {
+      rowCount: data.length,
+    });
+    return null;
+  }
+
+  const subscription =
+    parsedRows.find((row) => hasUnexpiredMembership(row)) ??
+    parsedRows[0];
+  membershipDebug.log("membership.subscription_resolved", {
+    status: subscription.status,
+    tier: subscription.tier,
+    plan: subscription.plan_id,
+    provider: subscription.provider,
+  });
+  return subscription;
+}
+
+async function getFunctionErrorDetails(error: unknown): Promise<{
+  message: string;
+  requestId?: string;
+}> {
+  const fallback =
+    error instanceof Error ? error.message : "Membership service unavailable.";
+  const context = (error as { context?: unknown } | null)?.context as
+    | { clone?: () => { json?: () => Promise<unknown> } }
+    | undefined;
+
+  try {
+    const payload = await context?.clone?.().json?.();
+    const serverPayload = payload as {
+      error?: unknown;
+      requestId?: unknown;
+    } | null;
+    return {
+      message:
+        typeof serverPayload?.error === "string"
+          ? serverPayload.error
+          : fallback,
+      requestId:
+        typeof serverPayload?.requestId === "string"
+          ? serverPayload.requestId
+          : undefined,
+    };
+  } catch {
+    return { message: fallback };
+  }
 }
 
 async function invokeStripeSession(body: {
   action: "checkout" | "portal";
   plan?: MembershipPlanId;
 }): Promise<string> {
+  membershipDebug.log("stripe.session.requested", body);
   const { data, error } = await supabase.functions.invoke("stripe-checkout", {
     body,
   });
 
   if (error) {
-    throw new Error(await describeFunctionError(error));
+    const details = await getFunctionErrorDetails(error);
+    membershipDebug.error("stripe.session.failed", error, {
+      action: body.action,
+      plan: body.plan,
+      serverMessage: details.message,
+      requestId: details.requestId,
+    });
+    throw new Error(
+      details.requestId
+        ? `${details.message} (reference: ${details.requestId})`
+        : details.message,
+    );
   }
   const url = (data as { url?: string } | null)?.url;
-  if (!url) throw new Error("Stripe did not return a session URL.");
+  if (!url) {
+    const missingUrlError = new Error("Stripe did not return a session URL.");
+    membershipDebug.error("stripe.session.missing_url", missingUrlError, body);
+    throw missingUrlError;
+  }
+  membershipDebug.log("stripe.session.created", {
+    action: body.action,
+    plan: body.plan,
+  });
   return url;
 }
 
-/**
- * `supabase.functions.invoke` surfaces every failure as the opaque
- * "Edge Function returned a non-2xx status code". Dig into the attached
- * Response so the user sees the actual cause — a missing deployment, an
- * unconfigured price, or the error the function itself returned.
- */
-async function describeFunctionError(error: unknown): Promise<string> {
-  const fallback =
-    error instanceof Error ? error.message : "Could not reach checkout.";
-  const context = (error as { context?: unknown })?.context;
-
-  if (context instanceof Response) {
-    if (context.status === 404) {
-      return "Membership checkout isn't available yet — the payment service hasn't been set up. Please try again later.";
-    }
-    try {
-      const payload = await context.clone().json();
-      if (payload && typeof payload.error === "string") return payload.error;
-    } catch {
-      // Body wasn't JSON; fall through to the generic message.
-    }
+export async function getCurrentMembershipAccess() {
+  try {
+    const subscription = await fetchCurrentSubscription();
+    const isPaidUser = hasUnexpiredMembership(subscription);
+    const tier = isPaidUser ? (subscription?.tier ?? "collector") : null;
+    const planId = isPaidUser ? (subscription?.plan_id ?? null) : null;
+    return {
+      subscription,
+      tier,
+      planId,
+      isPaidUser,
+      isCollectorOrAbove: isPaidUser,
+      isCurator: isPaidUser && tier === "curator",
+      isFoundingCurator: isPaidUser && planId === "founding_curator",
+    };
+  } catch (error) {
+    membershipDebug.error("membership.fetch_failed", error);
+    throw error;
   }
-  return fallback;
 }
 
-// --- Hooks ---
-
-/**
- * Current user's membership state.
- *
- * `isPaidUser` is kept as the flag pre-existing feature gates (upload
- * limits, the membership screen) already consume — it means "any active
- * paid tier," collector or curator. New Curator-only features should gate
- * on `isCurator` instead.
- */
 export function useMembership() {
   return useQuery({
     queryKey: membershipKeys.current(),
-    queryFn: async () => {
-      const subscription = await fetchCurrentSubscription();
-      const isPaidUser = isActiveMembershipStatus(subscription?.status);
-      const isCurator = isPaidUser && subscription?.tier === "curator";
-      return {
-        subscription,
-        tier: isPaidUser ? (subscription?.tier ?? "collector") : null,
-        /** Which purchasable plan the subscriber is on (null when free). */
-        plan: isPaidUser ? planIdFromPriceId(subscription?.price_id) : null,
-        isPaidUser,
-        isCollectorOrAbove: isPaidUser,
-        isCurator,
-      };
-    },
-    staleTime: 60 * 1000,
+    queryFn: getCurrentMembershipAccess,
+    staleTime: 15 * 1000,
+    refetchInterval: 30 * 1000,
   });
 }
 
-/**
- * Starts a Stripe Checkout session for the given plan and opens it in an
- * auth browser session. Resolves when the browser is dismissed.
- */
-export function useStartCheckout() {
+export type BillingProvider = "stripe" | "revenuecat";
+
+/** App Store / Play product identifiers per plan. Must match the products
+ *  created in App Store Connect and Google Play Console (and be seeded into
+ *  `membership_tiers` so tier resolves to 'curator' — see the IAP migration).
+ *  Overridable per environment; defaults are conventional ids. */
+export const PLAN_STORE_PRODUCT_IDS: Record<MembershipPlanId, string> = {
+  founding_curator:
+    process.env.EXPO_PUBLIC_IAP_PRODUCT_FOUNDING_CURATOR ??
+    "curator_founding_monthly",
+  curator_monthly:
+    process.env.EXPO_PUBLIC_IAP_PRODUCT_CURATOR_MONTHLY ?? "curator_monthly",
+  curator_annual:
+    process.env.EXPO_PUBLIC_IAP_PRODUCT_CURATOR_ANNUAL ?? "curator_annual",
+};
+
+export const PURCHASE_UNAVAILABLE_MESSAGE = Platform.OS === "web"
+  ? "Purchases are available in the iOS or Android app. Web purchases are not available yet."
+  : "Store purchases are unavailable in this build. Please try again in the latest store version.";
+
+export function getActiveBillingProvider(): BillingProvider | null {
+  return isNativeBillingAvailable() ? "revenuecat" : null;
+}
+
+async function requireBillingUser(): Promise<string> {
+  const { data: { user }, error } = await supabase.auth.getUser();
+  if (error || !user) throw new Error("Please sign in to manage purchases.");
+  return user.id;
+}
+
+export function useMembershipPrices(enabled = true) {
+  const userId = useAuthStore((state) => state.user?.id);
+  return useQuery({
+    queryKey: [...membershipKeys.all(), "prices", userId],
+    enabled: enabled && !!userId && isNativeBillingAvailable(),
+    queryFn: async () => getNativeProductPrices(await requireBillingUser(), Object.values(PLAN_STORE_PRODUCT_IDS)),
+    staleTime: 60_000,
+  });
+}
+
+export function usePurchaseMembership() {
   const qc = useQueryClient();
 
-  return useMutation({
-    mutationFn: async (plan: MembershipPlanId) => {
-      const url = await invokeStripeSession({ action: "checkout", plan });
-      return WebBrowser.openAuthSessionAsync(url, "showoff://membership");
+  return useMutation<NativePurchaseResult, Error, MembershipPlanId>({
+    mutationFn: async (plan) => {
+      if (!isNativeBillingAvailable()) throw new Error(PURCHASE_UNAVAILABLE_MESSAGE);
+      const userId = await requireBillingUser();
+      const access = await getCurrentMembershipAccess();
+      if (access.isPaidUser) throw new Error("You already have a membership. Use Manage membership to change it.");
+      return purchaseNativePlan(userId, PLAN_STORE_PRODUCT_IDS[plan]);
     },
-    onSettled: () => {
-      // The webhook updates the subscription row; refetch on return.
+    onError: (error, plan) => {
+      membershipDebug.error("purchase.failed", error, { plan });
+    },
+    onSettled: (_data, _error, plan) => {
+      membershipDebug.log("purchase.membership_refetch", { plan });
       qc.invalidateQueries({ queryKey: membershipKeys.all() });
     },
   });
 }
 
 /**
- * Opens the Stripe Billing Portal (update payment method, cancel, invoices).
+ * Manage an existing subscription. Routes by the rail the subscription was
+ * bought on (`subscription.provider`) — an IAP subscription can only be
+ * managed in the native store sheet, a Stripe one only in the billing portal.
+ * Pass the current `subscription.provider`; falls back to this build's active
+ * provider when unknown.
  */
-export function useOpenBillingPortal() {
+export function useManageMembership() {
   const qc = useQueryClient();
 
-  return useMutation({
-    mutationFn: async () => {
+  return useMutation<void, Error, string | null | undefined>({
+    mutationFn: async (provider) => {
+      const rail =
+        provider === "revenuecat" || provider === "stripe"
+          ? provider
+          : getActiveBillingProvider();
+
+      if (rail === "revenuecat") {
+        if (!isNativeBillingAvailable()) {
+          throw new Error("Manage your subscription in the Apple App Store or Google Play account used to purchase it.");
+        }
+        await showNativeManageSubscriptions(await requireBillingUser());
+        return;
+      }
+      if (rail !== "stripe") throw new Error(PURCHASE_UNAVAILABLE_MESSAGE);
       const url = await invokeStripeSession({ action: "portal" });
-      return WebBrowser.openAuthSessionAsync(url, "showoff://membership");
+      if (Platform.OS === "web") await Linking.openURL(url);
+      else await WebBrowser.openAuthSessionAsync(url, MEMBERSHIP_REDIRECT_URL);
     },
+    onSettled: () => {
+      qc.invalidateQueries({ queryKey: membershipKeys.all() });
+    },
+  });
+}
+
+/**
+ * Restore previous IAP purchases (App Store review requires a visible
+ * "Restore purchases" action for apps selling subscriptions). No-op / false on
+ * web. Returns whether an active Curator entitlement was found.
+ */
+export function useRestorePurchases() {
+  const qc = useQueryClient();
+
+  return useMutation<boolean, Error, void>({
+    mutationFn: async () => restoreNativePurchases(await requireBillingUser()),
     onSettled: () => {
       qc.invalidateQueries({ queryKey: membershipKeys.all() });
     },

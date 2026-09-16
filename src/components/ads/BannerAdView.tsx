@@ -1,36 +1,28 @@
-import { useMembership } from "@/api/memberships";
-import { AD_UNIT_IDS, ensureMobileAdsInitialized } from "@/api/ads";
-import React, { useEffect } from "react";
+import { AD_REQUEST_OPTIONS, AD_UNIT_IDS, ensureMobileAdsInitialized, useAdPrivacyRevision } from "@/api/ads";
+import { useAdEligibility } from "@/api/ads/eligibility";
+import React, { useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
 import { BannerAd, BannerAdSize } from "react-native-google-mobile-ads";
 
-/**
- * Banner ad shown only to free ("Collector") users — Curator members
- * never see ads. Renders nothing while membership status is loading or
- * for Curator members, so it's safe to drop into any screen.
- */
 export default function BannerAdView() {
-  const { data: membership, isLoading } = useMembership();
-
+  const { userId, eligible } = useAdEligibility();
+  const revision = useAdPrivacyRevision((state) => state.revision);
+  const changing = useAdPrivacyRevision((state) => state.changing);
+  const [ready, setReady] = useState<string | null>(null);
+  const key = `${userId}:${revision}`;
   useEffect(() => {
-    ensureMobileAdsInitialized();
-  }, []);
-
-  if (isLoading || membership?.isCurator) return null;
-
-  return (
-    <View style={styles.container}>
-      <BannerAd
-        unitId={AD_UNIT_IDS.banner}
-        size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER}
-      />
-    </View>
-  );
+    let active = true;
+    setReady(null);
+    if (eligible && userId && !changing) {
+      void ensureMobileAdsInitialized(userId).then((allowed) => {
+        if (active && allowed) setReady(key);
+      });
+    }
+    return () => { active = false; };
+  }, [eligible, userId, key, changing]);
+  if (!eligible || changing || ready !== key) return null;
+  return <View style={styles.container}>
+    <BannerAd key={key} unitId={AD_UNIT_IDS.banner} size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER} requestOptions={AD_REQUEST_OPTIONS} onAdFailedToLoad={() => setReady(null)} />
+  </View>;
 }
-
-const styles = StyleSheet.create({
-  container: {
-    alignItems: "center",
-    justifyContent: "center",
-  },
-});
+const styles = StyleSheet.create({ container: { alignItems: "center", justifyContent: "center" } });

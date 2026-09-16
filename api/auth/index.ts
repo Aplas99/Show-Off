@@ -1,15 +1,35 @@
 import { supabase } from "@/lib/supabase";
+import { authRedirectUrl, createAuthCodeExchanger } from "@/lib/authRedirect";
+import { emailSchema } from "@/lib/authValidation";
+import { reportedAgeSchema } from "@/lib/ageAccess";
+import { POLICY_VERSION } from "@/lib/policies";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import * as WebBrowser from "expo-web-browser";
+import { Platform } from "react-native";
+
+function redirectTo(path: "auth/callback" | "reset-password") {
+  return authRedirectUrl(path, Platform.OS === "web" && typeof window !== "undefined" ? window.location.origin : undefined);
+}
+
+export const completeAuthCallback = createAuthCodeExchanger(async (code) => {
+  const { data, error } = await supabase.auth.exchangeCodeForSession(code);
+  if (error) throw new Error("This link expired or was opened on a different device. Start again on this device.");
+  return data;
+});
 
 // 1. Raw Supabase Auth Functions
-export const signUpWithEmail = async ({ email, password, username }: { email: string; password: string; username: string }) => {
+export const signUpWithEmail = async ({ email, password, username, age, accepted }: { email: string; password: string; username: string; age: number; accepted: boolean }) => {
+  reportedAgeSchema.parse(age);
+  if (!accepted) throw new Error("Please accept the terms and community standards.");
   const { data, error } = await supabase.auth.signUp({
     email,
     password,
     options: {
+      emailRedirectTo: redirectTo("auth/callback"),
       data: {
         username: username,
+        reported_age: age,
+        accepted_policy_version: POLICY_VERSION,
       },
     },
   });
@@ -32,9 +52,9 @@ export const signOut = async () => {
 };
 
 /** Deep link OAuth providers redirect back to. */
-export const OAUTH_REDIRECT_URL = "showoff://auth/callback";
+export const OAUTH_REDIRECT_URL = "showoff:///auth/callback";
 
-export type OAuthProvider = "google" | "discord";
+export type OAuthProvider = "google" | "discord" | "apple";
 
 /**
  * Signs in with an OAuth provider already configured on the Supabase
@@ -44,46 +64,50 @@ export type OAuthProvider = "google" | "discord";
  * used for Stripe Checkout (see api/memberships).
  */
 export const signInWithOAuthProvider = async (provider: OAuthProvider) => {
+  const redirectUrl = redirectTo("auth/callback");
   const { data, error } = await supabase.auth.signInWithOAuth({
     provider,
     options: {
-      redirectTo: OAUTH_REDIRECT_URL,
+      redirectTo: redirectUrl,
       skipBrowserRedirect: true,
     },
   });
   if (error) throw error;
   if (!data?.url) throw new Error(`Could not start ${provider} sign-in.`);
 
+  if (Platform.OS === "web") {
+    window.location.assign(data.url);
+    return null;
+  }
   const result = await WebBrowser.openAuthSessionAsync(
     data.url,
-    OAUTH_REDIRECT_URL,
+    redirectUrl,
   );
 
   if (result.type !== "success" || !result.url) {
-    throw new Error("Sign-in was cancelled.");
+    return null;
   }
 
-  const redirectUrl = new URL(result.url);
-  const code = redirectUrl.searchParams.get("code");
-  if (!code) {
-    const errorDescription = redirectUrl.searchParams.get("error_description");
-    throw new Error(errorDescription || "Sign-in did not return an auth code.");
-  }
-
-  const { data: sessionData, error: exchangeError } =
-    await supabase.auth.exchangeCodeForSession(code);
-  if (exchangeError) throw exchangeError;
-  return sessionData;
+  return completeAuthCallback(result.url);
 };
 
 /** Deep link the recovery email redirects back to (see app/(auth)/reset-password). */
-export const PASSWORD_RESET_REDIRECT_URL = "showoff://reset-password";
+export const PASSWORD_RESET_REDIRECT_URL = "showoff:///reset-password";
 
 export const requestPasswordReset = async (email: string) => {
   const { error } = await supabase.auth.resetPasswordForEmail(email, {
-    redirectTo: PASSWORD_RESET_REDIRECT_URL,
+    redirectTo: redirectTo("reset-password"),
   });
   if (error) throw error;
+};
+
+export const resendConfirmation = async (email: string) => {
+  const { error } = await supabase.auth.resend({
+    type: "signup",
+    email: emailSchema.parse(email.trim()),
+    options: { emailRedirectTo: redirectTo("auth/callback") },
+  });
+  if (error) throw new Error("Could not resend confirmation. Wait a minute and try again.");
 };
 
 export const updatePassword = async (password: string) => {
@@ -138,10 +162,13 @@ export const useDeleteAccount = () => {
 
   return useMutation({
     mutationFn: async () => {
-      const { error } = await supabase.functions.invoke("delete-account");
-      if (error) throw new Error(error.message);
+      const { data, error } = await supabase.functions.invoke("delete-account");
+      if (error || data?.deleted !== true) {
+        throw new Error("Deletion could not finish. Please retry. Some data may already have been removed.");
+      }
       // Server already removed the user; drop the local session.
-      await supabase.auth.signOut().catch(() => undefined);
+      const { error: signOutError } = await supabase.auth.signOut({ scope: "local" });
+      if (signOutError) throw new Error("Your account was deleted. Restart the app to clear the local session.");
     },
     onSuccess: () => {
       queryClient.clear();

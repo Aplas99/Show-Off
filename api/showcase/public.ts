@@ -25,10 +25,12 @@ export interface PublicShowcaseItem {
 export interface PublicShowcase {
   id: string;
   name: string;
+  audience_rating: "general" | "18_plus";
   accent_color: string | null;
   banner_image_url: string | null;
   created_at: string;
   owner: {
+    id: string;
     username: string | null;
     avatar_url: string | null;
   };

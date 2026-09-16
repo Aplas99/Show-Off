@@ -1,24 +1,21 @@
+import { fetchCatalog } from "@/api/catalog";
 import { searchTcgTrackingPokemonCards } from "./tcgTracking";
+jest.mock("@/api/catalog", () => ({ fetchCatalog: jest.fn() }));
 
 describe("TCGTracking Pokémon adapter", () => {
-  const fetchMock = jest.fn();
+  const fetchMock = jest.mocked(fetchCatalog);
 
   beforeEach(() => {
     fetchMock.mockReset();
-    global.fetch = fetchMock;
+
   });
 
   it("searches a collection and maps matching cards", async () => {
     fetchMock
       .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
           sets: [{ id: 23651, name: "SV08: Surging Sparks", abbreviation: "SSP" }],
-        }),
       })
       .mockResolvedValueOnce({
-        ok: true,
-        json: async () => ({
           set_id: 23651,
           set_name: "SV08: Surging Sparks",
           set_abbr: "SSP",
@@ -33,7 +30,6 @@ describe("TCGTracking Pokémon adapter", () => {
               cardtrader: [{ name: "Exeggcute", collector_number: "001" }],
             },
           ],
-        }),
       });
 
     const cards = await searchTcgTrackingPokemonCards({
