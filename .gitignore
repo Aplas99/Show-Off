@@ -43,3 +43,6 @@ app-example
 /ios
 /android
 /assets/test_images
+
+# git worktrees checked out under .claude (each is its own repo)
+/.claude/worktrees/
