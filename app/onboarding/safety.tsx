@@ -1,4 +1,4 @@
-import { signOut } from "@/api/auth";
+import { useSignOut } from "@/api/auth";
 import { useColors } from "@/constants/theme";
 import { useAuthStore } from "@/hooks/useAuthStore";
 import { AGE_COLLECTION_EXPLANATION, reportedAgeSchema } from "@/lib/ageAccess";
@@ -7,7 +7,7 @@ import { supabase } from "@/lib/supabase";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useRouter } from "expo-router";
 import { useState } from "react";
-import { ActivityIndicator, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, Platform, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
 
 export default function SafetyOnboarding() {
@@ -16,6 +16,7 @@ export default function SafetyOnboarding() {
   const qc = useQueryClient();
   const userId = useAuthStore((s) => s.user?.id);
   const setNeedsSafety = useAuthStore((s) => s.setNeedsSafety);
+  const { mutateAsync: signOut, isPending: isSigningOut } = useSignOut();
   const [age, setAge] = useState("");
   const [accepted, setAccepted] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -61,7 +62,13 @@ export default function SafetyOnboarding() {
         {save.isPending ? <ActivityIndicator color="#FFFFFF" /> : <Text style={styles.buttonText}>Continue</Text>}
       </TouchableOpacity>
       <Link href={{ pathname: "/legal/[page]", params: { page: "deletion" } }} style={[styles.button, { color: colors.primary }]}>Help or request account deletion</Link>
-      <TouchableOpacity accessibilityRole="button" style={styles.button} onPress={() => signOut().catch(() => setError("Could not sign out. Please retry."))}><Text style={{ color: colors.primary }}>Sign out</Text></TouchableOpacity>
+      <TouchableOpacity accessibilityRole="button" style={styles.button} disabled={isSigningOut}
+        onPress={() => signOut().then(() => {
+          if (Platform.OS === "web") window.location.replace("/signin");
+          else router.replace("/(auth)/signin");
+        }).catch(() => setError("Could not sign out. Please retry."))}>
+        {isSigningOut ? <ActivityIndicator color={colors.primary} /> : <Text style={{ color: colors.primary }}>Sign out</Text>}
+      </TouchableOpacity>
     </View>
   </KeyboardAwareScrollView>;
 }

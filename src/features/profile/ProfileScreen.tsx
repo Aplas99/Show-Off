@@ -12,6 +12,7 @@ import { router } from "expo-router";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -33,7 +34,7 @@ const CLEAR_RIM_COLORS = ["transparent", "transparent"] as const;
 export default function ProfileScreen() {
   const { data, isLoading, error } = useGetCurrentUserProfile();
   const { data: membership } = useMembership();
-  const { mutateAsync: signOut } = useSignOut();
+  const { mutateAsync: signOut, isPending: isSigningOut } = useSignOut();
   const insets = useSafeAreaInsets();
   const colors = useColors();
   const isDark = useThemeStore((s) => s.isDark);
@@ -73,10 +74,11 @@ export default function ProfileScreen() {
     membership?.isCurator || membership?.isFoundingCurator;
 
   const handleLogout = async () => {
-    if (!await confirmAction("Sign Out", "Are you sure you want to sign out?", "Sign Out")) return;
+    if (Platform.OS !== "web" && !await confirmAction("Sign Out", "Are you sure you want to sign out?", "Sign Out")) return;
     try {
       await signOut();
-      router.replace("/(auth)/signin");
+      if (Platform.OS === "web") window.location.replace("/signin");
+      else router.replace("/(auth)/signin");
     } catch {
       showMessage("Could not sign out", "Please try again.");
     }
@@ -245,13 +247,12 @@ export default function ProfileScreen() {
           entering={FadeInDown.delay(400).duration(500)}
           style={styles.footer}
         >
-          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-            <Ionicons
-              name="log-out-outline"
-              size={20}
-              color={colors.errorDim}
-            />
-            <Text style={styles.logoutText}>Sign Out</Text>
+          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout} disabled={isSigningOut}
+            accessibilityRole="button" accessibilityLabel="Sign out" accessibilityState={{ disabled: isSigningOut }}>
+            {isSigningOut ? <ActivityIndicator color={colors.errorDim} /> : <>
+              <Ionicons name="log-out-outline" size={20} color={colors.errorDim} />
+              <Text style={styles.logoutText}>Sign Out</Text>
+            </>}
           </TouchableOpacity>
         </Animated.View>
       </ScrollView>
