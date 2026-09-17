@@ -1,4 +1,9 @@
-export const POLICY_VERSION = "2026-09-16";
+export const POLICY_VERSION = "2026-09-15";
+// A short-lived rollout wrote this version without a new policy release.
+// Keep those users accepted without asking them to agree again.
+export function hasAcceptedCurrentPolicy(version: string | null | undefined): boolean {
+  return version === POLICY_VERSION || version === "2026-09-16";
+}
 export const OPERATOR_NAME = "Oni Studios";
 export const SUPPORT_EMAIL = "onistudiosupport@gmail.com";
 
