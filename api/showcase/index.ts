@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { useAuthStore } from "@/hooks/useAuthStore";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 export const queryKeys = {
@@ -31,18 +32,17 @@ const SHOWCASE_SELECT =
  * Fetch all visible showcases for the current user.
  */
 export function useGetVisibleShowcases() {
+  const userId = useAuthStore((state) => state.user?.id);
   return useQuery({
-    queryKey: queryKeys.showcase.visible(),
+    queryKey: [...queryKeys.showcase.visible(), userId],
+    enabled: !!userId,
     queryFn: async (): Promise<ShowcaseRow[]> => {
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) return [];
+      if (!userId) return [];
 
       const { data, error } = await supabase
         .from("showcase")
         .select(SHOWCASE_SELECT)
-        .eq("profile_id", user.id)
+        .eq("profile_id", userId)
         .order("is_default", { ascending: false })
         .order("created_at", { ascending: false });
 
@@ -64,15 +64,13 @@ export function useCreateShowcase() {
       if (!name) throw new Error("Showcase name is required");
       if (input.isPublic && !input.audienceRating) throw new Error("Choose an audience for this public showcase.");
 
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-      if (!user) throw new Error("User not authenticated");
+      const userId = useAuthStore.getState().user?.id;
+      if (!userId) throw new Error("User not authenticated");
 
       const { data, error } = await supabase
         .from("showcase")
         .insert({
-          profile_id: user.id,
+          profile_id: userId,
           name,
           is_default: false,
           is_public: input.isPublic ?? false,

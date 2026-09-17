@@ -72,6 +72,7 @@ export async function searchPokemonCardSources(
   });
 
   let primary: PokemonTcgCard[] = [];
+  let primaryError: unknown;
   try {
     const result = await searchPokemonCardsCacheFirst({
       query: name,
@@ -81,6 +82,7 @@ export async function searchPokemonCardSources(
     });
     primary = result.cards;
   } catch (error) {
+    primaryError = error;
     console.warn(
       "[Pokémon TCG] Primary provider search failed:",
       error instanceof Error ? error.message : error,
@@ -108,6 +110,7 @@ export async function searchPokemonCardSources(
   fallback.forEach((card) => merged.set(cardKey(card), card));
   primary.forEach((card) => merged.set(cardKey(card), card));
   const cards = [...merged.values()].slice(0, input.limit ?? 50);
+  if (cards.length === 0 && primaryError) throw primaryError;
   cardScanDebug("manual-search.completed", {
     primaryCount: primary.length,
     fallbackCount: fallback.length,
