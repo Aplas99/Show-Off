@@ -3,6 +3,7 @@ import { useMembership } from "@/api/memberships";
 import { useGetCurrentUserProfile } from "@/api/profile/index";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { useThemeStore } from "@/hooks/useThemeStore";
+import { confirmAction, showMessage } from "@/lib/dialogs";
 import MembershipModal from "@/src/features/profile/MembershipModal";
 import { Image } from "@/src/components/media/ProtectedImage";
 import { Ionicons } from "@expo/vector-icons";
@@ -11,7 +12,7 @@ import { router } from "expo-router";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
+  Platform,
   ScrollView,
   StyleSheet,
   Text,
@@ -33,7 +34,7 @@ const CLEAR_RIM_COLORS = ["transparent", "transparent"] as const;
 export default function ProfileScreen() {
   const { data, isLoading, error } = useGetCurrentUserProfile();
   const { data: membership } = useMembership();
-  const { mutateAsync: signOut } = useSignOut();
+  const { mutateAsync: signOut, isPending: isSigningOut } = useSignOut();
   const insets = useSafeAreaInsets();
   const colors = useColors();
   const isDark = useThemeStore((s) => s.isDark);
@@ -72,25 +73,15 @@ export default function ProfileScreen() {
   const hasGoldMembershipRim =
     membership?.isCurator || membership?.isFoundingCurator;
 
-  const handleLogout = () => {
-    Alert.alert("Sign Out", "Are you sure you want to sign out?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Sign Out",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            // Clears the TanStack Query cache so the next user
-            // doesn't see this user's data.
-            await signOut();
-          } catch {
-            // Even if the network call fails, fall through to the
-            // auth screen; the local session is cleared regardless.
-          }
-          router.replace("/(auth)/signin");
-        },
-      },
-    ]);
+  const handleLogout = async () => {
+    if (Platform.OS !== "web" && !await confirmAction("Sign Out", "Are you sure you want to sign out?", "Sign Out")) return;
+    try {
+      await signOut();
+      if (Platform.OS === "web") window.location.replace("/signin");
+      else router.replace("/(auth)/signin");
+    } catch {
+      showMessage("Could not sign out", "Please try again.");
+    }
   };
 
   return (
@@ -256,13 +247,12 @@ export default function ProfileScreen() {
           entering={FadeInDown.delay(400).duration(500)}
           style={styles.footer}
         >
-          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout}>
-            <Ionicons
-              name="log-out-outline"
-              size={20}
-              color={colors.errorDim}
-            />
-            <Text style={styles.logoutText}>Sign Out</Text>
+          <TouchableOpacity style={styles.logoutButton} onPress={handleLogout} disabled={isSigningOut}
+            accessibilityRole="button" accessibilityLabel="Sign out" accessibilityState={{ disabled: isSigningOut }}>
+            {isSigningOut ? <ActivityIndicator color={colors.errorDim} /> : <>
+              <Ionicons name="log-out-outline" size={20} color={colors.errorDim} />
+              <Text style={styles.logoutText}>Sign Out</Text>
+            </>}
           </TouchableOpacity>
         </Animated.View>
       </ScrollView>
@@ -395,6 +385,9 @@ const getStyles = (colors: ThemeColors) =>
     scrollContent: {
       paddingHorizontal: 24,
       paddingBottom: 120,
+      width: "100%",
+      maxWidth: 760,
+      alignSelf: "center",
     },
     errorText: {
       color: colors.onSurfaceVariant,

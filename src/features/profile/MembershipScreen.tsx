@@ -15,12 +15,12 @@ import {
 } from "@/api/memberships";
 import { TAB_BAR_HEIGHT } from "@/constants/layoutConfig";
 import { useColors, type ThemeColors } from "@/constants/theme";
+import { showMessage } from "@/lib/dialogs";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
     ActivityIndicator,
-    Alert,
     Platform,
     ScrollView,
     StyleSheet,
@@ -106,7 +106,7 @@ export default function MembershipScreen() {
         try {
             const result = await purchase.mutateAsync(selectedPlan);
             if (result.success) {
-                Alert.alert(
+                showMessage(
                     selectedPlan === "founding_curator"
                         ? "Welcome, Founding Curator"
                         : "Welcome to Curator",
@@ -114,7 +114,7 @@ export default function MembershipScreen() {
                 );
             }
         } catch (error: any) {
-            Alert.alert(
+            showMessage(
                 "Purchase unavailable",
                 error?.message ?? "Could not start the purchase. Please try again.",
             );
@@ -126,7 +126,7 @@ export default function MembershipScreen() {
             // Manage on the rail the subscription was actually bought on.
             await manage.mutateAsync(subscription?.provider);
         } catch (error: any) {
-            Alert.alert(
+            showMessage(
                 "Subscription management unavailable",
                 error?.message ?? "Could not open subscription management.",
             );
@@ -136,14 +136,14 @@ export default function MembershipScreen() {
     const handleRestore = async () => {
         try {
             const active = await restore.mutateAsync();
-            Alert.alert(
+            showMessage(
                 active ? "Purchases restored" : "Nothing to restore",
                 active
                     ? "The store found your membership. Access will update when the receipt is synchronized."
                     : `We couldn't find an active membership on your ${storeName} account.`,
             );
         } catch (error: any) {
-            Alert.alert(
+            showMessage(
                 "Restore failed",
                 error?.message ?? "Could not restore purchases. Please try again.",
             );

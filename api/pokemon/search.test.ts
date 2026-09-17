@@ -28,7 +28,10 @@ const baseCard: PokemonTcgCard = {
 describe("multi-source Pokémon search", () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    jest.spyOn(console, "warn").mockImplementation(() => undefined);
   });
+
+  afterEach(() => jest.restoreAllMocks());
 
   it("merges providers while preferring the Pokémon TCG record", async () => {
     jest.mocked(searchPokemonCardsCacheFirst).mockResolvedValue({
@@ -70,5 +73,18 @@ describe("multi-source Pokémon search", () => {
       source: "manual",
     });
     expect(supabase.rpc).toHaveBeenCalledWith("create_manual_pokemon_card", { p_name: "Unknown Pikachu", p_collection: "Local Promo", p_number: "A1" });
+  });
+
+  it("surfaces a catalog configuration error instead of reporting no results", async () => {
+    jest.mocked(searchPokemonCardsCacheFirst).mockRejectedValue(new Error("Catalog search is not configured. Please try again later."));
+
+    await expect(searchPokemonCardSources({ name: "Pikachu ex" })).rejects.toThrow("Catalog search is not configured");
+  });
+
+  it("still uses the alternate source when the primary catalog is unavailable", async () => {
+    jest.mocked(searchPokemonCardsCacheFirst).mockRejectedValue(new Error("Catalog search is not configured."));
+    jest.mocked(searchTcgTrackingPokemonCards).mockResolvedValue([baseCard]);
+
+    await expect(searchPokemonCardSources({ name: "Pikachu ex", collection: "Surging Sparks" })).resolves.toEqual([baseCard]);
   });
 });

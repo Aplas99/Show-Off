@@ -396,6 +396,10 @@ verify_jwt = true
 enabled = true
 verify_jwt = true
 
+[functions.ocr-fallback]
+enabled = true
+verify_jwt = true
+
 [functions.revenuecat-webhook]
 enabled = true
 # RevenueCat authenticates with the secret authorization header in the handler.

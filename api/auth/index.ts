@@ -3,6 +3,7 @@ import { authRedirectUrl, createAuthCodeExchanger } from "@/lib/authRedirect";
 import { emailSchema } from "@/lib/authValidation";
 import { reportedAgeSchema } from "@/lib/ageAccess";
 import { POLICY_VERSION } from "@/lib/policies";
+import { useAuthStore } from "@/hooks/useAuthStore";
 import { useMutation, useQueryClient } from "@tanstack/react-query";
 import * as WebBrowser from "expo-web-browser";
 import { Platform } from "react-native";
@@ -47,7 +48,7 @@ export const signInWithEmail = async ({ email, password }: { email: string; pass
 };
 
 export const signOut = async () => {
-  const { error } = await supabase.auth.signOut();
+  const { error } = await supabase.auth.signOut({ scope: "local" });
   if (error) throw error;
 };
 
@@ -194,9 +195,8 @@ export const useSignOut = () => {
   return useMutation({
     mutationFn: signOut,
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ["user"] });
-      // You could also clear the cache entirely here
       queryClient.clear();
+      useAuthStore.getState().signOut();
     },
   });
 };

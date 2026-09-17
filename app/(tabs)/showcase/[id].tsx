@@ -1,8 +1,15 @@
 import { ItemWithProduct, useGetItemsWithProductData } from "@/api/items";
 import { useMembership } from "@/api/memberships";
-import { useGetShowcase } from "@/api/showcase";
+import { useGetShowcase, useGetShowcaseOwner, useGetShowcaseStats, useToggleShowcaseFollow } from "@/api/showcase";
 import ShowcaseSettingsModal from "@/src/features/showcase/ShowcaseSettingsModal";
+import ShowcaseCustomizeModal from "@/src/features/showcase/ShowcaseCustomizeModal";
+import { DEFAULT_SHOWCASE_ACCENT, ShowcaseBanner, ShowcaseStatsBar } from "@/src/features/showcase/ShowcaseVisuals";
+import ContentSafetyMenu from "@/src/components/social/ContentSafetyMenu";
+import { Image } from "@/src/components/media/ProtectedImage";
+import { useAuthStore } from "@/hooks/useAuthStore";
 import { TAB_BAR_HEIGHT } from "@/constants/layoutConfig";
+import { showMessage } from "@/lib/dialogs";
+import { showcaseDisplayAccent, textOnAccent } from "@/lib/showcaseColor";
 import { CuratorGateModal } from "@/src/features/membership/CuratorGate";
 import ItemDetailModal from "@/src/features/showcase/ItemDetailModal";
 import { PokemonCardGridView } from "@/src/features/showcase/PokemonCardGridView";
@@ -12,6 +19,7 @@ import SetCompletionModal from "@/src/features/showcase/SetCompletionModal";
 import ShowcaseListItem from "@/src/features/showcase/ShowcaseListItem";
 import { useShowcaseFilters } from "@/src/features/showcase/useShowcaseFilters";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import React, {
   useCallback,
@@ -22,13 +30,13 @@ import React, {
 } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Animated,
   FlatList,
   Keyboard,
   Modal,
   Platform,
   RefreshControl,
+  Share,
   ScrollView,
   StyleSheet,
   Text,
@@ -53,7 +61,7 @@ const MAGIC_COLOR_ORDER = [
 export default function ShowcaseDetail() {
   const params = useLocalSearchParams();
   const insets = useSafeAreaInsets();
-  const { height: windowHeight } = useWindowDimensions();
+  const { height: windowHeight, width: windowWidth } = useWindowDimensions();
   const showcaseId = typeof params.id === "string" ? params.id : params.id?.[0];
 
   // Search and filter state
@@ -85,7 +93,17 @@ export default function ShowcaseDetail() {
   const { data: membership } = useMembership();
   const isCurator = membership?.isCurator ?? false;
   const showcaseQuery = useGetShowcase(showcaseId ?? "");
+  const showcase = showcaseQuery.data;
+  const { data: stats } = useGetShowcaseStats(showcaseId ?? "");
+  const { data: owner } = useGetShowcaseOwner(showcase?.profile_id ?? "");
+  const follow = useToggleShowcaseFollow();
+  const { session } = useAuthStore();
+  const isOwner = !!showcase && showcase.profile_id === session?.user.id;
+  const accentColor = showcaseDisplayAccent(showcase?.accent_color || DEFAULT_SHOWCASE_ACCENT);
+  const onAccent = textOnAccent(accentColor);
   const [settingsVisible, setSettingsVisible] = useState(false);
+  const [customizeVisible, setCustomizeVisible] = useState(false);
+  const [activeTab, setActiveTab] = useState<"items" | "about" | "activity">("items");
   const router = useRouter();
 
   // Curator set-completion view
@@ -93,13 +111,33 @@ export default function ShowcaseDetail() {
   const [setCompletionPaywallVisible, setSetCompletionPaywallVisible] =
     useState(false);
 
-  const handleShare = useCallback(() => {
+  const handleSettings = useCallback(() => {
     if (showcaseQuery.data) setSettingsVisible(true);
     else {
       showcaseQuery.refetch();
-      Alert.alert("Showcase unavailable", "Could not load showcase settings. Please retry.");
+      showMessage("Showcase unavailable", "Could not load showcase settings. Please retry.");
     }
   }, [showcaseQuery]);
+
+  const handleShare = useCallback(async () => {
+    if (!showcase) return;
+    if (!showcase.is_public) {
+      showMessage("Private showcase", "Make this showcase public in settings before sharing it.");
+      return;
+    }
+    const origin = Platform.OS === "web" && typeof window !== "undefined" ? window.location.origin : process.env.EXPO_PUBLIC_SITE_URL;
+    const url = origin ? `${origin.replace(/\/$/, "")}/s/${showcase.id}` : `showoff:///s/${showcase.id}`;
+    try {
+      if (Platform.OS === "web" && navigator.clipboard) {
+        await navigator.clipboard.writeText(url);
+        showMessage("Link copied", "The public showcase link is ready to share.");
+      } else {
+        await Share.share({ message: `View my Show Off showcase: ${url}`, url });
+      }
+    } catch {
+      showMessage("Could not share", "Please try again.");
+    }
+  }, [showcase]);
 
   // Modal state
   const [selectedItem, setSelectedItem] = useState<ItemWithProduct | null>(
@@ -160,9 +198,9 @@ export default function ShowcaseDetail() {
 
   const renderGridItem = useCallback(
     ({ item }: { item: ItemWithProduct }) => (
-      <ShowcaseListItem item={item} onPress={handleItemPress} />
+      <ShowcaseListItem item={item} onPress={handleItemPress} accentColor={accentColor} />
     ),
-    [handleItemPress],
+    [handleItemPress, accentColor],
   );
 
   const handleCloseModal = useCallback(() => {
@@ -361,7 +399,7 @@ export default function ShowcaseDetail() {
     );
   }
 
-  if (isLoading) {
+  if (isLoading || showcaseQuery.isLoading) {
     return (
       <View style={styles.centerWrap}>
         <ActivityIndicator size="large" color="#9B5DE5" />
@@ -369,10 +407,10 @@ export default function ShowcaseDetail() {
     );
   }
 
-  if (error) {
+  if (error || showcaseQuery.error || !showcase) {
     return (
       <View style={styles.centerWrap}>
-        <Text style={styles.errorText}>Failed to load showcase items</Text>
+        <Text style={styles.errorText}>This showcase is unavailable</Text>
       </View>
     );
   }
@@ -381,13 +419,91 @@ export default function ShowcaseDetail() {
   const bottomOffset =
     TAB_BAR_HEIGHT + insets.bottom + (Platform.OS === "android" ? 8 : 0) + 24;
 
+  const detailHeader = showcase ? <View style={[styles.showcaseHeader, { paddingTop: Math.max(insets.top, 12) + 8 }]}>
+    <View style={styles.topRow}>
+      <TouchableOpacity onPress={() => router.back()} style={styles.headerIcon} accessibilityRole="button" accessibilityLabel="Back to showcases">
+        <Ionicons name="arrow-back" size={25} color="#FFF" />
+      </TouchableOpacity>
+      <Text style={styles.topTitle} numberOfLines={1}>{showcase.name}</Text>
+      <TouchableOpacity onPress={() => void handleShare()} style={styles.headerIcon} accessibilityRole="button" accessibilityLabel="Share showcase">
+        <Ionicons name="share-social-outline" size={23} color="#FFF" />
+      </TouchableOpacity>
+      {isOwner ? <TouchableOpacity onPress={handleSettings} style={styles.headerIcon} accessibilityRole="button" accessibilityLabel="Showcase settings">
+        <Ionicons name="ellipsis-horizontal" size={23} color="#FFF" />
+      </TouchableOpacity> : <ContentSafetyMenu type="showcase" id={showcase.id} ownerId={showcase.profile_id} />}
+    </View>
+    <ShowcaseBanner imageUrl={showcase.banner_image_url} accentColor={accentColor}
+      height={Math.max(135, Math.min(270, (Math.min(windowWidth, 900) - 36) / 3.1))} />
+    <View style={styles.heroText}>
+      <Text style={styles.heroTitle}>{showcase.name}</Text>
+      <Text style={styles.heroDescription} numberOfLines={2}>{showcase.description || "A collection worth sharing"}</Text>
+    </View>
+    <View style={styles.ownerRow}>
+      <View style={styles.ownerIdentity}>
+        <View style={[styles.ownerAvatar, { borderColor: accentColor }]}>
+          {owner?.avatar_url ? <Image source={{ uri: owner.avatar_url }} style={StyleSheet.absoluteFill} contentFit="cover" />
+            : <Ionicons name="person" size={25} color={accentColor} />}
+        </View>
+        <View style={styles.ownerCopy}>
+          <View style={styles.ownerNameRow}>
+            <Text style={styles.ownerName} numberOfLines={1}>@{owner?.username || "collector"}</Text>
+            {isOwner && <Text style={[styles.ownerBadge, { color: accentColor, borderColor: `${accentColor}80` }]}>Owner</Text>}
+          </View>
+          <Text style={styles.ownerBio} numberOfLines={1}>{owner?.bio || "Collecting what brings joy"}</Text>
+        </View>
+      </View>
+    </View>
+    <View style={styles.heroActions}>
+      <TouchableOpacity disabled={isOwner || follow.isPending} style={styles.followButton}
+        onPress={async () => {
+          try { await follow.mutateAsync({ showcaseId: showcase.id, following: !!stats?.isFollowing }); }
+          catch (failure: unknown) { showMessage("Could not update follow", failure instanceof Error ? failure.message : "Please try again."); }
+        }} accessibilityRole="button" accessibilityLabel={isOwner || stats?.isFollowing ? "Following showcase" : "Follow showcase"}>
+        <LinearGradient colors={onAccent === "#17121F" ? [accentColor, "#E2D8FF"] : [accentColor, "#6950E9"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.actionGradient}>
+          <Ionicons name={isOwner || stats?.isFollowing ? "checkmark" : "person-add-outline"} size={20} color={onAccent} />
+          <Text style={[styles.followText, { color: onAccent }]}>{isOwner || stats?.isFollowing ? "Following" : "Follow"}</Text>
+        </LinearGradient>
+      </TouchableOpacity>
+      {isOwner && <TouchableOpacity style={styles.editShowcaseButton} onPress={() => setCustomizeVisible(true)}
+        accessibilityRole="button" accessibilityLabel="Edit showcase appearance">
+        <Ionicons name="pencil" size={19} color="#FFF" /><Text style={styles.editShowcaseText}>Edit Showcase</Text>
+      </TouchableOpacity>}
+    </View>
+    <View style={styles.statsPanel}>
+      <ShowcaseStatsBar itemCount={stats?.itemCount ?? items?.length ?? null} followerCount={stats?.followerCount ?? null}
+        estimatedValue={stats?.estimatedValue ?? null} accentColor={accentColor} />
+    </View>
+    <View style={styles.detailTabs}>
+      {([ ["items", `Items (${items?.length ?? 0})`, "grid-outline"], ["about", "About", "document-text-outline"], ["activity", "Activity", "pulse-outline"] ] as const).map(([key, label, icon]) =>
+        <TouchableOpacity key={key} onPress={() => setActiveTab(key)} style={[styles.detailTab, activeTab === key && { backgroundColor: accentColor }]}
+          accessibilityRole="tab" accessibilityState={{ selected: activeTab === key }}>
+          <Ionicons name={icon} size={18} color={activeTab === key ? onAccent : "#B5B1C2"} />
+          <Text style={[styles.detailTabText, activeTab === key && { color: onAccent }]} numberOfLines={1}>{label}</Text>
+        </TouchableOpacity>)}
+    </View>
+  </View> : null;
+
   return (
     <View style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
 
       {/* Content Area */}
       <View style={styles.contentWrapper}>
-        {viewMode === "grid" && isPokemonShowcase && (
+        {activeTab !== "items" && <ScrollView contentContainerStyle={[styles.infoPage, { paddingBottom: bottomOffset + 60 }]}>
+          {detailHeader}
+          <View style={styles.infoPanel}>
+            <Text style={styles.infoTitle}>{activeTab === "about" ? "About this showcase" : "Recent activity"}</Text>
+            {activeTab === "about" ? <Text style={styles.infoBody}>{showcase?.description || "This collector has not added a description yet."}</Text>
+              : items?.length ? [...items].sort((a, b) => b.created_at.localeCompare(a.created_at)).slice(0, 8).map((item) =>
+                <View key={item.id} style={styles.activityRow}>
+                  <Ionicons name="cube-outline" size={20} color={accentColor} />
+                  <View style={{ flex: 1 }}><Text style={styles.activityTitle} numberOfLines={1}>{item.custom_title || item.products?.searchableTitle || "Collectible"}</Text>
+                    <Text style={styles.infoMeta}>Added {new Date(item.created_at).toLocaleDateString("en-US")}</Text></View>
+                </View>) : <Text style={styles.infoBody}>No items have been added yet.</Text>}
+            {activeTab === "about" && showcase && <Text style={styles.infoMeta}>Created {new Date(showcase.created_at).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</Text>}
+          </View>
+        </ScrollView>}
+        {activeTab === "items" && viewMode === "grid" && isPokemonShowcase && (
           <Reanimated.View
             entering={FadeIn.duration(150)}
             style={styles.viewContainer}
@@ -400,8 +516,9 @@ export default function ShowcaseDetail() {
               onRefresh={refetch}
               totalCount={gameFilteredCount}
               duplicateCounts={duplicateCounts}
+              accentColor={accentColor}
               headerAccessory={
-                showGameTabs ? (
+                <>{detailHeader}{showGameTabs ? (
                   <View style={styles.gameTabs}>
                     {(
                       [
@@ -436,13 +553,13 @@ export default function ShowcaseDetail() {
                       </TouchableOpacity>
                     ))}
                   </View>
-                ) : null
+                ) : null}</>
               }
             />
           </Reanimated.View>
         )}
 
-        {viewMode === "grid" && !isPokemonShowcase && (
+        {activeTab === "items" && viewMode === "grid" && !isPokemonShowcase && (
           <Reanimated.View
             entering={FadeIn.duration(150)}
             style={styles.viewContainer}
@@ -467,11 +584,11 @@ export default function ShowcaseDetail() {
               <RefreshControl refreshing={isRefetching} onRefresh={refetch} />
             }
             ListHeaderComponent={
-              filteredItems.length !== (items?.length || 0) ? (
+              <>{detailHeader}{filteredItems.length !== (items?.length || 0) ? (
                 <Text style={styles.resultsText}>
                   Showing {filteredItems.length} of {items?.length || 0} items
                 </Text>
-              ) : null
+              ) : null}</>
             }
             ListEmptyComponent={
               <Text style={styles.emptyText}>
@@ -484,12 +601,21 @@ export default function ShowcaseDetail() {
           </Reanimated.View>
         )}
 
-        {viewMode === "carousel" && (
+        {activeTab === "items" && viewMode === "carousel" && (
           <Reanimated.View
             entering={FadeIn.duration(150)}
             style={styles.viewContainer}
           >
             <View style={styles.carouselContainer}>
+              <View style={styles.carouselTop}>
+                <TouchableOpacity onPress={() => router.back()} style={styles.headerIcon} accessibilityLabel="Back to showcases">
+                  <Ionicons name="arrow-back" size={22} color="#FFF" />
+                </TouchableOpacity>
+                <Text style={styles.topTitle} numberOfLines={1}>{showcase.name}</Text>
+                <TouchableOpacity onPress={() => setViewMode("grid")} style={styles.headerIcon} accessibilityLabel="Show item grid">
+                  <Ionicons name="grid-outline" size={21} color="#FFF" />
+                </TouchableOpacity>
+              </View>
               {filteredItems.length === 0 ? (
                 <View style={styles.emptyCarouselContainer}>
                   <Text style={styles.emptyText}>No items to display</Text>
@@ -498,6 +624,7 @@ export default function ShowcaseDetail() {
                 <ShowcaseCarousel
                   data={filteredItems}
                   onItemPress={handleItemPress}
+                  accentColor={accentColor}
                 />
               )}
             </View>
@@ -507,7 +634,7 @@ export default function ShowcaseDetail() {
       </View>
 
       {/* Search and Filter Controls - Positioned above Tab Bar */}
-      <Animated.View
+      {activeTab === "items" && <Animated.View
         style={[
           styles.searchContainer,
           {
@@ -548,14 +675,6 @@ export default function ShowcaseDetail() {
           />
         </TouchableOpacity>
 
-        <TouchableOpacity
-          style={styles.viewToggleButton}
-          onPress={handleShare}
-          accessibilityLabel="Showcase settings and sharing"
-        >
-          <Ionicons name="share-social-outline" size={18} color="#9B5DE5" />
-        </TouchableOpacity>
-
         {hasPokemonCards && (
           <TouchableOpacity
             style={styles.viewToggleButton}
@@ -583,19 +702,24 @@ export default function ShowcaseDetail() {
             </View>
           )}
         </TouchableOpacity>
-      </Animated.View>
+      </Animated.View>}
 
       {settingsVisible && showcaseQuery.data && <ShowcaseSettingsModal showcase={showcaseQuery.data}
         onClose={() => setSettingsVisible(false)} onDeleted={() => { setSettingsVisible(false); router.back(); }} />}
+      {customizeVisible && showcase && <ShowcaseCustomizeModal visible={customizeVisible} showcaseId={showcase.id}
+        initialAccentColor={showcase.accent_color} initialBannerImageUrl={showcase.banner_image_url}
+        canEditBanner={isCurator} onDismiss={() => setCustomizeVisible(false)} />}
       <ItemDetailModal
         visible={modalVisible}
         item={selectedItem}
+        accentColor={accentColor}
         onClose={handleCloseModal}
       />
 
       <PokemonCardTiltModal
         visible={tiltVisible}
         item={tiltItem}
+        accentColor={accentColor}
         onClose={handleCloseTilt}
       />
 
@@ -797,6 +921,38 @@ const styles = StyleSheet.create({
   contentWrapper: {
     flex: 1,
   },
+  showcaseHeader: { width: "100%", maxWidth: 900, alignSelf: "center", paddingHorizontal: 10, paddingBottom: 18 },
+  topRow: { flexDirection: "row", alignItems: "center", gap: 9, marginBottom: 14 },
+  headerIcon: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center", backgroundColor: "#201F28", borderWidth: 1, borderColor: "#3B3648" },
+  topTitle: { flex: 1, color: "#FFF", fontSize: 18, fontWeight: "900", textAlign: "center" },
+  heroText: { marginTop: 14 },
+  heroTitle: { color: "#FFF", fontSize: 32, fontWeight: "900", letterSpacing: -1 },
+  heroDescription: { color: "#AAA5B6", fontSize: 15, marginTop: 3 },
+  ownerRow: { marginTop: 18, marginBottom: 13 },
+  ownerIdentity: { flexDirection: "row", alignItems: "center", gap: 11 },
+  ownerAvatar: { width: 48, height: 48, borderRadius: 24, borderWidth: 2, backgroundColor: "#302344", alignItems: "center", justifyContent: "center", overflow: "hidden" },
+  ownerCopy: { flex: 1, minWidth: 0 },
+  ownerNameRow: { flexDirection: "row", alignItems: "center", gap: 8 },
+  ownerName: { color: "#FFF", fontSize: 15, fontWeight: "800", flexShrink: 1 },
+  ownerBadge: { borderWidth: 1, borderRadius: 999, overflow: "hidden", paddingHorizontal: 8, paddingVertical: 2, fontSize: 11, fontWeight: "700" },
+  ownerBio: { color: "#A9A5B2", fontSize: 12, marginTop: 2 },
+  heroActions: { flexDirection: "row", gap: 10, marginBottom: 15 },
+  followButton: { flex: 1, minHeight: 46, borderRadius: 24, overflow: "hidden" },
+  actionGradient: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
+  followText: { color: "#FFF", fontWeight: "900", fontSize: 15 },
+  editShowcaseButton: { flex: 1, minHeight: 46, borderRadius: 24, borderWidth: 1, borderColor: "#605B6D", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: "#201F27" },
+  editShowcaseText: { color: "#FFF", fontWeight: "800", fontSize: 14 },
+  statsPanel: { borderWidth: 1, borderColor: "#45414E", borderRadius: 22, backgroundColor: "#1C1B22", marginBottom: 12 },
+  detailTabs: { flexDirection: "row", borderWidth: 1, borderColor: "#45414E", borderRadius: 24, backgroundColor: "#1C1B22", padding: 5 },
+  detailTab: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, minHeight: 43, borderRadius: 20 },
+  detailTabText: { color: "#B5B1C2", fontSize: 13, fontWeight: "700" },
+  infoPage: { width: "100%", maxWidth: 900, alignSelf: "center", paddingHorizontal: 10 },
+  infoPanel: { borderRadius: 22, borderWidth: 1, borderColor: "#45414E", backgroundColor: "#1C1B22", padding: 20, gap: 10 },
+  infoTitle: { color: "#FFF", fontSize: 20, fontWeight: "900" },
+  infoBody: { color: "#C8C4D0", fontSize: 15, lineHeight: 23 },
+  infoMeta: { color: "#958FA2", fontSize: 12, marginTop: 7 },
+  activityRow: { flexDirection: "row", alignItems: "center", gap: 12, borderTopWidth: 1, borderTopColor: "#393542", paddingVertical: 11 },
+  activityTitle: { color: "#FFF", fontSize: 14, fontWeight: "700" },
   viewContainer: {
     flex: 1,
   },
@@ -836,11 +992,12 @@ const styles = StyleSheet.create({
   },
   centerWrap: { flex: 1, alignItems: "center", justifyContent: "center" },
   errorText: { color: "#FCA5A5" },
-  listContent: { paddingHorizontal: 10, gap: 10, paddingTop: 100 }, // Top padding for header space
+  listContent: { width: "100%", maxWidth: 900, alignSelf: "center", paddingHorizontal: 5, gap: 10 },
   row: { justifyContent: "space-between", gap: 10 },
   resultsText: { color: "#666", fontSize: 14, marginBottom: 8, marginTop: 10 },
   emptyText: { color: "#9CA3AF", textAlign: "center", marginTop: 20 },
   carouselContainer: { flex: 1 },
+  carouselTop: { position: "absolute", top: 14, left: 12, right: 12, zIndex: 10, flexDirection: "row", alignItems: "center", gap: 8 },
   emptyCarouselContainer: {
     flex: 1,
     justifyContent: "center",
@@ -852,6 +1009,8 @@ const styles = StyleSheet.create({
     position: "absolute",
     left: 12,
     right: 12,
+    maxWidth: 876,
+    alignSelf: "center",
     flexDirection: "row",
     paddingHorizontal: 6,
     paddingVertical: 8,

@@ -157,17 +157,15 @@ export async function getHasActiveMembership(): Promise<boolean> {
 }
 
 async function fetchCurrentSubscription(): Promise<SubscriptionRow | null> {
-  const {
-    data: { user },
-  } = await supabase.auth.getUser();
-  if (!user) return null;
+  const userId = useAuthStore.getState().user?.id;
+  if (!userId) return null;
 
   // Select the whole own-row view for rolling-deploy compatibility: before
   // the plan_id migration reaches a backend, Zod safely defaults it to null.
   const { data, error } = await supabase
     .from("subscriptions_with_tier")
     .select("*")
-    .eq("user_id", user.id)
+    .eq("user_id", userId)
     .order("updated_at", { ascending: false })
     .limit(10);
 
@@ -289,8 +287,10 @@ export async function getCurrentMembershipAccess() {
 }
 
 export function useMembership() {
+  const userId = useAuthStore((state) => state.user?.id);
   return useQuery({
-    queryKey: membershipKeys.current(),
+    queryKey: [...membershipKeys.current(), userId],
+    enabled: !!userId,
     queryFn: getCurrentMembershipAccess,
     staleTime: 15 * 1000,
     refetchInterval: 30 * 1000,

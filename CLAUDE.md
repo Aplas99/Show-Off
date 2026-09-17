@@ -33,8 +33,8 @@ npx jest --watch                                    # watch mode
 | `EXPO_PUBLIC_CARD_SCAN_DEBUG` | Set to `false` to silence `[CardScan]` OCR logs |
 | `EXPO_PUBLIC_ACTION_DEBUG` | Set to `false` to silence `lib/actionDebug.ts` logs (barcode scanning, product/API search, manual item creation, Magic: The Gathering search) |
 | `EXPO_PUBLIC_MEMBERSHIP_DEBUG` | Set to `false` to silence development-only `[Membership]` checkout diagnostics; logs never include tokens, checkout URLs, or payment details |
-| `EXPO_PUBLIC_OCR_FALLBACK_URL` | Optional PaddleOCR fallback service URL (`server/paddleocr`); unset disables the server second pass |
-| `EXPO_PUBLIC_OCR_FALLBACK_TOKEN` | Bearer token for the OCR fallback service (`OCR_SERVICE_TOKEN`) |
+| `OCR_SERVICE_URL` | Supabase Edge Function secret: HTTPS Railway PaddleOCR base URL (`server/paddleocr`) |
+| `OCR_SERVICE_TOKEN` | Secret on Supabase Edge Functions and Railway; never put in app env |
 | `EXPO_PUBLIC_STRIPE_PUBLISHABLE_KEY` | Stripe publishable key (reserved for future native SDK use) |
 | `EXPO_PUBLIC_REVENUECAT_IOS_KEY` / `EXPO_PUBLIC_REVENUECAT_ANDROID_KEY` | RevenueCat public SDK keys for native IAP memberships (store builds). Unset disables native billing and falls back to Stripe web checkout — see `docs/iap-memberships.md` |
 | `EXPO_PUBLIC_IAP_PRODUCT_FOUNDING_CURATOR` / `EXPO_PUBLIC_IAP_PRODUCT_CURATOR_MONTHLY` / `EXPO_PUBLIC_IAP_PRODUCT_CURATOR_ANNUAL` | Optional overrides for the App Store / Play product ids per plan (defaults in `PLAN_STORE_PRODUCT_IDS`) |

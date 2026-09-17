@@ -175,7 +175,7 @@ export default function ChooseUsernameScreen() {
 function getStyles(colors: ThemeColors) {
   return StyleSheet.create({
     page: { flex: 1, backgroundColor: colors.background },
-    content: { flex: 1, paddingHorizontal: 28, gap: 12 },
+    content: { flex: 1, width: "100%", maxWidth: 576, alignSelf: "center", paddingHorizontal: 28, gap: 12 },
     iconBadge: {
       width: 62,
       height: 62,

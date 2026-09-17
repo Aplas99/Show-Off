@@ -1,8 +1,8 @@
 """PaddleOCR fallback service.
 
 Intended deployment: small always-on container (Cloud Run / Fly.io / Railway).
-The app calls POST /ocr with the captured card crop ONLY when the on-device
-ML Kit pass fails to produce a match, so traffic stays low.
+The Supabase Edge Function calls POST /ocr with the captured card crop only
+after an opted-in, failed on-device scan.
 
 Run locally:
     uvicorn server:app --host 0.0.0.0 --port 8787
@@ -30,6 +30,7 @@ from fastapi import FastAPI, File, Header, HTTPException, UploadFile
 from ocr_card import build_engine, run_ocr
 
 app = FastAPI(title="Show-Off PaddleOCR fallback")
+MAX_IMAGE_BYTES = 4 * 1024 * 1024
 
 # One engine per process; model load takes seconds, inference takes ~100s of ms.
 _engine = None
@@ -53,13 +54,28 @@ async def ocr(
     authorization: str | None = Header(default=None),
 ):
     expected = os.environ.get("OCR_SERVICE_TOKEN")
-    if expected and authorization != f"Bearer {expected}":
+    if not expected or authorization != f"Bearer {expected}":
         raise HTTPException(status_code=401, detail="Invalid token")
 
-    suffix = os.path.splitext(image.filename or "card.jpg")[1] or ".jpg"
+    if image.content_type not in {"image/jpeg", "image/png"}:
+        raise HTTPException(status_code=415, detail="Expected a JPEG or PNG image")
+
+    suffix = ".png" if image.content_type == "image/png" else ".jpg"
     with tempfile.NamedTemporaryFile(suffix=suffix, delete=False) as handle:
-        handle.write(await image.read())
         path = handle.name
+        size = 0
+        while chunk := await image.read(64 * 1024):
+            size += len(chunk)
+            if size > MAX_IMAGE_BYTES:
+                break
+            handle.write(chunk)
+
+    if size == 0 or size > MAX_IMAGE_BYTES:
+        os.unlink(path)
+        raise HTTPException(
+            status_code=413 if size > MAX_IMAGE_BYTES else 400,
+            detail="Image is too large" if size > MAX_IMAGE_BYTES else "Empty image",
+        )
 
     try:
         return run_ocr(get_engine(), path)

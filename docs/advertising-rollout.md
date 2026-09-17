@@ -22,9 +22,10 @@ Implemented safeguards:
 - Rewarded ads have duplicate-tap protection, bounded waits, failure handling,
   listener cleanup, and account/unmount cancellation. Unavailable controls are
   labelled. Core collecting does not require consent or viewing an ad.
-- Remote OCR is disabled in code, including when legacy environment variables
-  are present. No shared OCR bearer token is bundled or sent. On-device OCR
-  remains. Rotate previously exposed service tokens before any future use.
+- Enhanced OCR is opt-in for Curators after a failed on-device scan. The app
+  sends the cropped image through an authenticated Supabase function to Railway;
+  the shared OCR token stays on those servers. Legacy public OCR variables are
+  ignored. Rotate any previously exposed service tokens.
 
 Google's September 2026 documentation deprecates TFUA/TFCD in favor of TFAT.
 The installed library's configuration API lacks that new signal. This release

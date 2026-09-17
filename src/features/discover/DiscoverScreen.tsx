@@ -23,7 +23,8 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 export default function DiscoverScreen() {
     const insets = useSafeAreaInsets();
     const router = useRouter();
-    const { height: screenHeight } = useWindowDimensions();
+    const { height: screenHeight, width: screenWidth } = useWindowDimensions();
+    const feedWidth = Math.min(screenWidth, 620);
     const [commentModalVisible, setCommentModalVisible] = useState(false);
     const [selectedPostId, setSelectedPostId] = useState<number | null>(null);
     const [activePostIndex, setActivePostIndex] = useState(0);
@@ -97,6 +98,7 @@ export default function DiscoverScreen() {
                 </View>
             ) : (
                 <FlatList
+                    style={{ width: feedWidth, alignSelf: "center" }}
                     data={allPosts}
                     renderItem={({ item, index }) => (
                         <PostFeedCard
@@ -132,7 +134,7 @@ export default function DiscoverScreen() {
             )}
 
             {/* Overlaid Navigation */}
-            <View style={[styles.headerOverlay, { paddingTop: insets.top + 10 }]}>
+            <View style={[styles.headerOverlay, { paddingTop: insets.top + 10, width: feedWidth, left: (screenWidth - feedWidth) / 2, right: undefined }]}>
                 <View style={styles.feedTabs}>
                     <Text style={[styles.feedTab, styles.feedTabActive]}>FOR YOU</Text>
                     <Text style={styles.feedTab}>FOLLOWING</Text>

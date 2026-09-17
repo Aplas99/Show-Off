@@ -1,6 +1,7 @@
 import { completeAuthCallback, useUpdatePassword } from "@/api/auth";
 import { useAuthStore } from "@/hooks/useAuthStore";
 import { passwordSchema } from "@/lib/authValidation";
+import { showMessage } from "@/lib/dialogs";
 import { supabase } from "@/lib/supabase";
 import * as Linking from "expo-linking";
 import { useRouter } from "expo-router";
@@ -95,24 +96,29 @@ export default function ResetPassword() {
     if (!linkReady || !session) return;
     const parsed = passwordSchema.safeParse(password);
     if (!parsed.success) {
-      Alert.alert(
+      showMessage(
         "Invalid password",
         parsed.error.issues[0]?.message ?? "Please choose a stronger password.",
       );
       return;
     }
     if (password !== confirmPassword) {
-      Alert.alert("Passwords do not match", "Please re-enter your password.");
+      showMessage("Passwords do not match", "Please re-enter your password.");
       return;
     }
 
     try {
       await updatePassword(password);
-      Alert.alert("Password updated", "You are now signed in.", [
-        { text: "OK", onPress: () => router.replace("/(tabs)/discover") },
-      ]);
+      if (Platform.OS === "web") {
+        showMessage("Password updated", "You are now signed in.");
+        router.replace("/(tabs)/discover");
+      } else {
+        Alert.alert("Password updated", "You are now signed in.", [
+          { text: "OK", onPress: () => router.replace("/(tabs)/discover") },
+        ]);
+      }
     } catch (error: any) {
-      Alert.alert(
+      showMessage(
         "Could not update password",
         error?.message ?? "Please try again.",
       );
@@ -205,6 +211,9 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 24,
+    width: "100%",
+    maxWidth: 568,
+    alignSelf: "center",
   },
   topContainer: {
     alignItems: "center",

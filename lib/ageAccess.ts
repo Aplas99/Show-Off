@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const AGE_COLLECTION_EXPLANATION = "We collect your age to help meet Google Play's age-related content and advertising policies and protect people under 18. It helps us keep 18+ public showcases unavailable to younger viewers. Your age stays private. Show Off is for ages 13 and older.";
+export const AGE_COLLECTION_EXPLANATION = "We collect your age to apply age-appropriate content and advertising safeguards. It helps us keep 18+ public showcases unavailable to younger viewers. Your age stays private. Show Off is for ages 13 and older.";
 
 export const reportedAgeSchema = z.number().int().min(13, "Show Off is available to ages 13 and older.").max(120, "Please enter your current age.");
 

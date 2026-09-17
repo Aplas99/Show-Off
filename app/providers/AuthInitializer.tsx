@@ -1,7 +1,7 @@
 import { useAuthStore } from "@/hooks/useAuthStore";
 import { needsUsernameOnboarding, resolveAuthRedirect } from "@/lib/onboarding";
 import { supabase } from "@/lib/supabase";
-import { POLICY_VERSION } from "@/lib/policies";
+import { hasAcceptedCurrentPolicy } from "@/lib/policies";
 import { useQueryClient } from "@tanstack/react-query";
 import { useRootNavigationState, useRouter, useSegments } from "expo-router";
 import { useEffect, useState } from "react";
@@ -54,7 +54,7 @@ export default function AuthInitializer({ children }: { children: React.ReactNod
         return;
       }
       setNeedsUsername(needsUsernameOnboarding(data));
-      setNeedsSafety(!data || data.reported_age == null || data.accepted_policy_version !== POLICY_VERSION);
+      setNeedsSafety(!data || data.reported_age == null || !hasAcceptedCurrentPolicy(data.accepted_policy_version));
     })();
 
     return () => {

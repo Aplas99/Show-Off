@@ -27,7 +27,7 @@ cannot host this; it needs its own Python container.
 | File | Purpose |
 |---|---|
 | `ocr_card.py` | CLI test: `python ocr_card.py image.jpg --pretty` |
-| `server.py` | FastAPI service exposing `POST /ocr` (the future fallback endpoint) |
+| `server.py` | FastAPI service exposing authenticated `POST /ocr` |
 | `requirements.txt` | paddlepaddle + paddleocr + fastapi |
 
 ## Setup
@@ -58,10 +58,16 @@ crash with `ModuleNotFoundError: paddleocr`:
 .\.venv\Scripts\uvicorn.exe server:app --host 0.0.0.0 --port 8787
 ```
 
-Optional auth: `$env:OCR_SERVICE_TOKEN = "some-secret"` before launching, and
-send `Authorization: Bearer some-secret` (the app reads
-`EXPO_PUBLIC_OCR_FALLBACK_TOKEN`).
+Set `OCR_SERVICE_TOKEN` on Railway. Set the same value as a Supabase Edge
+Function secret alongside `OCR_SERVICE_URL=https://your-railway-host` (the
+base URL, without `/ocr`). Deploy `ocr-fallback` with JWT verification enabled.
+The mobile app invokes that function using its signed-in session; no service
+token or Railway URL is embedded in the app or Cloudflare Pages. Curators opt
+in from the scanner, and only a failed on-device match sends the card crop.
+The service removes its temporary image after each request. The function
+enforces Curator membership and a 4 MB upload limit; the service also requires
+the token and bounds uploads to 4 MB.
 
 ```bash
-curl -F "image=@card.jpg" http://localhost:8787/ocr
+curl -H "Authorization: Bearer $OCR_SERVICE_TOKEN" -F "image=@card.jpg" http://localhost:8787/ocr
 ```

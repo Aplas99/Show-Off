@@ -12,12 +12,12 @@ import {
   type MembershipPlanId,
 } from "@/api/memberships";
 import { useColors, type ThemeColors } from "@/constants/theme";
+import { showMessage } from "@/lib/dialogs";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   Platform,
   ScrollView,
@@ -88,7 +88,7 @@ export default function MembershipModal({
     try {
       const result = await purchase.mutateAsync(selectedPlan);
       if (result.success) {
-        Alert.alert(
+        showMessage(
           selectedPlan === "founding_curator"
             ? "Welcome, Founding Curator"
             : "Welcome to Curator",
@@ -96,7 +96,7 @@ export default function MembershipModal({
         );
       }
     } catch (error: unknown) {
-      Alert.alert(
+      showMessage(
         "Purchase unavailable",
         error instanceof Error
           ? error.message
@@ -109,7 +109,7 @@ export default function MembershipModal({
     try {
       await manage.mutateAsync(membership?.subscription?.provider);
     } catch (error: unknown) {
-      Alert.alert(
+      showMessage(
         "Subscription management unavailable",
         error instanceof Error
           ? error.message
@@ -121,14 +121,14 @@ export default function MembershipModal({
   const handleRestore = async () => {
     try {
       const active = await restore.mutateAsync();
-      Alert.alert(
+      showMessage(
         active ? "Purchases restored" : "Nothing to restore",
         active
           ? "The store found your membership. Access will update when the receipt is synchronized."
           : `No active membership was found on your ${storeName} account.`,
       );
     } catch (error: unknown) {
-      Alert.alert(
+      showMessage(
         "Restore failed",
         error instanceof Error ? error.message : "Please try again.",
       );
