@@ -3,6 +3,7 @@ import { PublicShowcaseItem, usePublicShowcase } from "@/api/showcase/public";
 import { useGetShowcaseStats } from "@/api/showcase";
 import { DEFAULT_SHOWCASE_ACCENT, ShowcaseBanner, ShowcaseStatsBar } from "@/src/features/showcase/ShowcaseVisuals";
 import { useColors } from "@/constants/theme";
+import { showcaseDisplayAccent } from "@/lib/showcaseColor";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "@/src/components/media/ProtectedImage";
 import { LinearGradient } from "expo-linear-gradient";
@@ -44,7 +45,7 @@ export default function PublicShowcaseScreen() {
 
   const { data: showcase, isLoading, error } = usePublicShowcase(showcaseId);
   const { data: stats } = useGetShowcaseStats(showcaseId ?? "");
-  const accentColor = showcase?.accent_color || DEFAULT_SHOWCASE_ACCENT;
+  const accentColor = showcaseDisplayAccent(showcase?.accent_color || DEFAULT_SHOWCASE_ACCENT);
 
   const renderItem = useCallback(
     ({ item }: { item: PublicShowcaseItem }) => {

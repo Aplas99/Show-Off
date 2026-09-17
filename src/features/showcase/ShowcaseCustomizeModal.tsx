@@ -2,11 +2,12 @@ import { useUpdateShowcaseCustomization } from "@/api/showcase";
 import { useUploadImage } from "@/api/storage";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { showMessage } from "@/lib/dialogs";
+import { textOnAccent } from "@/lib/showcaseColor";
 import { DEFAULT_SHOWCASE_ACCENT } from "@/src/features/showcase/ShowcaseVisuals";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "@/src/components/media/ProtectedImage";
 import * as ImagePicker from "expo-image-picker";
-import React, { useState } from "react";
+import React, { useEffect, useState } from "react";
 import {
   ActivityIndicator,
   Modal,
@@ -52,6 +53,12 @@ export default function ShowcaseCustomizeModal({
   const [bannerImageUrl, setBannerImageUrl] = useState(
     initialBannerImageUrl ?? null,
   );
+
+  useEffect(() => {
+    if (!visible) return;
+    setAccentColor(initialAccentColor ?? DEFAULT_SHOWCASE_ACCENT);
+    setBannerImageUrl(initialBannerImageUrl ?? null);
+  }, [visible, initialAccentColor, initialBannerImageUrl]);
 
   const uploadImage = useUploadImage();
   const updateCustomization = useUpdateShowcaseCustomization();
@@ -128,7 +135,7 @@ export default function ShowcaseCustomizeModal({
                 ]}
               >
                 {accentColor.toUpperCase() === swatch.toUpperCase() && (
-                  <Ionicons name="checkmark" size={16} color="#FFF" />
+                  <Ionicons name="checkmark" size={16} color={textOnAccent(swatch)} />
                 )}
               </TouchableOpacity>
             ))}

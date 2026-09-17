@@ -57,11 +57,8 @@ RETURNS BOOLEAN LANGUAGE sql STABLE SECURITY DEFINER SET search_path = ''
 AS $$ SELECT NOT public.account_is_deleting() AND EXISTS (
   SELECT 1 FROM public.profile p WHERE p.id = auth.uid()
     AND p.reported_age >= 13 AND p.age_recorded_at <= current_date
-    AND p.accepted_policy_version IN ('2026-09-15', '2026-09-16')
+    AND p.accepted_policy_version = '2026-09-16'
 ) $$;
 
--- Upgrade existing accounts that accepted 2026-09-15 so they are not locked out
-UPDATE public.profile
-SET accepted_policy_version = '2026-09-16',
-    policy_accepted_at = now()
-WHERE accepted_policy_version = '2026-09-15';
+-- Existing accounts retain their prior acceptance until they accept the
+-- updated standards in the in-app safety onboarding screen.

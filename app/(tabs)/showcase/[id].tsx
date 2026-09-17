@@ -9,6 +9,7 @@ import { Image } from "@/src/components/media/ProtectedImage";
 import { useAuthStore } from "@/hooks/useAuthStore";
 import { TAB_BAR_HEIGHT } from "@/constants/layoutConfig";
 import { showMessage } from "@/lib/dialogs";
+import { showcaseDisplayAccent, textOnAccent } from "@/lib/showcaseColor";
 import { CuratorGateModal } from "@/src/features/membership/CuratorGate";
 import ItemDetailModal from "@/src/features/showcase/ItemDetailModal";
 import { PokemonCardGridView } from "@/src/features/showcase/PokemonCardGridView";
@@ -98,7 +99,8 @@ export default function ShowcaseDetail() {
   const follow = useToggleShowcaseFollow();
   const { session } = useAuthStore();
   const isOwner = !!showcase && showcase.profile_id === session?.user.id;
-  const accentColor = showcase?.accent_color || DEFAULT_SHOWCASE_ACCENT;
+  const accentColor = showcaseDisplayAccent(showcase?.accent_color || DEFAULT_SHOWCASE_ACCENT);
+  const onAccent = textOnAccent(accentColor);
   const [settingsVisible, setSettingsVisible] = useState(false);
   const [customizeVisible, setCustomizeVisible] = useState(false);
   const [activeTab, setActiveTab] = useState<"items" | "about" | "activity">("items");
@@ -457,9 +459,9 @@ export default function ShowcaseDetail() {
           try { await follow.mutateAsync({ showcaseId: showcase.id, following: !!stats?.isFollowing }); }
           catch (failure: unknown) { showMessage("Could not update follow", failure instanceof Error ? failure.message : "Please try again."); }
         }} accessibilityRole="button" accessibilityLabel={isOwner || stats?.isFollowing ? "Following showcase" : "Follow showcase"}>
-        <LinearGradient colors={[accentColor, "#6950E9"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.actionGradient}>
-          <Ionicons name={isOwner || stats?.isFollowing ? "checkmark" : "person-add-outline"} size={20} color="#FFF" />
-          <Text style={styles.followText}>{isOwner || stats?.isFollowing ? "Following" : "Follow"}</Text>
+        <LinearGradient colors={onAccent === "#17121F" ? [accentColor, "#E2D8FF"] : [accentColor, "#6950E9"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.actionGradient}>
+          <Ionicons name={isOwner || stats?.isFollowing ? "checkmark" : "person-add-outline"} size={20} color={onAccent} />
+          <Text style={[styles.followText, { color: onAccent }]}>{isOwner || stats?.isFollowing ? "Following" : "Follow"}</Text>
         </LinearGradient>
       </TouchableOpacity>
       {isOwner && <TouchableOpacity style={styles.editShowcaseButton} onPress={() => setCustomizeVisible(true)}
@@ -475,8 +477,8 @@ export default function ShowcaseDetail() {
       {([ ["items", `Items (${items?.length ?? 0})`, "grid-outline"], ["about", "About", "document-text-outline"], ["activity", "Activity", "pulse-outline"] ] as const).map(([key, label, icon]) =>
         <TouchableOpacity key={key} onPress={() => setActiveTab(key)} style={[styles.detailTab, activeTab === key && { backgroundColor: accentColor }]}
           accessibilityRole="tab" accessibilityState={{ selected: activeTab === key }}>
-          <Ionicons name={icon} size={18} color={activeTab === key ? "#FFF" : "#B5B1C2"} />
-          <Text style={[styles.detailTabText, activeTab === key && styles.activeTabText]} numberOfLines={1}>{label}</Text>
+          <Ionicons name={icon} size={18} color={activeTab === key ? onAccent : "#B5B1C2"} />
+          <Text style={[styles.detailTabText, activeTab === key && { color: onAccent }]} numberOfLines={1}>{label}</Text>
         </TouchableOpacity>)}
     </View>
   </View> : null;
@@ -944,7 +946,6 @@ const styles = StyleSheet.create({
   detailTabs: { flexDirection: "row", borderWidth: 1, borderColor: "#45414E", borderRadius: 24, backgroundColor: "#1C1B22", padding: 5 },
   detailTab: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, minHeight: 43, borderRadius: 20 },
   detailTabText: { color: "#B5B1C2", fontSize: 13, fontWeight: "700" },
-  activeTabText: { color: "#FFF" },
   infoPage: { width: "100%", maxWidth: 900, alignSelf: "center", paddingHorizontal: 10 },
   infoPanel: { borderRadius: 22, borderWidth: 1, borderColor: "#45414E", backgroundColor: "#1C1B22", padding: 20, gap: 10 },
   infoTitle: { color: "#FFF", fontSize: 20, fontWeight: "900" },

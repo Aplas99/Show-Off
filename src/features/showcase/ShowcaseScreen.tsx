@@ -2,6 +2,7 @@ import { useMembership } from "@/api/memberships";
 import { ShowcaseRow, useCreateShowcase, useGetShowcaseStats, useGetVisibleShowcases } from "@/api/showcase";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { showMessage } from "@/lib/dialogs";
+import { showcaseDisplayAccent } from "@/lib/showcaseColor";
 import BannerAdView from "@/src/components/ads/BannerAdView";
 import { CuratorGateModal } from "@/src/features/membership/CuratorGate";
 import { DEFAULT_SHOWCASE_ACCENT, ShowcaseBanner, ShowcaseStatsBar } from "@/src/features/showcase/ShowcaseVisuals";
@@ -18,7 +19,7 @@ function ShowcaseCoverCard({ item, index }: { item: ShowcaseRow; index: number }
   const styles = useMemo(() => getStyles(colors), [colors]);
   const { width } = useWindowDimensions();
   const { data: stats } = useGetShowcaseStats(item.id);
-  const accentColor = item.accent_color || DEFAULT_SHOWCASE_ACCENT;
+  const accentColor = showcaseDisplayAccent(item.accent_color || DEFAULT_SHOWCASE_ACCENT);
   const bannerHeight = Math.max(145, Math.min(270, (Math.min(width, 900) - 48) / 3.2));
 
   return <Animated.View entering={FadeInDown.delay(index * 60).duration(400)}>

@@ -3,6 +3,7 @@ import { useColors } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
 import { DEFAULT_SHOWCASE_ACCENT } from "@/src/features/showcase/ShowcaseVisuals";
 import { Image } from "@/src/components/media/ProtectedImage";
+import { LinearGradient } from "expo-linear-gradient";
 import React, { useCallback, useMemo } from "react";
 import {
   FlatList,
@@ -106,6 +107,14 @@ const CardCell = React.memo(
             </Text>
           </View>
         )}
+
+        <LinearGradient
+          pointerEvents="none"
+          colors={[`${accentColor}38`, "transparent", "rgba(0,0,0,0.12)"]}
+          start={{ x: 0, y: 0 }}
+          end={{ x: 1, y: 1 }}
+          style={StyleSheet.absoluteFill}
+        />
 
         {duplicateCount != null && duplicateCount > 1 && (
           <View
