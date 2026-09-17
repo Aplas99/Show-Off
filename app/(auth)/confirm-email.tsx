@@ -47,7 +47,7 @@ export default function ConfirmEmail() {
   );
 }
 const styles = StyleSheet.create({
-  container: { flexGrow: 1, justifyContent: "center", padding: 24, gap: 20 },
+  container: { flexGrow: 1, justifyContent: "center", padding: 24, gap: 20, width: "100%", maxWidth: 568, alignSelf: "center" },
   heading: { fontSize: 26, fontWeight: "700" },
   input: { padding: 16, borderRadius: 12, minHeight: 48, fontSize: 16 },
   button: { padding: 14, minHeight: 48, borderRadius: 12, alignItems: "center", justifyContent: "center" },

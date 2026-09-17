@@ -4,12 +4,12 @@ import { openAdPrivacyOptions } from "@/api/ads";
 import { useDeleteAccount } from "@/api/auth";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { useThemeStore, type ThemeMode } from "@/hooks/useThemeStore";
+import { confirmAction, showMessage } from "@/lib/dialogs";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useEffect, useState } from "react";
 import {
     ActivityIndicator,
-    Alert,
     Pressable,
     ScrollView,
     StyleSheet,
@@ -43,41 +43,15 @@ export default function SettingsScreen() {
     const [privacyMessage, setPrivacyMessage] = useState("");
     const [privacyPending, setPrivacyPending] = useState(false);
 
-    const handleDeleteAccount = () => {
-        Alert.alert(
-            "Delete Account",
-            "This permanently deletes your account and content. Cancel recurring subscriptions with Apple, Google Play, or website billing first. Deletion cannot be undone.",
-            [
-                { text: "Cancel", style: "cancel" },
-                {
-                    text: "Delete Forever",
-                    style: "destructive",
-                    onPress: () =>
-                        Alert.alert(
-                            "Are you absolutely sure?",
-                            "There is no way to recover your account after this.",
-                            [
-                                { text: "Keep My Account", style: "cancel" },
-                                {
-                                    text: "Delete",
-                                    style: "destructive",
-                                    onPress: async () => {
-                                        try {
-                                            await deleteAccount.mutateAsync();
-                                            router.replace("/(auth)/signin");
-                                        } catch (error: any) {
-                                            Alert.alert(
-                                                "Could not delete account",
-                                                error?.message ?? "Please try again later.",
-                                            );
-                                        }
-                                    },
-                                },
-                            ],
-                        ),
-                },
-            ],
-        );
+    const handleDeleteAccount = async () => {
+        if (!await confirmAction("Delete Account", "This permanently deletes your account and content. Cancel recurring subscriptions with your billing provider first. Deletion cannot be undone.", "Delete Forever")) return;
+        if (!await confirmAction("Are you absolutely sure?", "There is no way to recover your account after this.", "Delete")) return;
+        try {
+            await deleteAccount.mutateAsync();
+            router.replace("/(auth)/signin");
+        } catch (error: unknown) {
+            showMessage("Could not delete account", error instanceof Error ? error.message : "Please try again later.");
+        }
     };
 
     return (

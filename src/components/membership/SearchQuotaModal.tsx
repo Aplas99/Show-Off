@@ -2,12 +2,12 @@ import { useRewardedAd } from "@/api/ads";
 import { useGrantBonusSearches } from "@/api/scanning";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { showMessage } from "@/lib/dialogs";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useMemo } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   Pressable,
   StyleSheet,
@@ -41,7 +41,7 @@ export default function SearchQuotaModal({
       await haptics.success();
       onClose();
     } else if (result === "failed") {
-      Alert.alert("Ad unavailable", "Please try again later. Your normal daily allowance resets tomorrow.");
+      showMessage("Ad unavailable", "Please try again later. Your normal daily allowance resets tomorrow.");
     }
   };
 

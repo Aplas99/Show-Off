@@ -3,10 +3,11 @@ import {
     getMembershipUploadLimitBytes,
 } from "@/api/memberships";
 import { prepareWebUpload } from "@/lib/webUpload";
+import { showMessage } from "@/lib/dialogs";
 import { supabase } from "@/lib/supabase";
 import { useMutation } from "@tanstack/react-query";
 import * as FileSystem from "expo-file-system/legacy";
-import { Alert, Platform } from "react-native";
+import { Platform } from "react-native";
 
 interface UploadImageParams {
     uri: string;
@@ -129,7 +130,7 @@ export function useUploadImage() {
     return useMutation({
         mutationFn: uploadImageToSupabase,
         onError: (error) => {
-            Alert.alert("Upload Failed", error.message || "Could not upload image.");
+            showMessage("Upload Failed", error.message || "Could not upload image.");
         },
     });
 }

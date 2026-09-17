@@ -115,9 +115,11 @@ export function useLinkItemToShowcases() {
       }
     },
     onSuccess: (_data, vars) => {
-      vars.showcaseIds.forEach((sid) =>
-        qc.invalidateQueries({ queryKey: queryKeys.showcase.items(sid) })
-      );
+      vars.showcaseIds.forEach((sid) => {
+        qc.invalidateQueries({ queryKey: queryKeys.showcase.items(sid) });
+        qc.invalidateQueries({ queryKey: ["showcase", "stats", sid] });
+        qc.invalidateQueries({ queryKey: ["showcase:items", sid] });
+      });
     },
   });
 }
@@ -140,6 +142,80 @@ export function useGetShowcase(id: string) {
       return data as ShowcaseRow;
     },
     enabled: !!id,
+  });
+}
+
+export interface ShowcaseStats {
+  itemCount: number;
+  followerCount: number;
+  estimatedValue: number;
+  isFollowing: boolean;
+}
+
+export function useGetShowcaseStats(id: string) {
+  return useQuery({
+    queryKey: ["showcase", "stats", id],
+    enabled: !!id,
+    queryFn: async (): Promise<ShowcaseStats> => {
+      const { data: { user } } = await supabase.auth.getUser();
+      const [links, followers, ownFollow] = await Promise.all([
+        supabase.from("showcase_items").select("item_id, items(price)").eq("showcase_id", id),
+        supabase.from("showcase_follows").select("id", { count: "exact", head: true }).eq("showcase_id", id),
+        user ? supabase.from("showcase_follows").select("id").eq("showcase_id", id).eq("user_id", user.id).maybeSingle() : Promise.resolve({ data: null, error: null }),
+      ]);
+      if (links.error) throw new Error(links.error.message);
+      if (followers.error) throw new Error(followers.error.message);
+      if (ownFollow.error) throw new Error(ownFollow.error.message);
+      const rows = links.data as unknown as { item_id: number; items: { price: number | null } | null }[];
+      return {
+        itemCount: rows.length,
+        followerCount: followers.count ?? 0,
+        estimatedValue: rows.reduce((sum, row) => sum + (Number(row.items?.price) || 0), 0),
+        isFollowing: !!ownFollow.data,
+      };
+    },
+  });
+}
+
+export function useGetShowcaseOwner(profileId: string) {
+  return useQuery({
+    queryKey: ["showcase", "owner", profileId],
+    enabled: !!profileId,
+    queryFn: async (): Promise<{ username: string | null; avatar_url: string | null; bio: string | null } | null> => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (user?.id === profileId) {
+        const { data, error } = await supabase.from("profile")
+          .select("username, avatar_url, bio").eq("id", profileId).maybeSingle();
+        if (error) throw new Error(error.message);
+        return data;
+      }
+      const { data, error } = await supabase.rpc("get_public_profiles", { p_user_ids: [profileId] });
+      if (error) throw new Error(error.message);
+      const profile = data?.[0];
+      return profile ? { username: profile.username, avatar_url: profile.avatar_url, bio: null } : null;
+    },
+  });
+}
+
+export function useToggleShowcaseFollow() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ showcaseId, following }: { showcaseId: string; following: boolean }) => {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) throw new Error("Sign in to follow this showcase.");
+      if (following) {
+        const { error } = await supabase.from("showcase_follows").delete()
+          .eq("showcase_id", showcaseId).eq("user_id", user.id);
+        if (error) throw new Error(error.message);
+      } else {
+        const { error } = await supabase.from("showcase_follows")
+          .upsert({ showcase_id: showcaseId, user_id: user.id }, { onConflict: "user_id,showcase_id" });
+        if (error) throw new Error(error.message);
+      }
+    },
+    onSuccess: (_result, input) => {
+      queryClient.invalidateQueries({ queryKey: ["showcase", "stats", input.showcaseId] });
+    },
   });
 }
 
@@ -189,12 +265,7 @@ export function useDeleteShowcase() {
   }, onSuccess: () => { qc.invalidateQueries({ queryKey: ["showcase"] }); qc.invalidateQueries({ queryKey: ["social"] }); } });
 }
 
-/**
- * Update a showcase's Curator-only customization (accent color / banner
- * image). Callers must gate the entry point on `isCurator` themselves
- * (see CuratorGate) — this mutation relies on the existing
- * "update_own_showcase" RLS policy for ownership enforcement, not tier.
- */
+/** Update owner-controlled accent color and optional banner image. */
 export function useUpdateShowcaseCustomization() {
   const queryClient = useQueryClient();
 
@@ -204,6 +275,9 @@ export function useUpdateShowcaseCustomization() {
       accentColor?: string | null;
       bannerImageUrl?: string | null;
     }) => {
+      if (input.accentColor && !/^#[0-9A-Fa-f]{6}$/.test(input.accentColor)) {
+        throw new Error("Enter a six-digit hex color, such as #A77BFF.");
+      }
       const update: Record<string, string | null> = {};
       if (input.accentColor !== undefined) update.accent_color = input.accentColor;
       if (input.bannerImageUrl !== undefined)

@@ -1,6 +1,7 @@
 import { useSignUp, useSignInWithOAuth } from "@/api/auth";
 import { signUpSchema } from "@/lib/authValidation";
 import { AGE_COLLECTION_EXPLANATION, reportedAgeSchema } from "@/lib/ageAccess";
+import { showMessage } from "@/lib/dialogs";
 import { AppleSignInButton } from "@/src/components/auth/AppleSignInButton";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -16,6 +17,7 @@ import {
   Text,
   TextInput,
   TouchableOpacity,
+  Platform,
   View,
 } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
@@ -35,7 +37,7 @@ export default function SignUp() {
     try {
       await signInWithOAuth.mutateAsync(provider);
     } catch (err: any) {
-      Alert.alert(
+      showMessage(
         "Sign in failed",
         err?.message || `Could not sign in with ${provider}.`
       );
@@ -52,20 +54,24 @@ export default function SignUp() {
 
       if (!session) {
         // Email confirmation is enabled — no session until the user verifies.
-        Alert.alert(
-          "Confirm your email",
-          `We sent a confirmation link to ${email}. Please verify your email, then sign in.`,
-          [{ text: "OK", onPress: () => router.replace("/(auth)/confirm-email") }],
-        );
+        const message = `We sent a confirmation link to ${email}. Please verify your email, then sign in.`;
+        if (Platform.OS === "web") {
+          showMessage("Confirm your email", message);
+          router.replace("/(auth)/confirm-email");
+        } else {
+          Alert.alert("Confirm your email", message, [
+            { text: "OK", onPress: () => router.replace("/(auth)/confirm-email") },
+          ]);
+        }
         return;
       }
 
       router.replace("/");
     } catch (error: any) {
       if (error instanceof z.ZodError) {
-        Alert.alert("Invalid Input", error.issues[0]?.message || "Validation failed");
+        showMessage("Invalid Input", error.issues[0]?.message || "Validation failed");
       } else {
-        Alert.alert("Sign up failed", error.message);
+        showMessage("Sign up failed", error.message);
       }
     }
   };
@@ -305,6 +311,8 @@ const styles = StyleSheet.create({
   },
   formContainer: {
     width: "100%",
+    maxWidth: 520,
+    alignSelf: "center",
     paddingHorizontal: 24,
     marginTop: 16,
   },

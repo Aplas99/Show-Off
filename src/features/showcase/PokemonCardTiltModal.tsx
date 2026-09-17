@@ -4,6 +4,7 @@ import { usePriceHistory } from "@/api/prices";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import PriceHistoryChart from "@/src/components/charts/PriceHistoryChart";
 import { CuratorInlineGate } from "@/src/features/membership/CuratorGate";
+import { DEFAULT_SHOWCASE_ACCENT } from "@/src/features/showcase/ShowcaseVisuals";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "@/src/components/media/ProtectedImage";
 import { LinearGradient } from "expo-linear-gradient";
@@ -51,6 +52,7 @@ type Props = {
   visible: boolean;
   item: ItemWithProduct | null;
   onClose: () => void;
+  accentColor?: string;
 };
 
 type CardDetails = {
@@ -149,7 +151,7 @@ function getCardDetails(item: ItemWithProduct): CardDetails {
   };
 }
 
-export default function PokemonCardTiltModal({ visible, item, onClose }: Props) {
+export default function PokemonCardTiltModal({ visible, item, onClose, accentColor = DEFAULT_SHOWCASE_ACCENT }: Props) {
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const colors = useColors();
@@ -374,7 +376,7 @@ export default function PokemonCardTiltModal({ visible, item, onClose }: Props) 
               entering={FadeIn.duration(220)}
               style={[
                 styles.cardShadow,
-                { width: cardWidth, height: cardHeight },
+                { width: cardWidth, height: cardHeight, borderColor: accentColor, shadowColor: accentColor },
                 cardStyle,
               ]}
             >
@@ -622,6 +624,7 @@ const getStyles = (colors: ThemeColors) =>
     },
     cardShadow: {
       borderRadius: 12,
+      borderWidth: 1.5,
       shadowColor: "#000000",
       shadowOffset: { width: 0, height: 14 },
       shadowOpacity: 0.48,

@@ -110,6 +110,46 @@ export function useUpdateItemCondition() {
   });
 }
 
+export interface ItemDetailsUpdate {
+  itemId: number;
+  title: string;
+  brand: string;
+  publisher: string;
+  category: string;
+  description: string;
+  price: number | null;
+  forSale: boolean;
+}
+
+export function useUpdateItemDetails() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ itemId, title, brand, publisher, category, description, price, forSale }: ItemDetailsUpdate) => {
+      const { data: { user }, error: authError } = await supabase.auth.getUser();
+      if (authError || !user) throw new Error("Please sign in again to edit this item.");
+      const { data, error } = await supabase.from("items").update({
+        custom_title: title.trim(),
+        custom_brand: brand.trim() || null,
+        custom_publisher: publisher.trim() || null,
+        custom_category: category.trim() || null,
+        user_description: description.trim() || null,
+        price,
+        for_sale: forSale,
+      }).eq("id", itemId).eq("user_id", user.id)
+        .select("custom_title, custom_brand, custom_publisher, custom_category, user_description, price, for_sale")
+        .single();
+      if (error) throw new Error(error.message);
+      return data;
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["showcase"] });
+      queryClient.invalidateQueries({ queryKey: ["showcase:items"] });
+      queryClient.invalidateQueries({ queryKey: ["items", "my"] });
+      queryClient.invalidateQueries({ queryKey: ["social", "feed"] });
+    },
+  });
+}
+
 export function useDeleteItem() {
   const queryClient = useQueryClient();
   return useMutation({

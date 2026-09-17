@@ -1,6 +1,7 @@
 import { ItemWithProduct } from "@/api/items";
 import { useColors } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
+import { DEFAULT_SHOWCASE_ACCENT } from "@/src/features/showcase/ShowcaseVisuals";
 import { Image } from "@/src/components/media/ProtectedImage";
 import React, { useCallback, useMemo } from "react";
 import {
@@ -56,11 +57,13 @@ const CardCell = React.memo(
     width,
     onPress,
     duplicateCount,
+    accentColor,
   }: {
     item: ItemWithProduct;
     width: number;
     onPress?: (item: ItemWithProduct) => void;
     duplicateCount?: number;
+    accentColor: string;
   }) => {
     const colors = useColors();
     const imageUrl = getPokemonCardImage(item);
@@ -70,7 +73,7 @@ const CardCell = React.memo(
       <Pressable
         style={({ pressed }) => [
           styles.cell,
-          { width, height: width / CARD_ASPECT },
+          { width, height: width / CARD_ASPECT, borderColor: `${accentColor}A0`, shadowColor: accentColor },
           pressed && styles.cellPressed,
         ]}
         onPress={() => onPress?.(item)}
@@ -129,6 +132,7 @@ interface PokemonCardGridViewProps {
   duplicateCounts?: Map<string, number>;
   /** Rendered above the count pill in the list header (e.g. game filter tabs). */
   headerAccessory?: React.ReactNode;
+  accentColor?: string;
 }
 
 export const PokemonCardGridView: React.FC<PokemonCardGridViewProps> = ({
@@ -140,10 +144,11 @@ export const PokemonCardGridView: React.FC<PokemonCardGridViewProps> = ({
   totalCount,
   duplicateCounts,
   headerAccessory,
+  accentColor = DEFAULT_SHOWCASE_ACCENT,
 }) => {
-  const colors = useColors();
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
+  const { width: windowWidth } = useWindowDimensions();
+  const width = Math.min(windowWidth, 900);
   const cardWidth =
     (width - GRID_PADDING * 2 - GRID_GAP * (NUM_COLUMNS - 1)) / NUM_COLUMNS;
   const resolvedTotalCount = totalCount ?? items.length;
@@ -176,14 +181,15 @@ export const PokemonCardGridView: React.FC<PokemonCardGridViewProps> = ({
           width={cardWidth}
           onPress={onItemPress}
           duplicateCount={cardId ? duplicateCounts?.get(cardId) : undefined}
+          accentColor={accentColor}
         />
       );
     },
-    [cardWidth, onItemPress, duplicateCounts],
+    [cardWidth, onItemPress, duplicateCounts, accentColor],
   );
 
   return (
-    <View style={[styles.container, { backgroundColor: colors.primary }]}>
+    <View style={[styles.container, { backgroundColor: "#111015" }]}>
       <View pointerEvents="none" style={StyleSheet.absoluteFill}>
         {doodles}
       </View>
@@ -195,7 +201,7 @@ export const PokemonCardGridView: React.FC<PokemonCardGridViewProps> = ({
         numColumns={NUM_COLUMNS}
         columnWrapperStyle={styles.columnWrapper}
         contentContainerStyle={{
-          paddingTop: insets.top + 12,
+          paddingTop: headerAccessory ? 0 : insets.top + 12,
           paddingHorizontal: GRID_PADDING,
           paddingBottom: bottomPadding,
           gap: GRID_GAP,
@@ -244,6 +250,9 @@ export const PokemonCardGridView: React.FC<PokemonCardGridViewProps> = ({
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    width: "100%",
+    maxWidth: 900,
+    alignSelf: "center",
   },
   columnWrapper: {
     gap: GRID_GAP,
@@ -251,6 +260,9 @@ const styles = StyleSheet.create({
   cell: {
     borderRadius: 6,
     overflow: "hidden",
+    borderWidth: 1.3,
+    shadowOpacity: 0.16,
+    shadowRadius: 10,
   },
   cellPressed: {
     opacity: 0.8,

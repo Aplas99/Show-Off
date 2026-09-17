@@ -1,5 +1,6 @@
 import { signInWithEmail, useSignInWithOAuth } from "@/api/auth/index";
 import { signInSchema } from "@/lib/authValidation";
+import { showMessage } from "@/lib/dialogs";
 import { AppleSignInButton } from "@/src/components/auth/AppleSignInButton";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -7,7 +8,6 @@ import { Link, useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Image,
   StyleSheet,
   Text,
@@ -36,10 +36,10 @@ export default function SignIn() {
       // router.push("/(user)");
     } catch (err: any) {
       if (err instanceof z.ZodError) {
-        Alert.alert("Invalid Input", err.issues[0]?.message || "Validation failed");
+        showMessage("Invalid Input", err.issues[0]?.message || "Validation failed");
       } else {
         // Handles unexpected errors (network, thrown exceptions, etc.)
-        Alert.alert(
+        showMessage(
           "Sign in failed",
           err?.message || "An unexpected error occurred."
         );
@@ -53,7 +53,7 @@ export default function SignIn() {
     try {
       await signInWithOAuth.mutateAsync(provider);
     } catch (err: any) {
-      Alert.alert(
+      showMessage(
         "Sign in failed",
         err?.message || `Could not sign in with ${provider}.`
       );
@@ -248,6 +248,8 @@ const styles = StyleSheet.create({
   },
   formContainer: {
     width: "100%",
+    maxWidth: 520,
+    alignSelf: "center",
     paddingHorizontal: 24,
     marginTop: 32,
   },

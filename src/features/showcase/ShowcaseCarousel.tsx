@@ -1,5 +1,6 @@
 import { ItemWithProduct } from "@/api/items";
 import { COLORS } from "@/constants/theme";
+import { DEFAULT_SHOWCASE_ACCENT } from "@/src/features/showcase/ShowcaseVisuals";
 import { Image } from "@/src/components/media/ProtectedImage";
 import { LinearGradient } from "expo-linear-gradient";
 import React, { useEffect, useRef, useState } from "react";
@@ -24,6 +25,7 @@ type Props = {
   data: ItemWithProduct[];
   onItemPress?: (item: ItemWithProduct) => void;
   onIndexChange?: (index: number) => void;
+  accentColor?: string;
 };
 
 const Backdrop = React.memo(
@@ -142,13 +144,14 @@ const Backdrop = React.memo(
   },
 );
 
-function ShowcaseCarousel({ data, onItemPress, onIndexChange }: Props) {
+function ShowcaseCarousel({ data, onItemPress, onIndexChange, accentColor = DEFAULT_SHOWCASE_ACCENT }: Props) {
   const scrollX = useRef(new Animated.Value(0)).current;
   const [activeIndex, setActiveIndex] = useState(0);
   const insets = useSafeAreaInsets();
   const { height: screenHeight, width: screenWidth } = useWindowDimensions();
-  const itemSize = screenWidth * 0.65;
-  const spacerSize = (screenWidth - itemSize) / 2;
+  const layoutWidth = Math.min(screenWidth, 900);
+  const itemSize = layoutWidth * 0.65;
+  const spacerSize = (layoutWidth - itemSize) / 2;
   const backdropHeight = screenHeight * 0.75;
   const posterHeight = screenHeight * 0.45;
 
@@ -189,7 +192,7 @@ function ShowcaseCarousel({ data, onItemPress, onIndexChange }: Props) {
         backdropHeight={backdropHeight}
         data={data}
         itemSize={itemSize}
-        screenWidth={screenWidth}
+        screenWidth={layoutWidth}
         scrollX={scrollX}
       />
 
@@ -240,7 +243,7 @@ function ShowcaseCarousel({ data, onItemPress, onIndexChange }: Props) {
                 style={styles.itemContent}
                 activeOpacity={0.9}
               >
-                <View style={[styles.posterCard, { height: posterHeight }]}>
+                <View style={[styles.posterCard, { height: posterHeight, borderColor: accentColor, shadowColor: accentColor }]}>
                   <Image
                     source={imageUrl ? { uri: imageUrl } : PLACEHOLDER_IMAGE}
                     style={styles.posterImage}
@@ -250,6 +253,8 @@ function ShowcaseCarousel({ data, onItemPress, onIndexChange }: Props) {
                     priority="high"
                     recyclingKey={actualItem.id.toString()}
                   />
+                  <LinearGradient colors={[`${accentColor}42`, "transparent", "rgba(0,0,0,0.22)"]}
+                    start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={StyleSheet.absoluteFill} pointerEvents="none" />
                 </View>
               </TouchableOpacity>
             </Animated.View>
@@ -307,6 +312,9 @@ const styles = StyleSheet.create({
   carouselWrapper: {
     flex: 1,
     justifyContent: "flex-start",
+    width: "100%",
+    maxWidth: 900,
+    alignSelf: "center",
   },
   backdropContainer: {
     position: "absolute",

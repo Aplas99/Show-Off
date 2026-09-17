@@ -1,5 +1,7 @@
 import ContentSafetyMenu from "@/src/components/social/ContentSafetyMenu";
 import { PublicShowcaseItem, usePublicShowcase } from "@/api/showcase/public";
+import { useGetShowcaseStats } from "@/api/showcase";
+import { DEFAULT_SHOWCASE_ACCENT, ShowcaseBanner, ShowcaseStatsBar } from "@/src/features/showcase/ShowcaseVisuals";
 import { useColors } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "@/src/components/media/ProtectedImage";
@@ -18,7 +20,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 const GRID_GAP = 8;
 const GRID_PADDING = 12;
-const NUM_COLUMNS = 3;
+const NUM_COLUMNS = 2;
 
 function getItemImage(item: PublicShowcaseItem): string | null {
   return item.card_image_large || item.card_image_small || item.image_url || null;
@@ -36,16 +38,20 @@ export default function PublicShowcaseScreen() {
   const insets = useSafeAreaInsets();
   const colors = useColors();
   const { width } = useWindowDimensions();
+  const containerWidth = Math.min(width, 900);
   const cardWidth =
-    (width - GRID_PADDING * 2 - GRID_GAP * (NUM_COLUMNS - 1)) / NUM_COLUMNS;
+    (containerWidth - GRID_PADDING * 2 - GRID_GAP * (NUM_COLUMNS - 1)) / NUM_COLUMNS;
 
   const { data: showcase, isLoading, error } = usePublicShowcase(showcaseId);
+  const { data: stats } = useGetShowcaseStats(showcaseId ?? "");
+  const accentColor = showcase?.accent_color || DEFAULT_SHOWCASE_ACCENT;
 
   const renderItem = useCallback(
     ({ item }: { item: PublicShowcaseItem }) => {
       const imageUrl = getItemImage(item);
       return (
-        <View style={[styles.cell, { width: cardWidth, height: cardWidth / (63 / 88) }]}>
+        <View style={[styles.cell, { width: cardWidth, borderColor: `${accentColor}A0` }]}>
+          <View style={styles.cellImageWrap}>
           {imageUrl ? (
             <Image
               source={{ uri: imageUrl }}
@@ -59,10 +65,19 @@ export default function PublicShowcaseScreen() {
               <Ionicons name="image-outline" size={20} color="rgba(255,255,255,0.6)" />
             </View>
           )}
+          <LinearGradient colors={[`${accentColor}3D`, "transparent", "rgba(0,0,0,0.25)"]} style={StyleSheet.absoluteFill} pointerEvents="none" />
+          {item.price != null && <View style={styles.pricePill}><Text style={styles.priceText}>
+            {new Intl.NumberFormat("en-US", { style: "currency", currency: item.currency_code || "USD" }).format(item.price)}
+          </Text></View>}
+          </View>
+          <View style={styles.itemInfo}>
+            <Text style={styles.itemTitle} numberOfLines={1}>{item.custom_title || item.card_name || "Collectible"}</Text>
+            <Text style={styles.itemSubtitle} numberOfLines={1}>{item.card_set_name || item.card_rarity || "From this collection"}</Text>
+          </View>
         </View>
       );
     },
-    [cardWidth],
+    [cardWidth, accentColor],
   );
 
   if (isLoading) {
@@ -89,8 +104,6 @@ export default function PublicShowcaseScreen() {
     );
   }
 
-  const accentColor = showcase.accent_color || colors.primary;
-
   return (
     <View style={[styles.container, { backgroundColor: colors.background }]}>
       <Stack.Screen options={{ headerShown: false }} />
@@ -102,26 +115,17 @@ export default function PublicShowcaseScreen() {
         numColumns={NUM_COLUMNS}
         columnWrapperStyle={styles.columnWrapper}
         contentContainerStyle={{
+          width: "100%",
+          maxWidth: 900,
+          alignSelf: "center",
           paddingHorizontal: GRID_PADDING,
           paddingBottom: insets.bottom + 24,
           gap: GRID_GAP,
         }}
         ListHeaderComponent={
           <View style={styles.header}>
-            {showcase.banner_image_url ? (
-              <Image
-                source={{ uri: showcase.banner_image_url }}
-                style={[styles.banner, { marginTop: insets.top }]}
-                contentFit="cover"
-              />
-            ) : (
-              <LinearGradient
-                colors={[accentColor, colors.secondary]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
-                style={[styles.banner, { marginTop: insets.top }]}
-              />
-            )}
+            <View style={{ marginTop: insets.top + 12 }}><ShowcaseBanner imageUrl={showcase.banner_image_url}
+              accentColor={accentColor} height={Math.max(140, Math.min(270, (containerWidth - 24) / 3.1))} /></View>
 
             <View style={styles.headerInfo}>
               <Text style={[styles.showcaseName, { color: colors.text }]} numberOfLines={2}>
@@ -150,6 +154,9 @@ export default function PublicShowcaseScreen() {
                   </Text>
                 </View>
               </View>
+              <View style={styles.statsPanel}><ShowcaseStatsBar itemCount={showcase.items.length}
+                followerCount={stats?.followerCount ?? null}
+                estimatedValue={showcase.items.reduce((sum, item) => sum + (item.price || 0), 0)} accentColor={accentColor} /></View>
             </View>
           </View>
         }
@@ -177,7 +184,8 @@ const styles = StyleSheet.create({
   header: { marginBottom: 16 },
   banner: { width: "100%", height: 140 },
   headerInfo: { paddingHorizontal: GRID_PADDING, paddingTop: 14, gap: 8 },
-  showcaseName: { fontSize: 22, fontWeight: "800" },
+  showcaseName: { fontSize: 30, fontWeight: "900" },
+  statsPanel: { borderWidth: 1, borderColor: "#45414E", borderRadius: 20, backgroundColor: "#1C1B22", marginTop: 12 },
   ownerRow: { flexDirection: "row", alignItems: "center", gap: 8 },
   ownerAvatar: { width: 22, height: 22, borderRadius: 11 },
   ownerAvatarPlaceholder: {
@@ -195,8 +203,14 @@ const styles = StyleSheet.create({
   },
   countPillText: { fontSize: 11, fontWeight: "600" },
   columnWrapper: { gap: GRID_GAP },
-  cell: { borderRadius: 6, overflow: "hidden", backgroundColor: "rgba(128,128,128,0.1)" },
+  cell: { borderRadius: 20, borderWidth: 1.2, overflow: "hidden", backgroundColor: "#211F27" },
+  cellImageWrap: { width: "100%", aspectRatio: 1.65, overflow: "hidden", borderBottomLeftRadius: 15, borderBottomRightRadius: 15 },
   cellImage: { width: "100%", height: "100%" },
+  pricePill: { position: "absolute", bottom: 8, left: 8, backgroundColor: "rgba(15,13,22,0.82)", borderRadius: 999, paddingHorizontal: 9, paddingVertical: 5 },
+  priceText: { color: "#FFF", fontSize: 12, fontWeight: "900" },
+  itemInfo: { padding: 11, gap: 4 },
+  itemTitle: { color: "#FFF", fontSize: 15, fontWeight: "800" },
+  itemSubtitle: { color: "#B1ADBE", fontSize: 12 },
   cellPlaceholder: { flex: 1, alignItems: "center", justifyContent: "center" },
   emptyText: { textAlign: "center", marginTop: 40, fontSize: 14 },
 });

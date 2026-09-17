@@ -9,11 +9,11 @@ import {
 } from "@/api/social/posts";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { useThemeStore } from "@/hooks/useThemeStore";
+import { showMessage } from "@/lib/dialogs";
 import { Ionicons } from "@expo/vector-icons";
 import React, { useEffect, useRef, useState } from "react";
 import {
     ActivityIndicator,
-    Alert,
     FlatList,
     Keyboard,
     Modal,
@@ -181,7 +181,7 @@ export default function CommentModal({
             }
             setCommentText("");
         } catch {
-            Alert.alert("Comment not sent", "Your draft is still here. Check your connection and try again.");
+            showMessage("Comment not sent", "Your draft is still here. Check your connection and try again.");
         } finally {
             submitLock.current = false;
         }

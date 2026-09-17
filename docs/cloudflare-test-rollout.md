@@ -50,9 +50,11 @@ Expo describes [static rendering](https://docs.expo.dev/router/web/static-render
 ## Build and upload
 
 1. Set EXPO_PUBLIC_SUPABASE_URL and EXPO_PUBLIC_ANON_KEY to the chosen main project.
-   Leave EXPO_PUBLIC_ADS_ENABLED=false and debug flags false. Remote OCR stays
-   disabled in code. Remove obsolete public vendor/OCR credentials from the build
-   environment, and rotate any previously exposed secrets.
+   Leave EXPO_PUBLIC_ADS_ENABLED=false and debug flags false. Enhanced OCR is
+   opt-in for Curators; deploy the Supabase ocr-fallback function and set its
+   OCR_SERVICE_URL and OCR_SERVICE_TOKEN secrets before testing it. Set the
+   matching OCR_SERVICE_TOKEN on Railway. Remove obsolete public vendor/OCR
+   credentials from the build environment and rotate exposed secrets.
 2. Run npm run build:web. Upload the contents of dist to Cloudflare Pages, or use
    that build command with output directory dist in a Git-backed Pages project.
    Upload the whole directory including _expo, assets, _redirects and _headers.

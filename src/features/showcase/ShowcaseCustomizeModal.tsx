@@ -1,17 +1,19 @@
 import { useUpdateShowcaseCustomization } from "@/api/showcase";
 import { useUploadImage } from "@/api/storage";
 import { useColors, type ThemeColors } from "@/constants/theme";
+import { showMessage } from "@/lib/dialogs";
+import { DEFAULT_SHOWCASE_ACCENT } from "@/src/features/showcase/ShowcaseVisuals";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "@/src/components/media/ProtectedImage";
 import * as ImagePicker from "expo-image-picker";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   Modal,
   Pressable,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from "react-native";
@@ -32,6 +34,7 @@ interface ShowcaseCustomizeModalProps {
   showcaseId: string;
   initialAccentColor?: string | null;
   initialBannerImageUrl?: string | null;
+  canEditBanner?: boolean;
   onDismiss: () => void;
 }
 
@@ -40,11 +43,12 @@ export default function ShowcaseCustomizeModal({
   showcaseId,
   initialAccentColor,
   initialBannerImageUrl,
+  canEditBanner = false,
   onDismiss,
 }: ShowcaseCustomizeModalProps) {
   const colors = useColors();
   const styles = getStyles(colors);
-  const [accentColor, setAccentColor] = useState(initialAccentColor ?? null);
+  const [accentColor, setAccentColor] = useState(initialAccentColor ?? DEFAULT_SHOWCASE_ACCENT);
   const [bannerImageUrl, setBannerImageUrl] = useState(
     initialBannerImageUrl ?? null,
   );
@@ -69,7 +73,7 @@ export default function ShowcaseCustomizeModal({
       });
       setBannerImageUrl(url);
     } catch (error: any) {
-      Alert.alert(
+      showMessage(
         "Upload failed",
         error?.message ?? "Could not upload banner image.",
       );
@@ -77,15 +81,20 @@ export default function ShowcaseCustomizeModal({
   };
 
   const handleSave = async () => {
+    const normalizedColor = accentColor.trim().toUpperCase();
+    if (!/^#[0-9A-F]{6}$/.test(normalizedColor)) {
+      showMessage("Invalid color", "Enter a six-digit hex color, such as #A77BFF.");
+      return;
+    }
     try {
       await updateCustomization.mutateAsync({
         showcaseId,
-        accentColor,
-        bannerImageUrl,
+        accentColor: normalizedColor,
+        ...(canEditBanner ? { bannerImageUrl } : {}),
       });
       onDismiss();
     } catch (error: any) {
-      Alert.alert(
+      showMessage(
         "Couldn't save",
         error?.message ?? "Please try again.",
       );
@@ -104,6 +113,7 @@ export default function ShowcaseCustomizeModal({
       <Pressable style={styles.backdrop} onPress={onDismiss}>
         <Pressable style={styles.card} onPress={(e) => e.stopPropagation()}>
           <Text style={styles.title}>Customize Showcase</Text>
+          <Text style={styles.hint}>Choose a color for the outline and sheen on your showcase and its items.</Text>
 
           <Text style={styles.sectionLabel}>Accent color</Text>
           <View style={styles.swatchRow}>
@@ -114,17 +124,25 @@ export default function ShowcaseCustomizeModal({
                 style={[
                   styles.swatch,
                   { backgroundColor: swatch },
-                  accentColor === swatch && styles.swatchSelected,
+                  accentColor.toUpperCase() === swatch.toUpperCase() && styles.swatchSelected,
                 ]}
               >
-                {accentColor === swatch && (
+                {accentColor.toUpperCase() === swatch.toUpperCase() && (
                   <Ionicons name="checkmark" size={16} color="#FFF" />
                 )}
               </TouchableOpacity>
             ))}
           </View>
 
-          <Text style={styles.sectionLabel}>Banner image</Text>
+          <Text style={styles.sectionLabel}>Any color</Text>
+          <View style={styles.colorInputRow}>
+            <View style={[styles.colorPreview, { backgroundColor: /^#[0-9A-Fa-f]{6}$/.test(accentColor) ? accentColor : DEFAULT_SHOWCASE_ACCENT }]} />
+            <TextInput value={accentColor} onChangeText={setAccentColor} maxLength={7} autoCapitalize="characters"
+              accessibilityLabel="Showcase accent hex color" placeholder="#A77BFF" placeholderTextColor={colors.grey}
+              style={[styles.colorInput, { color: colors.text, borderColor: colors.outlineVariant }]} />
+          </View>
+
+          {canEditBanner ? <><Text style={styles.sectionLabel}>Banner image</Text>
           <TouchableOpacity style={styles.bannerPicker} onPress={handlePickBanner}>
             {bannerImageUrl ? (
               <Image
@@ -144,6 +162,7 @@ export default function ShowcaseCustomizeModal({
               <Text style={styles.removeBannerText}>Remove banner</Text>
             </TouchableOpacity>
           )}
+          </> : <Text style={styles.hint}>Curator members can also upload a custom banner.</Text>}
 
           <View style={styles.actions}>
             <TouchableOpacity onPress={onDismiss} style={styles.cancelButton}>
@@ -188,6 +207,10 @@ const getStyles = (colors: ThemeColors) =>
       fontWeight: "800",
       marginBottom: 16,
     },
+    hint: { color: colors.onSurfaceVariant, fontSize: 13, lineHeight: 18, marginBottom: 12 },
+    colorInputRow: { flexDirection: "row", alignItems: "center", gap: 12, marginBottom: 18 },
+    colorPreview: { width: 38, height: 38, borderRadius: 12, borderWidth: 1, borderColor: "rgba(255,255,255,0.45)" },
+    colorInput: { flex: 1, minHeight: 46, borderWidth: 1, borderRadius: 11, paddingHorizontal: 12, fontSize: 16, fontWeight: "700" },
     sectionLabel: {
       color: colors.onSurfaceVariant,
       fontSize: 12,

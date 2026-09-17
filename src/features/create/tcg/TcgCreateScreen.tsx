@@ -519,6 +519,7 @@ function ScannerStep({
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
   const [frozenFrame, setFrozenFrame] = useState<FrozenFrameGeometry | null>(null);
   const [quotaExceeded, setQuotaExceeded] = useState(false);
+  const [enhancedScanEnabled, setEnhancedScanEnabled] = useState(false);
   const { data: membership } = useMembership();
   const isCurator = membership?.isCurator ?? false;
   const { data: quotaStatus } = useScanQuotaStatus();
@@ -628,9 +629,10 @@ function ScannerStep({
       setScanStatus("Reading card text...");
       return identifyPokemonCardImage(
         picture.uri,
-        // Backup server-side OCR is a Curator perk — free scans are
-        // on-device ML Kit only.
-        isCurator ? undefined : { fallbackRecognizeText: undefined },
+        // Remote processing needs an explicit choice for this scan session.
+        isCurator && enhancedScanEnabled
+          ? undefined
+          : { fallbackRecognizeText: undefined },
         (identifiers) => {
           setLastIdentifiers(identifiers);
           setScanStatus("Searching card database...");
@@ -813,7 +815,24 @@ function ScannerStep({
             <Ionicons name={torchOn ? "flashlight" : "flashlight-outline"} size={20} color={torchOn ? colors.primary : "#FFF"} />
             <Text style={styles.scanHintCheckText}>Torch</Text>
           </TouchableOpacity>
+          {isCurator && (
+            <TouchableOpacity
+              style={[styles.scanHintCheck, enhancedScanEnabled && styles.scanHintCheckActive]}
+              onPress={() => setEnhancedScanEnabled((current) => !current)}
+              accessibilityRole="switch"
+              accessibilityState={{ checked: enhancedScanEnabled }}
+              accessibilityLabel="Enhanced scan with remote card image processing"
+            >
+              <Ionicons name="sparkles-outline" size={20} color={enhancedScanEnabled ? colors.primary : "#FFF"} />
+              <Text style={styles.scanHintCheckText}>Enhanced scan</Text>
+            </TouchableOpacity>
+          )}
         </View>
+        {isCurator && (
+          <Text style={styles.enhancedScanNotice}>
+            When enabled, a failed card match sends the cropped card photo to our OCR service. The photo is deleted after processing.
+          </Text>
+        )}
         {borderState === "error" && error && (
           <Animated.View entering={FadeIn} style={styles.scanMessageError}>
             <Ionicons name="alert-circle" size={18} color="#FFF" />
@@ -1470,6 +1489,7 @@ const getStyles = (colors: ThemeColors) =>
     scanHintCheck: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 14, borderWidth: 1, borderColor: "rgba(255,255,255,0.38)", backgroundColor: "rgba(0,0,0,0.52)" },
     scanHintCheckActive: { borderColor: colors.primary, backgroundColor: "rgba(0,0,0,0.72)" },
     scanHintCheckText: { color: "#FFF", fontSize: 13, fontWeight: "700" },
+    enhancedScanNotice: { color: "rgba(255,255,255,0.84)", fontSize: 11, textAlign: "center", marginTop: 10, maxWidth: 330 },
     scanMessageError: { maxWidth: 340, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 10, marginTop: 14, borderRadius: 14, backgroundColor: "rgba(190,30,55,0.88)" },
     scanMessageSuccess: { maxWidth: 340, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 10, marginTop: 14, borderRadius: 14, backgroundColor: "rgba(22,125,70,0.9)" },
     scanMessageText: { flex: 1, color: "#FFF", fontSize: 12, fontWeight: "600" },

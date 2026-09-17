@@ -1,11 +1,11 @@
 import { useRequestPasswordReset } from "@/api/auth";
 import { emailSchema } from "@/lib/authValidation";
+import { showMessage } from "@/lib/dialogs";
 import { Ionicons } from "@expo/vector-icons";
 import { useRouter } from "expo-router";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   StyleSheet,
   Text,
   TextInput,
@@ -23,7 +23,7 @@ export default function ForgotPassword() {
   const handleSendReset = async () => {
     const parsed = emailSchema.safeParse(email.trim());
     if (!parsed.success) {
-      Alert.alert(
+      showMessage(
         "Invalid email",
         parsed.error.issues[0]?.message ?? "Please enter a valid email.",
       );
@@ -34,7 +34,7 @@ export default function ForgotPassword() {
       await requestReset(parsed.data);
       setSent(true);
     } catch (error: any) {
-      Alert.alert(
+      showMessage(
         "Could not send reset email",
         error?.message ?? "Please try again later.",
       );
@@ -116,6 +116,9 @@ const styles = StyleSheet.create({
   scrollContent: {
     flexGrow: 1,
     paddingHorizontal: 24,
+    width: "100%",
+    maxWidth: 568,
+    alignSelf: "center",
   },
   backButton: {
     width: 40,

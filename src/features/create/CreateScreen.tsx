@@ -851,6 +851,9 @@ const getStyles = (colors: ThemeColors) =>
     },
     contentContainer: {
       flex: 1,
+      width: "100%",
+      maxWidth: 820,
+      alignSelf: "center",
     },
     fixedHeader: {
       paddingHorizontal: 24,

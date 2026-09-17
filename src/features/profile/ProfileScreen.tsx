@@ -3,6 +3,7 @@ import { useMembership } from "@/api/memberships";
 import { useGetCurrentUserProfile } from "@/api/profile/index";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { useThemeStore } from "@/hooks/useThemeStore";
+import { confirmAction, showMessage } from "@/lib/dialogs";
 import MembershipModal from "@/src/features/profile/MembershipModal";
 import { Image } from "@/src/components/media/ProtectedImage";
 import { Ionicons } from "@expo/vector-icons";
@@ -11,7 +12,6 @@ import { router } from "expo-router";
 import React, { useState } from "react";
 import {
   ActivityIndicator,
-  Alert,
   ScrollView,
   StyleSheet,
   Text,
@@ -72,25 +72,14 @@ export default function ProfileScreen() {
   const hasGoldMembershipRim =
     membership?.isCurator || membership?.isFoundingCurator;
 
-  const handleLogout = () => {
-    Alert.alert("Sign Out", "Are you sure you want to sign out?", [
-      { text: "Cancel", style: "cancel" },
-      {
-        text: "Sign Out",
-        style: "destructive",
-        onPress: async () => {
-          try {
-            // Clears the TanStack Query cache so the next user
-            // doesn't see this user's data.
-            await signOut();
-          } catch {
-            // Even if the network call fails, fall through to the
-            // auth screen; the local session is cleared regardless.
-          }
-          router.replace("/(auth)/signin");
-        },
-      },
-    ]);
+  const handleLogout = async () => {
+    if (!await confirmAction("Sign Out", "Are you sure you want to sign out?", "Sign Out")) return;
+    try {
+      await signOut();
+      router.replace("/(auth)/signin");
+    } catch {
+      showMessage("Could not sign out", "Please try again.");
+    }
   };
 
   return (
@@ -395,6 +384,9 @@ const getStyles = (colors: ThemeColors) =>
     scrollContent: {
       paddingHorizontal: 24,
       paddingBottom: 120,
+      width: "100%",
+      maxWidth: 760,
+      alignSelf: "center",
     },
     errorText: {
       color: colors.onSurfaceVariant,

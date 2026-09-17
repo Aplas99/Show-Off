@@ -203,6 +203,8 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "space-evenly",
     width: "100%",
+    maxWidth: 720,
+    alignSelf: "center",
     height: TAB_BAR_HEIGHT + 12,
   },
   tabButton: {
