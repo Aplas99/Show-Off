@@ -2,13 +2,14 @@ import {
   useCreatePokemonCardBatch,
   type PokemonTcgCard,
 } from "@/api/pokemon";
-import { useMembership } from "@/api/memberships";
+import { refreshMembershipAccess, useMembership } from "@/api/memberships";
 import {
   identifyPokemonCardImage,
   type PokemonCardIdentifiers,
   type RecognizedPokemonCard,
 } from "@/api/pokemon/recognition";
 import { recognizeTextWithEnhancedService } from "@/api/pokemon/ocrFallback";
+import { getInstaScanFailureMessage } from "@/api/tcg/enhancedOcr";
 import { TcgScannerTools } from "./TcgScannerTools";
 import {
   createManualPokemonCard,
@@ -38,6 +39,7 @@ import {
 } from "@/api/showcase";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { Image } from "@/src/components/media/ProtectedImage";
@@ -534,6 +536,7 @@ function ScannerStep({
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const haptics = useHaptics();
+  const queryClient = useQueryClient();
   const styles = useMemo(() => getStyles(colors), [colors]);
   // Compact centered guide — the OCR crop is a generous centered superset of
   // this region, so a card aligned here is always fully inside the crop.
@@ -654,6 +657,10 @@ function ScannerStep({
     };
 
     try {
+      if (mode === "enhanced") {
+        const access = await refreshMembershipAccess(queryClient);
+        if (!access.isCurator) throw new Error("InstaScan requires Curator membership.");
+      }
       await haptics.medium();
 
       const matches = await attemptScan(attempt);
@@ -687,7 +694,7 @@ function ScannerStep({
       if (mode === "enhanced" || attempt === 1) {
         setError(
           mode === "enhanced"
-            ? "Enhanced OCR is unavailable. Check your connection, Curator access, and OCR service."
+            ? getInstaScanFailureMessage(caught)
             : caught instanceof Error ? caught.message : "Unable to identify card",
         );
         setBorderState("error");

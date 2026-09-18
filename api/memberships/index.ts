@@ -1,6 +1,6 @@
 import { membershipDebug } from "@/lib/membershipDebug";
 import { supabase } from "@/lib/supabase";
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { queryOptions, useMutation, useQuery, useQueryClient, type QueryClient } from "@tanstack/react-query";
 import * as WebBrowser from "expo-web-browser";
 import { Linking, Platform } from "react-native";
 import { useAuthStore } from "@/hooks/useAuthStore";
@@ -286,14 +286,37 @@ export async function getCurrentMembershipAccess() {
   }
 }
 
+export function membershipQueryOptions(userId: string) {
+  return queryOptions({
+    queryKey: [...membershipKeys.current(), userId],
+    queryFn: getCurrentMembershipAccess,
+    // The sign-in snapshot is shared by every screen. Actions that change or
+    // require membership refresh it explicitly; navigation never polls it.
+    staleTime: Infinity,
+    gcTime: Infinity,
+    retry: 0,
+    refetchOnMount: false,
+    refetchOnWindowFocus: false,
+    refetchOnReconnect: false,
+  });
+}
+
+export async function refreshMembershipAccess(queryClient: QueryClient) {
+  const userId = useAuthStore.getState().user?.id;
+  if (!userId) throw new Error("Sign in to use Curator features.");
+  const access = await getCurrentMembershipAccess();
+  if (useAuthStore.getState().user?.id !== userId) {
+    throw new Error("Your session changed. Please try again.");
+  }
+  queryClient.setQueryData(membershipQueryOptions(userId).queryKey, access);
+  return access;
+}
+
 export function useMembership() {
   const userId = useAuthStore((state) => state.user?.id);
   return useQuery({
-    queryKey: [...membershipKeys.current(), userId],
+    ...membershipQueryOptions(userId ?? ""),
     enabled: !!userId,
-    queryFn: getCurrentMembershipAccess,
-    staleTime: 15 * 1000,
-    refetchInterval: 30 * 1000,
   });
 }
 

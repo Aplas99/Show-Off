@@ -5,6 +5,15 @@ export interface TcgOcrResult {
   blocks?: { lines?: { text: string }[] }[];
 }
 
+export function getInstaScanFailureMessage(error: unknown): string {
+  if (error instanceof Error && error.message === "InstaScan requires Curator membership.") {
+    return error.message;
+  }
+  const status = (error as { context?: { status?: unknown } } | null)?.context?.status;
+  if (status === 404) return "InstaScan is not set up for this app environment yet.";
+  return "InstaScan is unavailable. Check your connection and OCR service.";
+}
+
 // Only a crop prepared by the game scanner is uploaded after an explicit tap.
 export async function recognizeTextWithInstaScan(imageUri: string): Promise<TcgOcrResult> {
   const startedAt = Date.now();

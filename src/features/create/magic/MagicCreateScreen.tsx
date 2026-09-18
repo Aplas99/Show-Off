@@ -7,8 +7,8 @@ import {
   type MagicCard,
 } from "@/api/magic";
 import { identifyMagicCardImage } from "@/api/magic/scan";
-import { recognizeTextWithInstaScan } from "@/api/tcg/enhancedOcr";
-import { useMembership } from "@/api/memberships";
+import { getInstaScanFailureMessage, recognizeTextWithInstaScan } from "@/api/tcg/enhancedOcr";
+import { refreshMembershipAccess, useMembership } from "@/api/memberships";
 import { formatPrice } from "@/api/pokemon/ocrPostprocessing";
 import {
   useGrantBonusScans,
@@ -25,6 +25,7 @@ import {
 import { TAB_BAR_HEIGHT } from "@/constants/layoutConfig";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useQueryClient } from "@tanstack/react-query";
 import { createActionLogger } from "@/lib/actionDebug";
 import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
@@ -387,6 +388,7 @@ function ScanStep({
   const insets = useSafeAreaInsets();
   const { width, height } = useWindowDimensions();
   const haptics = useHaptics();
+  const queryClient = useQueryClient();
   const styles = useMemo(() => getStyles(colors), [colors]);
   // Standard Magic card ratio (63mm × 88mm), same as Pokémon.
   const frameWidth = Math.min(width * 0.7, 320, Math.max(150, (height - 400) * (63 / 88)));
@@ -425,6 +427,10 @@ function ScanStep({
     setLastAdded(null);
 
     try {
+      if (mode === "enhanced") {
+        const access = await refreshMembershipAccess(queryClient);
+        if (!access.isCurator) throw new Error("InstaScan requires Curator membership.");
+      }
       await haptics.medium();
       const picture = await cameraRef.current.takePictureAsync({ quality: 0.8 });
       if (!picture?.uri) throw new Error("Camera did not return an image");
@@ -447,7 +453,7 @@ function ScanStep({
     } catch (caught) {
       magicUiDebug.error("scan.capture-failed", caught);
       setScanError(mode === "enhanced"
-        ? "InstaScan is unavailable. Check your connection and Curator access."
+        ? getInstaScanFailureMessage(caught)
         : "Couldn't scan that card. Please try again.");
       await haptics.error();
     } finally {

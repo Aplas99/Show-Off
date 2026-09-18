@@ -1,4 +1,5 @@
 import { useAuthStore } from "@/hooks/useAuthStore";
+import { membershipQueryOptions } from "@/api/memberships";
 import { needsUsernameOnboarding, resolveAuthRedirect } from "@/lib/onboarding";
 import { supabase } from "@/lib/supabase";
 import { hasAcceptedCurrentPolicy } from "@/lib/policies";
@@ -31,6 +32,14 @@ export default function AuthInitializer({ children }: { children: React.ReactNod
 
     return () => subscription.unsubscribe();
   }, [setSession, queryClient]);
+
+  useEffect(() => {
+    const userId = session?.user?.id;
+    if (!userId) return;
+    // One shared membership load when a session is established or restored.
+    // Screens consume the cached result without polling on navigation.
+    void queryClient.ensureQueryData(membershipQueryOptions(userId)).catch(() => undefined);
+  }, [session?.user?.id, queryClient]);
 
   // 3. After any signup/signin method establishes a session, check whether
   // the profile has a username yet (OAuth first logins may not even have a

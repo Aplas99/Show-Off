@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { getInstaScanFailureMessage } from "@/api/tcg/enhancedOcr";
 
 import {
   recognizeTextWithEnhancedService,
@@ -27,6 +28,10 @@ beforeEach(() => {
 });
 
 describe("enhanced card OCR", () => {
+  it("explains a missing Edge Function without blaming Railway", () => {
+    expect(getInstaScanFailureMessage({ context: { status: 404 } }))
+      .toBe("InstaScan is not set up for this app environment yet.");
+  });
   it("returns text from the direct service call", async () => {
     invoke.mockResolvedValue({ data: { text: "Pikachu 25/102" }, error: null });
 

@@ -5,6 +5,7 @@ import {
   getMembershipUploadLimitBytes,
   hasUnexpiredMembership,
   isActiveMembershipStatus,
+  membershipQueryOptions,
   subscriptionRowSchema,
 } from "@/api/memberships";
 
@@ -160,6 +161,20 @@ describe("membership upload limits", () => {
         }),
       ).toBe(MEMBERSHIP_UPLOAD_LIMITS_BYTES.curator);
     }
+  });
+});
+
+describe("membership query timing", () => {
+  it("keeps the sign-in result cached until a member action refreshes it", () => {
+    const options = membershipQueryOptions("member-1");
+    expect(options.queryKey).toEqual(["membership", "current", "member-1"]);
+    expect(options.staleTime).toBe(Infinity);
+    expect(options.gcTime).toBe(Infinity);
+    expect(options.retry).toBe(0);
+    expect(options.refetchOnMount).toBe(false);
+    expect(options.refetchOnWindowFocus).toBe(false);
+    expect(options.refetchOnReconnect).toBe(false);
+    expect(options.refetchInterval).toBeUndefined();
   });
 });
 
