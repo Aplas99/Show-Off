@@ -12,8 +12,13 @@ Auth: set OCR_SERVICE_TOKEN and send it as `Authorization: Bearer <token>`.
 
 from __future__ import annotations
 
+import json
+import logging
 import os
+import sys
 import tempfile
+import time
+import uuid
 
 try:
     import paddleocr  # noqa: F401 -- fail fast with a useful message
@@ -25,12 +30,48 @@ except ModuleNotFoundError as error:
         "or run .\\serve.ps1",
     ) from error
 
-from fastapi import FastAPI, File, Header, HTTPException, UploadFile
+from fastapi import FastAPI, File, Header, HTTPException, Request, UploadFile
 
 from ocr_card import build_engine, run_ocr
 
 app = FastAPI(title="Show-Off PaddleOCR fallback")
 MAX_IMAGE_BYTES = 4 * 1024 * 1024
+logger = logging.getLogger("showoff.ocr")
+logger.setLevel(logging.INFO)
+logger.addHandler(logging.StreamHandler(sys.stdout))
+logger.propagate = False
+
+
+def log_event(event: str, **details):
+    logger.info(json.dumps({
+        "level": "info", "service": "paddleocr", "event": event, **details,
+    }))
+
+
+@app.middleware("http")
+async def log_request(request: Request, call_next):
+    try:
+        request_id = str(uuid.UUID(request.headers.get("x-ocr-request-id", "")))
+    except ValueError:
+        request_id = str(uuid.uuid4())
+    started = time.monotonic()
+    status = 500
+    if request.url.path == "/ocr":
+        log_event("request.received", requestId=request_id, path="/ocr")
+    try:
+        response = await call_next(request)
+        status = response.status_code
+        response.headers["x-ocr-request-id"] = request_id
+        return response
+    except Exception:
+        logger.exception("OCR request failed (requestId=%s)", request_id)
+        raise
+    finally:
+        log_event(
+            "request.finished", requestId=request_id,
+            path=request.url.path, status=status,
+            durationMs=round((time.monotonic() - started) * 1000),
+        )
 
 # One engine per process; model load takes seconds, inference takes ~100s of ms.
 _engine = None

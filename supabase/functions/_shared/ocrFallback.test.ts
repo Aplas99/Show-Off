@@ -26,6 +26,7 @@ describe("OCR fallback proxy", () => {
     const response = await createOcrFallbackHandler(deps)(imageRequest());
 
     expect(response.status).toBe(403);
+    expect(response.headers.get("x-ocr-request-id")).toMatch(/^[\da-f-]{36}$/);
     expect(deps.fetch).not.toHaveBeenCalled();
   });
 
@@ -35,13 +36,30 @@ describe("OCR fallback proxy", () => {
 
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ text: "Pikachu\n025/102" });
+    const requestId = response.headers.get("x-ocr-request-id");
     expect(deps.fetch).toHaveBeenCalledWith(
       new URL("https://ocr.example.com/ocr"),
       expect.objectContaining({
-        headers: { Authorization: "Bearer server-secret" },
+        headers: { Authorization: "Bearer server-secret", "x-ocr-request-id": requestId },
         redirect: "error",
       }),
     );
+  });
+
+  it("logs an upstream HTTP failure with its status and request ID", async () => {
+    const deps = makeDeps();
+    deps.fetch = jest.fn(async () => new Response("unavailable", { status: 503 }));
+    const log = jest.spyOn(console, "info").mockImplementation(() => {});
+    try {
+      const response = await createOcrFallbackHandler(deps)(imageRequest());
+      expect(response.status).toBe(502);
+      expect(JSON.parse(log.mock.calls.at(-1)?.[0] ?? "{}")).toEqual(expect.objectContaining({
+        requestId: response.headers.get("x-ocr-request-id"),
+        stage: "upstream-http", status: 502, upstreamStatus: 503,
+      }));
+    } finally {
+      log.mockRestore();
+    }
   });
 
   it("fails closed when the service token is absent", async () => {

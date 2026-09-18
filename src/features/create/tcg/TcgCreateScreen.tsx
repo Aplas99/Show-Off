@@ -8,6 +8,8 @@ import {
   type PokemonCardIdentifiers,
   type RecognizedPokemonCard,
 } from "@/api/pokemon/recognition";
+import { recognizeTextWithEnhancedService } from "@/api/pokemon/ocrFallback";
+import { TcgScannerTools } from "./TcgScannerTools";
 import {
   createManualPokemonCard,
   searchPokemonCardSources,
@@ -503,6 +505,7 @@ function ScannerStep({
 }) {
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
+  const captureInProgress = useRef(false);
   const previewRef = useRef<View>(null);
   const frameRef = useRef<View>(null);
   const [isReady, setIsReady] = useState(false);
@@ -519,7 +522,6 @@ function ScannerStep({
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
   const [frozenFrame, setFrozenFrame] = useState<FrozenFrameGeometry | null>(null);
   const [quotaExceeded, setQuotaExceeded] = useState(false);
-  const [enhancedScanEnabled, setEnhancedScanEnabled] = useState(false);
   const { data: membership } = useMembership();
   const isCurator = membership?.isCurator ?? false;
   const { data: quotaStatus } = useScanQuotaStatus();
@@ -530,12 +532,12 @@ function ScannerStep({
   const progress = useSharedValue(0);
   const scanLineProgress = useSharedValue(0);
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const haptics = useHaptics();
   const styles = useMemo(() => getStyles(colors), [colors]);
   // Compact centered guide — the OCR crop is a generous centered superset of
   // this region, so a card aligned here is always fully inside the crop.
-  const frameWidth = Math.min(width * 0.7, 320);
+  const frameWidth = Math.min(width * 0.7, 320, Math.max(150, (height - 400) * (63 / 88)));
   const frameHeight = frameWidth * (88 / 63);
 
   const horizontalProgressStyle = useAnimatedStyle(() => ({
@@ -557,9 +559,10 @@ function ScannerStep({
     }
   };
 
-  const capture = async () => {
-    const attempt = scanAttempt;
-    if (!cameraRef.current || !isReady || isIdentifying) return;
+  const capture = async (mode: "standard" | "enhanced" = "standard") => {
+    const attempt = mode === "enhanced" ? 1 : scanAttempt;
+    if (!cameraRef.current || !isReady || captureInProgress.current) return;
+    captureInProgress.current = true;
 
     if (!isCurator) {
       try {
@@ -567,6 +570,7 @@ function ScannerStep({
         if (!quota.allowed) {
           await haptics.error();
           setQuotaExceeded(true);
+          captureInProgress.current = false;
           return;
         }
       } catch {
@@ -580,7 +584,7 @@ function ScannerStep({
     setError(null);
     setLastCard(null);
     if (attempt === 1) setLastIdentifiers(null);
-    setScanStatus("Capturing card...");
+    setScanStatus(mode === "enhanced" ? "Capturing for enhanced OCR..." : "Capturing card...");
     progress.value = 0;
     progress.value = withTiming(0.88, { duration: 5000 });
 
@@ -626,12 +630,14 @@ function ScannerStep({
         -1,
         true,
       );
-      setScanStatus("Reading card text...");
+      setScanStatus(mode === "enhanced" ? "Reading with enhanced OCR..." : "Reading card text...");
       return identifyPokemonCardImage(
         picture.uri,
-        // Remote processing needs an explicit choice for this scan session.
-        isCurator && enhancedScanEnabled
-          ? undefined
+        mode === "enhanced"
+          ? {
+              recognizeText: recognizeTextWithEnhancedService,
+              fallbackRecognizeText: undefined,
+            }
           : { fallbackRecognizeText: undefined },
         (identifiers) => {
           setLastIdentifiers(identifiers);
@@ -662,7 +668,11 @@ function ScannerStep({
 
       cardScanDebug("camera.scan-missed", { attempt });
       progress.value = withTiming(0, { duration: 180 });
-      if (attempt === 1) {
+      if (mode === "enhanced") {
+        setError("Enhanced OCR found no matching card. Try Search or scan again.");
+        setBorderState("error");
+        setScanAttempt(1);
+      } else if (attempt === 1) {
         setBorderState("error");
         setScanAttempt(2);
       } else {
@@ -674,10 +684,14 @@ function ScannerStep({
     } catch (caught) {
       cardScanError("camera.capture-or-scan-failed", caught);
       progress.value = withTiming(0, { duration: 180 });
-      if (attempt === 1) {
-        setError(caught instanceof Error ? caught.message : "Unable to identify card");
+      if (mode === "enhanced" || attempt === 1) {
+        setError(
+          mode === "enhanced"
+            ? "Enhanced OCR is unavailable. Check your connection, Curator access, and OCR service."
+            : caught instanceof Error ? caught.message : "Unable to identify card",
+        );
         setBorderState("error");
-        setScanAttempt(2);
+        setScanAttempt(mode === "enhanced" ? 1 : 2);
       } else {
         setScanAttempt(1);
         setFromFailedScan(true);
@@ -691,6 +705,7 @@ function ScannerStep({
       setCapturedUri(null);
       setFrozenFrame(null);
       setIsIdentifying(false);
+      captureInProgress.current = false;
     }
   };
 
@@ -793,46 +808,19 @@ function ScannerStep({
             </View>
           )}
         </View>
-        <View style={styles.distanceNotice}>
-          <Ionicons name="resize-outline" size={14} color="#FFF" />
-          <Text style={styles.distanceNoticeText}>
-            Keep the card at least 2 in (5 cm) from the camera
-          </Text>
-        </View>
         <Text style={styles.scannerHint}>
           {borderState === "error"
-            ? "Please try again — re-center the card and keep the name and number sharp."
-            : "Fill the frame with one card and keep the name and number sharp."}
+            ? "Try again. Center the card and keep the text sharp."
+            : "Center one card, keep the text sharp, and stay 2 in away."}
         </Text>
-        <View style={styles.scanHintChecks}>
-          <TouchableOpacity
-            style={[styles.scanHintCheck, torchOn && styles.scanHintCheckActive]}
-            onPress={() => setTorchOn((current) => !current)}
-            accessibilityRole="switch"
-            accessibilityState={{ checked: torchOn }}
-            accessibilityLabel={torchOn ? "Turn flashlight off" : "Turn flashlight on"}
-          >
-            <Ionicons name={torchOn ? "flashlight" : "flashlight-outline"} size={20} color={torchOn ? colors.primary : "#FFF"} />
-            <Text style={styles.scanHintCheckText}>Torch</Text>
-          </TouchableOpacity>
-          {isCurator && (
-            <TouchableOpacity
-              style={[styles.scanHintCheck, enhancedScanEnabled && styles.scanHintCheckActive]}
-              onPress={() => setEnhancedScanEnabled((current) => !current)}
-              accessibilityRole="switch"
-              accessibilityState={{ checked: enhancedScanEnabled }}
-              accessibilityLabel="Enhanced scan with remote card image processing"
-            >
-              <Ionicons name="sparkles-outline" size={20} color={enhancedScanEnabled ? colors.primary : "#FFF"} />
-              <Text style={styles.scanHintCheckText}>Enhanced scan</Text>
-            </TouchableOpacity>
-          )}
-        </View>
-        {isCurator && (
-          <Text style={styles.enhancedScanNotice}>
-            When enabled, a failed card match sends the cropped card photo to our OCR service. The photo is deleted after processing.
-          </Text>
-        )}
+        <TcgScannerTools
+          colors={colors}
+          torchOn={torchOn}
+          onToggleTorch={() => setTorchOn((current) => !current)}
+          isCurator={isCurator}
+          isBusy={!isReady || isIdentifying}
+          onInstaScan={() => capture("enhanced")}
+        />
         {borderState === "error" && error && (
           <Animated.View entering={FadeIn} style={styles.scanMessageError}>
             <Ionicons name="alert-circle" size={18} color="#FFF" />
@@ -850,32 +838,34 @@ function ScannerStep({
       </View>
 
       <View style={[styles.cameraControls, { paddingBottom: insets.bottom + 18 }]}>
-        <TouchableOpacity
-          style={styles.searchControlButton}
-          onPress={() => { setFromFailedScan(false); setManualSearchOpen(true); }}
-          accessibilityLabel="Search for a card manually"
-        >
-          <View style={styles.searchControlIcon}>
-            <Ionicons name="search" size={16} color="#000" />
-          </View>
-          <Text style={styles.searchControlText}>Search</Text>
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.shutterOuter, (!isReady || isIdentifying) && styles.disabled]}
-          onPress={() => capture()}
-          disabled={!isReady || isIdentifying}
-          accessibilityLabel="Capture and identify Pokémon card"
-        >
-          <View style={styles.shutterInner} />
-        </TouchableOpacity>
-        <TouchableOpacity
-          style={[styles.reviewButton, count === 0 && styles.invisible]}
-          onPress={onReview}
-          disabled={count === 0}
-        >
-          <Text style={styles.reviewButtonText}>Review</Text>
-          <Ionicons name="arrow-forward" size={18} color="#FFF" />
-        </TouchableOpacity>
+        <View style={styles.cameraActionRow}>
+          <TouchableOpacity
+            style={styles.searchControlButton}
+            onPress={() => { setFromFailedScan(false); setManualSearchOpen(true); }}
+            accessibilityLabel="Search for a card manually"
+          >
+            <View style={styles.searchControlIcon}>
+              <Ionicons name="search" size={16} color="#000" />
+            </View>
+            <Text style={styles.searchControlText}>Search</Text>
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.shutterOuter, (!isReady || isIdentifying) && styles.disabled]}
+            onPress={() => capture("standard")}
+            disabled={!isReady || isIdentifying}
+            accessibilityLabel="Capture and identify Pokémon card"
+          >
+            <View style={styles.shutterInner} />
+          </TouchableOpacity>
+          <TouchableOpacity
+            style={[styles.reviewButton, count === 0 && styles.invisible]}
+            onPress={onReview}
+            disabled={count === 0}
+          >
+            <Text style={styles.reviewButtonText}>Review</Text>
+            <Ionicons name="arrow-forward" size={18} color="#FFF" />
+          </TouchableOpacity>
+        </View>
       </View>
 
       <ManualCardSearchModal
@@ -1428,7 +1418,7 @@ const getStyles = (colors: ThemeColors) =>
     cameraDestinationName: { color: "#FFF", fontSize: 15, fontWeight: "700", maxWidth: 210 },
     queueButton: { minWidth: 48, height: 44, borderRadius: 22, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingHorizontal: 11, backgroundColor: "rgba(0,0,0,0.58)" },
     queueCount: { color: "#FFF", fontSize: 14, fontWeight: "800", fontVariant: ["tabular-nums"] },
-    scannerCenter: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24 },
+    scannerCenter: { flex: 1, alignItems: "center", justifyContent: "center", paddingHorizontal: 24, paddingTop: 88, paddingBottom: 115 },
     cardFrame: { borderRadius: 22, borderWidth: 2, borderColor: "rgba(255,255,255,0.45)", overflow: "hidden" },
     cardFrameError: { borderColor: "#FF3B30", borderWidth: 3 },
     cardFrameSuccess: { borderColor: "#22c55e", borderWidth: 3 },
@@ -1482,20 +1472,14 @@ const getStyles = (colors: ThemeColors) =>
     scanLine: { position: "absolute", left: 0, right: 0, top: 0, height: 3, backgroundColor: colors.primary, shadowColor: colors.primary, shadowOpacity: 0.9, shadowRadius: 8, shadowOffset: { width: 0, height: 0 }, elevation: 6 },
     identifyingStatus: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20, backgroundColor: "rgba(0,0,0,0.6)" },
     identifyingText: { color: "#FFF", fontSize: 14, fontWeight: "700" },
-    distanceNotice: { flexDirection: "row", alignItems: "center", gap: 6, marginTop: 14, paddingHorizontal: 12, paddingVertical: 6, borderRadius: 999, backgroundColor: "rgba(0,0,0,0.55)", borderWidth: 1, borderColor: "rgba(255,255,255,0.22)" },
-    distanceNoticeText: { color: "rgba(255,255,255,0.92)", fontSize: 11, fontWeight: "600" },
     scannerHint: { color: "rgba(255,255,255,0.84)", fontSize: 13, textAlign: "center", marginTop: 12 },
-    scanHintChecks: { flexDirection: "row", gap: 10, marginTop: 12 },
-    scanHintCheck: { flexDirection: "row", alignItems: "center", gap: 6, paddingHorizontal: 14, paddingVertical: 9, borderRadius: 14, borderWidth: 1, borderColor: "rgba(255,255,255,0.38)", backgroundColor: "rgba(0,0,0,0.52)" },
-    scanHintCheckActive: { borderColor: colors.primary, backgroundColor: "rgba(0,0,0,0.72)" },
-    scanHintCheckText: { color: "#FFF", fontSize: 13, fontWeight: "700" },
-    enhancedScanNotice: { color: "rgba(255,255,255,0.84)", fontSize: 11, textAlign: "center", marginTop: 10, maxWidth: 330 },
     scanMessageError: { maxWidth: 340, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 10, marginTop: 14, borderRadius: 14, backgroundColor: "rgba(190,30,55,0.88)" },
     scanMessageSuccess: { maxWidth: 340, flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 14, paddingVertical: 10, marginTop: 14, borderRadius: 14, backgroundColor: "rgba(22,125,70,0.9)" },
     scanMessageText: { flex: 1, color: "#FFF", fontSize: 12, fontWeight: "600" },
     manualFallbackButton: { flexDirection: "row", alignItems: "center", gap: 7, marginTop: 10, paddingHorizontal: 14, paddingVertical: 10, borderRadius: 14, backgroundColor: "rgba(0,0,0,0.62)" },
     manualFallbackText: { color: "#FFF", fontSize: 12, fontWeight: "700" },
-    cameraControls: { position: "absolute", left: 0, right: 0, bottom: 0, flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 28, paddingTop: 18, backgroundColor: "rgba(0,0,0,0.32)" },
+    cameraControls: { position: "absolute", left: 0, right: 0, bottom: 0, paddingHorizontal: 28, paddingTop: 18, backgroundColor: "rgba(0,0,0,0.32)" },
+    cameraActionRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
     manualControlButton: { width: 88, height: 46, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, borderRadius: 23, backgroundColor: "rgba(0,0,0,0.62)" },
     manualControlText: { color: "#FFF", fontSize: 12, fontWeight: "700" },
     // Accent-colored so the manual-search escape hatch reads as a first-class

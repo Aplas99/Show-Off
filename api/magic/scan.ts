@@ -9,10 +9,9 @@ import {
   type MagicCard,
 } from "./index";
 
-// Scryfall has no image-scan endpoint, so Magic scanning is on-device OCR
-// (ML Kit, same native module as the Pokémon scanner) on the card's name
-// banner, resolved through Scryfall's typo-tolerant /cards/named?fuzzy=
-// endpoint. Requires a development build — OCR is unavailable in Expo Go.
+// Magic scanning reads the name banner with ML Kit for the standard shutter,
+// or with shared server OCR when the Curator explicitly taps InstaScan. Both
+// resolve names through Scryfall's typo-tolerant /cards/named?fuzzy= endpoint.
 
 const magicScanDebug = createActionLogger("MagicScan");
 

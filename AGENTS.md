@@ -133,6 +133,10 @@ Adding features
 - Add validation/schema updates alongside new payloads and update/create tests.
 - Wire new screens by placing files in correct route segment and ensuring layouts exist.
 - Reuse theme/layout constants rather than duplicating literals.
+TCG scanners
+- Every new TCG camera flow must use `TcgScannerTools` so Curators receive the compact InstaScan action and upload disclosure.
+- Wire InstaScan to the game-specific recognition pipeline with `recognizeTextWithInstaScan` from `api/tcg/enhancedOcr.ts`; keep the standard shutter on-device.
+- See `docs/tcg-scanners.md` before adding a TCG game.
 Debugging tips
 - Auth issues: check `useAuthStore` session state and Supabase env vars.
 - Query issues: verify `queryKey` stability and invalidate appropriately.

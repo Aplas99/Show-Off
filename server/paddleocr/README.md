@@ -71,3 +71,30 @@ the token and bounds uploads to 4 MB.
 ```bash
 curl -H "Authorization: Bearer $OCR_SERVICE_TOKEN" -F "image=@card.jpg" http://localhost:8787/ocr
 ```
+
+## Diagnosing a failed scan
+
+After deploying both the Edge Function and Railway service, every function
+invocation writes one structured outcome log (`stage`, `status`, `requestId`,
+`durationMs`). The app logs the HTTP status, public error reason, and request ID
+for failed OCR calls even when scan debug is off. Railway writes
+`request.received` and `request.finished` JSON lines to stdout for every
+`/ocr` call; inference exceptions also include a server traceback. Python runs
+unbuffered in the container, and Uvicorn access logs are enabled. These custom
+log lines contain no image, recognized text,
+user ID, or token.
+
+Check Supabase Dashboard → Edge Functions → `ocr-fallback` → **Invocations**
+for the HTTP status, then **Logs** for the matching `requestId`. A
+`configuration`, `membership`, `invalid-auth`, or `invalid-image` stage means
+the function never called Railway. `upstream-http` includes Railway's status;
+`upstream-error` means the request or response failed (including a timeout).
+Find the same ID in Railway's service **Deploy Logs** or Observability Log
+Explorer. Railway's HTTP logs can also confirm whether `/ocr` was reached.
+
+An authentication rejection by the Supabase gateway can occur before function
+code starts, so it has an invocation record but no custom function log or
+`x-ocr-request-id`. A device network failure likewise has no server log.
+Mobile `console.error` output is visible in device/development logs, not a
+centralized production log store. Redeploy both services to enable the new
+logs; earlier failures cannot acquire them retroactively.

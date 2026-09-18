@@ -12,6 +12,14 @@
       "distribution": "internal",
       "channel": "preview"
     },
+    "productionTest": {
+      "distribution": "internal",
+      "environment": "production",
+      "channel": "production-test",
+      "android": {
+        "buildType": "apk"
+      }
+    },
     "production": {
       "autoIncrement": true,
       "channel": "production"

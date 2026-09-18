@@ -43,7 +43,6 @@ export function cardScanDebug(
 }
 
 export function cardScanError(event: string, error: unknown) {
-  if (!enabled) return;
   console.error(`[CardScan] ${event}`, {
     message: error instanceof Error ? error.message : String(error),
   });

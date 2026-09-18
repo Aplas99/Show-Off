@@ -7,6 +7,7 @@ import {
   type MagicCard,
 } from "@/api/magic";
 import { identifyMagicCardImage } from "@/api/magic/scan";
+import { recognizeTextWithInstaScan } from "@/api/tcg/enhancedOcr";
 import { useMembership } from "@/api/memberships";
 import { formatPrice } from "@/api/pokemon/ocrPostprocessing";
 import {
@@ -28,6 +29,7 @@ import { createActionLogger } from "@/lib/actionDebug";
 import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { Image } from "@/src/components/media/ProtectedImage";
+import { TcgScannerTools } from "@/src/features/create/tcg/TcgScannerTools";
 import { Stack, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -367,6 +369,7 @@ function ScanStep({
 }) {
   const [permission, requestPermission] = useCameraPermissions();
   const cameraRef = useRef<CameraView>(null);
+  const captureInProgress = useRef(false);
   const [isReady, setIsReady] = useState(false);
   const [isIdentifying, setIsIdentifying] = useState(false);
   const [scanError, setScanError] = useState<string | null>(null);
@@ -382,11 +385,11 @@ function ScanStep({
   const rewardedAd = useRewardedAd();
   const router = useRouter();
   const insets = useSafeAreaInsets();
-  const { width } = useWindowDimensions();
+  const { width, height } = useWindowDimensions();
   const haptics = useHaptics();
   const styles = useMemo(() => getStyles(colors), [colors]);
   // Standard Magic card ratio (63mm × 88mm), same as Pokémon.
-  const frameWidth = Math.min(width * 0.7, 320);
+  const frameWidth = Math.min(width * 0.7, 320, Math.max(150, (height - 400) * (63 / 88)));
   const frameHeight = frameWidth * (88 / 63);
 
   const handleWatchAdForBonusScans = async () => {
@@ -398,8 +401,9 @@ function ScanStep({
     }
   };
 
-  const capture = async () => {
-    if (!cameraRef.current || !isReady || isIdentifying) return;
+  const capture = async (mode: "standard" | "enhanced" = "standard") => {
+    if (!cameraRef.current || !isReady || captureInProgress.current) return;
+    captureInProgress.current = true;
 
     if (!isCurator) {
       try {
@@ -407,6 +411,7 @@ function ScanStep({
         if (!quota.allowed) {
           await haptics.error();
           setQuotaExceeded(true);
+          captureInProgress.current = false;
           return;
         }
       } catch {
@@ -424,10 +429,15 @@ function ScanStep({
       const picture = await cameraRef.current.takePictureAsync({ quality: 0.8 });
       if (!picture?.uri) throw new Error("Camera did not return an image");
 
-      const matches = await identifyMagicCardImage(picture.uri);
+      const matches = await identifyMagicCardImage(
+        picture.uri,
+        mode === "enhanced" ? { recognizeText: recognizeTextWithInstaScan } : {},
+      );
       if (matches.length === 0) {
         setScanError(
-          "Couldn't read that card. Line up the name at the top of the frame, or search by name instead.",
+          mode === "enhanced"
+            ? "InstaScan found no matching card. Try another photo or search by name."
+            : "Couldn't read that card. Line up the name at the top of the frame, or search by name instead.",
         );
         await haptics.error();
         return;
@@ -436,10 +446,13 @@ function ScanStep({
       await haptics.success();
     } catch (caught) {
       magicUiDebug.error("scan.capture-failed", caught);
-      setScanError("Couldn't scan that card. Please try again.");
+      setScanError(mode === "enhanced"
+        ? "InstaScan is unavailable. Check your connection and Curator access."
+        : "Couldn't scan that card. Please try again.");
       await haptics.error();
     } finally {
       setIsIdentifying(false);
+      captureInProgress.current = false;
     }
   };
 
@@ -526,20 +539,14 @@ function ScanStep({
         <Text style={styles.scannerHint}>
           Fill the frame with one card and keep the name at the top sharp.
         </Text>
-        <TouchableOpacity
-          style={[styles.torchToggle, torchOn && styles.torchToggleActive]}
-          onPress={() => setTorchOn((current) => !current)}
-          accessibilityRole="switch"
-          accessibilityState={{ checked: torchOn }}
-          accessibilityLabel={torchOn ? "Turn flashlight off" : "Turn flashlight on"}
-        >
-          <Ionicons
-            name={torchOn ? "flashlight" : "flashlight-outline"}
-            size={20}
-            color={torchOn ? colors.primary : "#FFF"}
-          />
-          <Text style={styles.torchToggleText}>Torch</Text>
-        </TouchableOpacity>
+        <TcgScannerTools
+          colors={colors}
+          torchOn={torchOn}
+          onToggleTorch={() => setTorchOn((current) => !current)}
+          isCurator={isCurator}
+          isBusy={!isReady || isIdentifying}
+          onInstaScan={() => capture("enhanced")}
+        />
         {scanError && (
           <Animated.View entering={FadeIn} style={styles.scanMessageError}>
             <Ionicons name="alert-circle" size={18} color="#FFF" />
@@ -569,7 +576,7 @@ function ScanStep({
         </TouchableOpacity>
         <TouchableOpacity
           style={[styles.shutterOuter, (!isReady || isIdentifying) && styles.disabled]}
-          onPress={capture}
+          onPress={() => capture("standard")}
           disabled={!isReady || isIdentifying}
           accessibilityLabel="Capture and identify Magic card"
         >
@@ -1252,6 +1259,8 @@ function getStyles(colors: ThemeColors) {
       alignItems: "center",
       justifyContent: "center",
       paddingHorizontal: 24,
+      paddingTop: 88,
+      paddingBottom: 115,
     },
     cardFrame: {
       borderRadius: 22,
@@ -1308,23 +1317,6 @@ function getStyles(colors: ThemeColors) {
       textAlign: "center",
       marginTop: 12,
     },
-    torchToggle: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 6,
-      marginTop: 12,
-      paddingHorizontal: 14,
-      paddingVertical: 9,
-      borderRadius: 14,
-      borderWidth: 1,
-      borderColor: "rgba(255,255,255,0.38)",
-      backgroundColor: "rgba(0,0,0,0.52)",
-    },
-    torchToggleActive: {
-      borderColor: colors.primary,
-      backgroundColor: "rgba(0,0,0,0.72)",
-    },
-    torchToggleText: { color: "#FFF", fontSize: 13, fontWeight: "700" },
     scanMessageError: {
       maxWidth: 340,
       flexDirection: "row",

@@ -20,8 +20,9 @@ COPY . .
 # Default environment settings
 ENV PORT=8787
 ENV OCR_ENABLE_MKLDNN=1
+ENV PYTHONUNBUFFERED=1
 
 EXPOSE 8787
 
 # Use shell form so $PORT provided by Railway is expanded
-CMD ["sh", "-c", "uvicorn server:app --host 0.0.0.0 --port ${PORT}"]
+CMD ["sh", "-c", "exec uvicorn server:app --host 0.0.0.0 --port ${PORT} --access-log"]
