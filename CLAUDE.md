@@ -118,6 +118,7 @@ ML Kit (`@infinitered/react-native-mlkit-text-recognition`) is a native module �
 - `products` — shared product catalog (barcode path); `ean` is the PK
 - `pokemon_tcg_cards` — Pokémon card cache; `id` is the TCG provider ID (e.g. `xy1-1`)
 - `pokemon_tcg_set_rosters` — complete-set cache manifest; set completion reads this plus `pokemon_tcg_cards` before calling the external API
+- `pokemon_tcg_sets` — server-maintained set list (codes, printed totals) the scanner trusts; `catalog-proxy` refreshes it from `/v2/sets` when older than 7 days, and `usePokemonTcgSets()` merges it over the bundled `constants/pokemonTcgSets.ts` snapshot
 - `magic_cards` — Magic card cache (Scryfall); `id` is the Scryfall UUID
 - `price_history` — daily per-card market price snapshots, written by SECURITY DEFINER triggers on both card caches
 - `scan_usage` / `search_usage` — free-tier daily quota counters, written only via SECURITY DEFINER RPCs

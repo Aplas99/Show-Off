@@ -1,4 +1,5 @@
 import { POKEMON_TCG_SETS } from "@/constants/pokemonTcgSets";
+import type { PokemonTcgSetSummary } from "@/lib/pokemonCatalog";
 import { ImageManipulator, SaveFormat } from "expo-image-manipulator";
 import {
   searchPokemonCardsCacheFirst,
@@ -59,6 +60,12 @@ export interface PokemonRecognitionDependencies {
   searchCards: (
     identifiers: PokemonCardIdentifiers,
   ) => Promise<RecognizedPokemonCard[]>;
+  /**
+   * Sets whose codes, names and printed totals the parser trusts. Defaults to
+   * the bundled snapshot; pass `usePokemonTcgSets()` data to recognize sets
+   * released after the app was built.
+   */
+  setCatalog?: readonly PokemonTcgSetSummary[];
 }
 
 // ---------------------------------------------------------------------------
@@ -142,12 +149,17 @@ const SET_CODE_BLACKLIST = new Set([
   "OF", "IN", "TO", "AT", "BY", "OR", "IT",
 ]);
 
+const knownSetCodesCache = new WeakMap<readonly PokemonTcgSetSummary[], Set<string>>();
+
 /** Every ptcgoCode that actually exists — anything else is OCR noise. */
-const KNOWN_SET_CODES = new Set<string>(
-  POKEMON_TCG_SETS.flatMap((set) =>
-    set.code ? [set.code.toUpperCase()] : [],
-  ),
-);
+function knownSetCodes(sets: readonly PokemonTcgSetSummary[]) {
+  let codes = knownSetCodesCache.get(sets);
+  if (!codes) {
+    codes = new Set(sets.flatMap((set) => (set.code ? [set.code.toUpperCase()] : [])));
+    knownSetCodesCache.set(sets, codes);
+  }
+  return codes;
+}
 
 /**
  * Collector number patterns — from most specific to broadest.
@@ -348,6 +360,7 @@ function cleanNameCandidate(value: string) {
 
 export function parsePokemonCardText(
   result: PokemonOcrResult,
+  sets: readonly PokemonTcgSetSummary[] = POKEMON_TCG_SETS,
 ): PokemonCardIdentifiers {
   const rawLines = ocrLines(result).map((line) => cleanOcrText(line.trim())).filter(Boolean);
   const lines = deduplicateLines(rawLines);
@@ -413,7 +426,7 @@ export function parsePokemonCardText(
   // short uppercase tokens from footer noise (e.g. "FS" from energy symbols),
   // and a bogus ptcgoCode filter zeroes out otherwise-good searches.
   const setCode =
-    strippedSetCode && KNOWN_SET_CODES.has(strippedSetCode)
+    strippedSetCode && knownSetCodes(sets).has(strippedSetCode)
       ? strippedSetCode
       : null;
 
@@ -446,7 +459,7 @@ export function parsePokemonCardText(
     )
     .slice(0, 4);
 
-  const catalogMatches = POKEMON_TCG_SETS.map((set) => {
+  const catalogMatches = sets.map((set) => {
     const nameSimilarity = lines.reduce(
       (best, line) => Math.max(best, similarityRatio(normalizeName(line), normalizeName(set.name))),
       0,
@@ -786,11 +799,12 @@ export async function identifyPokemonCardImage(
   const startedAt = Date.now();
   cardScanDebug("ocr.started");
 
+  const setCatalog = dependencies.setCatalog ?? POKEMON_TCG_SETS;
   const buildIdentifiers = (ocr: PokemonOcrResult) => {
-    const identifiers = parsePokemonCardText(ocr);
+    const identifiers = parsePokemonCardText(ocr, setCatalog);
     identifiers.scanHints = scanHints;
     if (scanHints.promo && (identifiers.collectionCandidates?.length ?? 0) === 0) {
-      identifiers.collectionCandidates = POKEMON_TCG_SETS
+      identifiers.collectionCandidates = setCatalog
         .filter((set) => /promo/i.test(set.name))
         .map((set) => set.name);
     }

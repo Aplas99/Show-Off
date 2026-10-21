@@ -25,6 +25,7 @@ import {
 import { TAB_BAR_HEIGHT } from "@/constants/layoutConfig";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useScannerPrefsStore } from "@/hooks/useScannerPrefsStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { createActionLogger } from "@/lib/actionDebug";
 import { Ionicons } from "@expo/vector-icons";
@@ -377,7 +378,8 @@ function ScanStep({
   const [lastAdded, setLastAdded] = useState<MagicCard | null>(null);
   const [matchCandidates, setMatchCandidates] = useState<MagicCard[] | null>(null);
   const [quotaExceeded, setQuotaExceeded] = useState(false);
-  const [torchOn, setTorchOn] = useState(false);
+  const torchOn = useScannerPrefsStore((state) => state.torch);
+  const toggleScannerPref = useScannerPrefsStore((state) => state.toggle);
   const { data: membership } = useMembership();
   const isCurator = membership?.isCurator ?? false;
   const { data: quotaStatus } = useScanQuotaStatus();
@@ -548,7 +550,7 @@ function ScanStep({
         <TcgScannerTools
           colors={colors}
           torchOn={torchOn}
-          onToggleTorch={() => setTorchOn((current) => !current)}
+          onToggleTorch={() => toggleScannerPref("torch")}
           isCurator={isCurator}
           isBusy={!isReady || isIdentifying}
           onInstaScan={() => capture("enhanced")}

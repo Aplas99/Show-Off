@@ -105,7 +105,8 @@ rollback strategy.
 - PostgreSQL: apply the migration to a disposable test database, then run
   `supabase/tests/catalog_proxy_rate_limits.sql` and
   `supabase/tests/magic_catalog_security.sql`, plus
-  `supabase/tests/product_catalog_security.sql`. The assertions roll back. Local
+  `supabase/tests/product_catalog_security.sql` and
+  `supabase/tests/pokemon_sets_security.sql`. The assertions roll back. Local
   verification included pre-existing broad policies and table/column grants
   to check that client writes are still denied after migration.
 - Run app lint, TypeScript, and the full Jest suite before release.

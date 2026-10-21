@@ -69,6 +69,8 @@ export function validateCatalogRequest(input: unknown) {
     ).toString() };
   }
 
+  // "/sets" is the whole set list; the proxy chooses its own page parameters.
+  if (request.path === "/sets") return request;
   if (/^\/cards\/[a-zA-Z0-9_-]{1,100}$/.test(request.path) || /^\/sets\/[a-zA-Z0-9_-]{1,100}\/cards$/.test(request.path)) return request;
   if (!request.path.startsWith("/cards?")) {
     throw new Error("Unsupported Pokemon catalog request.");
