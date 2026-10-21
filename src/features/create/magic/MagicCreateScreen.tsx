@@ -607,7 +607,7 @@ function ScanStep({
         animationType="fade"
         onRequestClose={() => setMatchCandidates(null)}
       >
-        <View style={styles.matchBackdrop}>
+        <View style={[styles.matchBackdrop, { paddingBottom: insets.bottom + 12 }]}>
           <View style={styles.matchSheet}>
             <View style={styles.modalHeader}>
               <View style={styles.flex}>
@@ -1221,7 +1221,7 @@ function getStyles(colors: ThemeColors) {
     cameraDestination: { flex: 1, alignItems: "center" },
     cameraDestinationLabel: {
       color: "rgba(255,255,255,0.65)",
-      fontSize: 9,
+      fontSize: 10,
       fontWeight: "800",
       letterSpacing: 1.4,
     },

@@ -474,14 +474,13 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         backgroundColor: colors.inputBg,
         borderRadius: 20,
         paddingLeft: 16,
-        paddingRight: Platform.OS === "android" ? 28 : 16,
+        paddingRight: 16,
         paddingVertical: 10,
         color: colors.text,
         fontSize: 15,
         lineHeight: 20,
         maxHeight: 100,
         marginRight: 12,
-        ...(Platform.OS === "android" ? { fontFamily: "sans-serif" } : null),
     },
     submitButton: {
         width: 40,
@@ -508,17 +507,11 @@ const getStyles = (colors: ThemeColors, isDark: boolean) => StyleSheet.create({
         marginBottom: 4,
         textAlign: "center",
         width: "100%",
-        ...(Platform.OS === "android"
-            ? { paddingHorizontal: 12, fontFamily: "sans-serif-medium" }
-            : null),
     },
     emptyStateSubtext: {
         color: colors.textDim,
         fontSize: 13,
         textAlign: "center",
         width: "100%",
-        ...(Platform.OS === "android"
-            ? { paddingHorizontal: 12, fontFamily: "sans-serif" }
-            : null),
     },
 });

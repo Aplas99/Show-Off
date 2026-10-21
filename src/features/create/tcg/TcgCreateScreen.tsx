@@ -1328,9 +1328,10 @@ function CandidateModal({
   colors: ThemeColors;
 }) {
   const styles = useMemo(() => getStyles(colors), [colors]);
+  const insets = useSafeAreaInsets();
   return (
     <Modal visible={!!entry} transparent animationType="fade" onRequestClose={onClose}>
-      <View style={styles.modalBackdrop}>
+      <View style={[styles.modalBackdrop, { paddingBottom: insets.bottom + 12 }]}>
         <View style={styles.candidateSheet}>
           <View style={styles.modalHeader}>
             <View>
@@ -1432,7 +1433,7 @@ const getStyles = (colors: ThemeColors) =>
     cameraHeader: { position: "absolute", top: 0, left: 0, right: 0, flexDirection: "row", alignItems: "center", gap: 12, paddingHorizontal: 16, paddingBottom: 12 },
     cameraIconButton: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", backgroundColor: "rgba(0,0,0,0.58)" },
     cameraDestination: { flex: 1, alignItems: "center" },
-    cameraDestinationLabel: { color: "rgba(255,255,255,0.65)", fontSize: 9, fontWeight: "800", letterSpacing: 1.4 },
+    cameraDestinationLabel: { color: "rgba(255,255,255,0.65)", fontSize: 10, fontWeight: "800", letterSpacing: 1.4 },
     cameraDestinationName: { color: "#FFF", fontSize: 15, fontWeight: "700", maxWidth: 210 },
     queueButton: { minWidth: 48, height: 44, borderRadius: 22, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingHorizontal: 11, backgroundColor: "rgba(0,0,0,0.58)" },
     queueCount: { color: "#FFF", fontSize: 14, fontWeight: "800", fontVariant: ["tabular-nums"] },

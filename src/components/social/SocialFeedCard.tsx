@@ -1,4 +1,5 @@
 import ContentSafetyMenu from "@/src/components/social/ContentSafetyMenu";
+import { getItemCoverUrl } from "@/lib/itemImages";
 import { useGetItemCommentCount } from "@/api/social/comments";
 import { FeedItem } from "@/api/social/feed";
 import {
@@ -17,7 +18,6 @@ import { LinearGradient } from "expo-linear-gradient";
 import React, { useCallback, useRef, useState } from "react";
 import {
   Animated,
-  Dimensions,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -25,7 +25,6 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const { width: screenWidth } = Dimensions.get("window");
 const CARD_MARGIN_H = 12;
 const IMAGE_BORDER_RADIUS = 18;
 
@@ -97,7 +96,7 @@ const SocialFeedCard = ({
   const displayName = item.profile?.username || "User";
   const displayAvatar = item.profile?.avatar_url;
   const displayImage =
-    item.image_url || item.products?.data?.images?.[0];
+    getItemCoverUrl(item);
   const displayCaption =
     item.user_description ||
     item.products?.searchableDescription ||
@@ -343,7 +342,7 @@ const SocialFeedCard = ({
 
 const styles = StyleSheet.create({
   container: {
-    width: screenWidth,
+    width: "100%",
     backgroundColor: "#000",
     overflow: "hidden",
   },

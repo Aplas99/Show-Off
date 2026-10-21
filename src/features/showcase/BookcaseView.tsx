@@ -1,4 +1,5 @@
 import { ItemWithProduct } from "@/api/items";
+import { getItemCoverUrl } from "@/lib/itemImages";
 import { useColors } from "@/constants/theme";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "@/src/components/media/ProtectedImage";
@@ -132,7 +133,7 @@ const BookCard = React.memo(
     const category = getItemCategory(item);
     const catColors = CATEGORY_COLORS[category] || CATEGORY_COLORS["Books"];
     const productData = item.products?.data || {};
-    const imageUrl = item.image_url || (productData?.images?.[0] ?? null);
+    const imageUrl = getItemCoverUrl(item);
     const title = productData?.title || (item as any).custom_title || "Untitled";
     const condition = (item as any).condition || item.condition || "";
     const condLabel = CONDITION_LABELS[condition] || "";
@@ -342,7 +343,7 @@ const bookCardStyles = StyleSheet.create({
   },
   badgeText: {
     color: "#000",
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: "800",
     letterSpacing: 0.5,
   },
@@ -361,7 +362,7 @@ const FigureCard = React.memo(
   ({ item, onPress }: { item: ItemWithProduct; onPress?: (i: ItemWithProduct) => void }) => {
     const colors = useColors();
     const productData = item.products?.data || {};
-    const imageUrl = item.image_url || (productData?.images?.[0] ?? null);
+    const imageUrl = getItemCoverUrl(item);
     const title = productData?.title || (item as any).custom_title || "Untitled";
     const brand = productData?.brand || (item as any).custom_brand || "";
     const condition = (item as any).condition || item.condition || "";
@@ -479,7 +480,7 @@ const figureCardStyles = StyleSheet.create({
     borderColor: "rgba(255,255,255,0.15)",
   },
   badgeText: {
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: "800",
     letterSpacing: 1,
   },
@@ -580,8 +581,8 @@ const figureCardStyles = StyleSheet.create({
     letterSpacing: -0.2,
   },
   subtitle: {
-    color: "rgba(255,255,255,0.45)",
-    fontSize: 10,
+    color: "rgba(255,255,255,0.6)",
+    fontSize: 11,
     marginTop: 2,
   },
 });
@@ -601,7 +602,7 @@ const ShineCard = React.memo(
   }) => {
     const colors = useColors();
     const productData = item.products?.data || {};
-    const imageUrl = item.image_url || (productData?.images?.[0] ?? null);
+    const imageUrl = getItemCoverUrl(item);
     const title = productData?.title || (item as any).custom_title || "Untitled";
     const condition = (item as any).condition || item.condition || "";
     const condLabel = CONDITION_LABELS[condition] || "";
@@ -774,12 +775,12 @@ const shineCardStyles = StyleSheet.create({
   },
   badgeText: {
     color: "#000",
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: "800",
     letterSpacing: 0.5,
   },
   categoryLabel: {
-    fontSize: 9,
+    fontSize: 10,
     fontWeight: "800",
     marginTop: 8,
     letterSpacing: 0.5,

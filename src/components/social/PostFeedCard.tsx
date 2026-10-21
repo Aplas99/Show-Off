@@ -19,7 +19,7 @@ import { useVideoPlayer, VideoView } from "expo-video";
 import React, { useEffect, useRef, useState } from "react";
 import {
   Animated,
-  Dimensions,
+  Platform,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -27,7 +27,6 @@ import {
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-const { width: screenWidth } = Dimensions.get("window");
 const CARD_MARGIN_H = 12;
 const IMAGE_BORDER_RADIUS = 18;
 
@@ -195,6 +194,7 @@ const PostFeedCard = ({
             <CyclingImage
               urls={images.map((media) => media.url)}
               style={StyleSheet.absoluteFill}
+              contentFit={Platform.OS === "web" ? "contain" : "cover"}
               autoCycle={!!isActive}
             />
           ) : (
@@ -283,7 +283,7 @@ const PostFeedCard = ({
 
 const styles = StyleSheet.create({
   container: {
-    width: screenWidth,
+    width: "100%",
     backgroundColor: "#000",
     overflow: "hidden",
   },
@@ -368,7 +368,7 @@ const styles = StyleSheet.create({
   },
   itemChipText: { flexShrink: 1 },
   itemChipTitle: { color: "#FFF", fontSize: 12, fontWeight: "800" },
-  itemChipSubtitle: { color: "rgba(255,255,255,0.7)", fontSize: 10, marginTop: 1 },
+  itemChipSubtitle: { color: "rgba(255,255,255,0.78)", fontSize: 11, marginTop: 1 },
   textOverlay: {
     position: "absolute",
     left: 14,

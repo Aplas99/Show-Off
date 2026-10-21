@@ -22,7 +22,7 @@ The `productionTest` EAS profile uses the production environment and makes an in
 
 1. In EAS, set `EXPO_PUBLIC_SUPABASE_URL` and `EXPO_PUBLIC_ANON_KEY` for the **production** environment to the same Supabase project. Set `EXPO_PUBLIC_ADS_ENABLED=false` unless real ads have been configured. These public values are embedded in the app.
 2. Run `npm install`, then `npx eas-cli login` and `npx eas-cli init` if the project is not yet linked to an Expo project. Complete Android signing setup when prompted.
-3. Run `npx eas-cli build --platform android --profile productionTest`. Install the resulting APK from the EAS build page on a physical Android device. If an installed app with package `com.zed99.showoff` has a different signing key, uninstall it before installing this APK.
+3. Run `npx eas-cli build --platform android --profile productionTest`. Install the resulting APK from the EAS build page on a physical Android device. If an installed app with package `com.onistudios.showoff` has a different signing key, uninstall it before installing this APK.
 
 For a local native development test, `npm run android -- --device` also includes ML Kit, but it is not a release build. The EAS APK needs no Metro server.
 

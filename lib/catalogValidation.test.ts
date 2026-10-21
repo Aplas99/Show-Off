@@ -59,4 +59,23 @@ describe("catalog request boundary", () => {
     expect(() => validateCatalogRequest({ provider: "barcode", query: "book", page: 0 })).toThrow();
     expect(() => validateCatalogRequest({ provider: "barcode", query: "x".repeat(201) })).toThrow();
   });
+
+  it("canonicalizes bounded Riftbound reads and rejects everything else", () => {
+    expect(validateCatalogRequest({ provider: "riftbound", path: "/cards/name?fuzzy=yi%20hone" }))
+      .toEqual({ provider: "riftbound", path: "/cards/name?fuzzy=yi+hone&page=1&size=50" });
+    expect(validateCatalogRequest({ provider: "riftbound", path: "/cards/riftbound/OGN-011" }))
+      .toEqual({ provider: "riftbound", path: "/cards/riftbound/ogn-011" });
+    expect(validateCatalogRequest({ provider: "riftbound", path: "/cards?set_id=ogn&page=2&size=100" }))
+      .toEqual({ provider: "riftbound", path: "/cards?set_id=ogn&sort=collector_number&page=2&size=100" });
+    expect(validateCatalogRequest({ provider: "riftbound", path: "/cards/69bc5bc7d308c64675ca86c1" }))
+      .toEqual({ provider: "riftbound", path: "/cards/69bc5bc7d308c64675ca86c1" });
+    for (const path of [
+      "https://attacker.invalid/cards", "/cards", "/cards/name", "/cards/name?fuzzy=a&exact=b",
+      "/cards/name?fuzzy=a&fuzzy=b", "/cards/name?fuzzy=a&size=101", "/cards/name?fuzzy=a&url=x",
+      "/cards/riftbound/ogn%2F..", "/cards/riftbound/ogn-011/x", "/cards/not-an-id", "/cards/search?query=x",
+      "/cards?set_id=../x", "/sets",
+    ]) {
+      expect(() => validateCatalogRequest({ provider: "riftbound", path })).toThrow();
+    }
+  });
 });

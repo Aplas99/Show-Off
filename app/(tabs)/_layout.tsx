@@ -59,6 +59,13 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="riftbound-create"
+        options={{
+          href: null,
+          tabBarStyle: { display: "none" },
+        }}
+      />
+      <Tabs.Screen
         name="create-post"
         options={{
           href: null,

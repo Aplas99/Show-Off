@@ -1,3 +1,4 @@
+import { riftboundCard } from "@/lib/riftboundCatalog.fixture";
 import { createCatalogProxyHandler } from "@/supabase/functions/_shared/catalogProxy";
 
 const pokemonCard = { id: "base1-4", name: "Charizard", supertype: "Pokemon", set: { id: "base1", name: "Base" }, number: "4", images: { small: "https://images.pokemontcg.io/base1/4.png", large: "https://images.pokemontcg.io/base1/4_hires.png" } };
@@ -7,6 +8,7 @@ function setup() {
     consumeRequest: jest.fn().mockResolvedValue(true),
     reserveMagicRequest: jest.fn().mockResolvedValue(true),
     persistMagicCards: jest.fn().mockResolvedValue(undefined),
+    persistRiftboundCards: jest.fn().mockResolvedValue(undefined),
     persistPokemonCards: jest.fn().mockResolvedValue(undefined),
     persistPokemonRoster: jest.fn().mockResolvedValue(undefined),
     persistPokemonSets: jest.fn().mockResolvedValue(undefined),
@@ -313,6 +315,33 @@ describe("authenticated catalog proxy", () => {
     })], expect.any(AbortSignal));
   });
 
+  it("falls back to an Open Library cover for imageless ISBN matches", async () => {
+    const { handler, dependencies } = setup();
+    dependencies.fetch
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        barcode: "9781684058419", found: true, product: { name: "Teenage Mutant Ninja Turtles", image_url: null },
+      })))
+      .mockResolvedValueOnce(new Response(null, { status: 302 }));
+    const response = await handler(request({ provider: "barcodenest", code: "9781684058419" }));
+    const cover = "https://covers.openlibrary.org/b/isbn/9781684058419-L.jpg?default=false";
+    expect((await response.json()).product.image_url).toBe(cover);
+    expect(dependencies.fetch.mock.calls[1]).toEqual([cover, expect.objectContaining({ method: "HEAD" })]);
+    expect(dependencies.persistProducts).toHaveBeenCalledWith([expect.objectContaining({
+      data: expect.objectContaining({ images: [cover] }),
+    })], expect.any(AbortSignal));
+  });
+
+  it("keeps the product imageless when no cover exists or the code is not an ISBN", async () => {
+    const { handler, dependencies } = setup();
+    dependencies.fetch
+      .mockResolvedValueOnce(new Response(JSON.stringify({ barcode: "9781684058419", found: true, product: { name: "Book" } })))
+      .mockResolvedValueOnce(new Response(null, { status: 404 }));
+    expect((await (await handler(request({ provider: "barcodenest", code: "9781684058419" }))).json()).product.image_url).toBeUndefined();
+    dependencies.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ barcode: "036000291452", found: true, product: { name: "Tissue" } })));
+    await handler(request({ provider: "barcodenest", code: "036000291452" }));
+    expect(dependencies.fetch).toHaveBeenCalledTimes(3);
+  });
+
   it.each([404, 400])("returns a BarcodeNest not-found body for vendor %s without vendor details", async (status) => {
     const { handler, dependencies } = setup();
     dependencies.fetch.mockResolvedValueOnce(new Response("secret vendor detail", { status }));
@@ -328,6 +357,29 @@ describe("authenticated catalog proxy", () => {
       expect((await handler(request({ provider: "barcodenest", code }))).status).toBe(400);
     }
     expect(dependencies.fetch).not.toHaveBeenCalled();
+  });
+
+  it("persists Riftbound cards from the fixed Riftcodex host without a vendor key", async () => {
+    const { handler, dependencies } = setup();
+    dependencies.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ items: [riftboundCard], total: 1, page: 1, size: 50, pages: 1 })));
+    expect((await handler(request({ provider: "riftbound", path: "/cards/name?fuzzy=wurm" }))).status).toBe(200);
+    const [url, options] = dependencies.fetch.mock.calls[0];
+    expect(url.toString()).toBe("https://api.riftcodex.com/cards/name?fuzzy=wurm&page=1&size=50");
+    expect(options.headers["X-Api-Key"]).toBeUndefined();
+    expect(dependencies.getSecret).not.toHaveBeenCalled();
+    expect(dependencies.consumeRequest).toHaveBeenCalledWith("user-1", "riftbound");
+    expect(dependencies.persistRiftboundCards).toHaveBeenCalledWith(
+      [expect.objectContaining({ id: riftboundCard.id, riftbound_id: "ogn-011-298", set_code: "OGN" })], expect.any(AbortSignal));
+  });
+
+  it("does not return Riftbound cards it could not validate or save", async () => {
+    const { handler, dependencies } = setup();
+    dependencies.fetch.mockResolvedValueOnce(new Response(JSON.stringify([riftboundCard])));
+    dependencies.persistRiftboundCards.mockRejectedValueOnce(new Error("private"));
+    expect((await handler(request({ provider: "riftbound", path: "/cards/riftbound/ogn-011" }))).status).toBe(503);
+    dependencies.fetch.mockResolvedValueOnce(new Response(JSON.stringify([{ ...riftboundCard, id: "forged" }])));
+    expect((await handler(request({ provider: "riftbound", path: "/cards/riftbound/ogn-011" }))).status).toBe(502);
+    expect((await handler(request({ provider: "riftbound", path: "/cards/riftbound/ogn-011", cards: [riftboundCard] }))).status).toBe(400);
   });
 
   it("preserves not-found behavior without exposing upstream error bodies", async () => {

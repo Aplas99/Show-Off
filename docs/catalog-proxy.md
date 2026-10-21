@@ -63,6 +63,27 @@ persisted to `products`, and the client reads that cache first, so a repeat
 scan does not spend BarcodeNest credits. Requests count against the per-user
 `barcode` limiter bucket (no migration needed).
 
+## Riftbound (Riftcodex)
+
+Provider `riftbound` proxies the public Riftcodex API (`https://api.riftcodex.com`,
+no key; an unofficial fan project, not affiliated with Riot Games). Only these
+reads are accepted, canonicalized by `lib/catalogValidation.ts`:
+
+- `/cards/name?fuzzy=…` or `?exact=…` (optional `set_id`, `page`, `size` ≤ 100)
+- `/cards?set_id=…` (always `sort=collector_number`) for set listings
+- `/cards/riftbound/{code}` — printed code, partial match, returns a bare array
+- `/cards/{riftcodexId}` — 24-char hex ObjectId
+
+Every response is validated (`lib/riftboundCatalog.ts`) and upserted into
+`riftbound_cards` before it is returned; a failed write returns 503. Requests
+use the per-user `riftbound` limiter bucket. Apply
+`20261022140000_riftbound_cards.sql` before deploying the proxy update, then
+`20261022150000_riftbound_items.sql` (adds `items.riftbound_card_id`, the
+`create_riftbound_card_batch` RPC, and forces category `tcg` for linked cards)
+before shipping the client with `RiftboundCreateScreen`.
+Riftcodex publishes no rate limits and returns 500 (not 404) for unknown
+ObjectIds, which the proxy reports as a generic provider error.
+
 ## Request and response controls
 
 - Only POST (plus OPTIONS) is accepted; identity comes from a verified bearer

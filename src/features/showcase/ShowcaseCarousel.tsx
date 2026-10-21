@@ -1,4 +1,5 @@
 import { ItemWithProduct } from "@/api/items";
+import { getItemCoverUrl } from "@/lib/itemImages";
 import { COLORS } from "@/constants/theme";
 import { DEFAULT_SHOWCASE_ACCENT } from "@/src/features/showcase/ShowcaseVisuals";
 import { Image } from "@/src/components/media/ProtectedImage";
@@ -54,16 +55,7 @@ const Backdrop = React.memo(
         pointerEvents="none"
       >
         {visibleBackdrops.map(({ item, index }) => {
-          // Parse product data to get backdrop image
-          // Data is already parsed by the API layer
-          const productData = item.products?.data || {};
-
-          // Determine backdrop image
-          const backdropImageUrl =
-            item.image_url ||
-            (productData?.images && productData.images.length > 0
-              ? productData.images[0]
-              : undefined);
+          const backdropImageUrl = getItemCoverUrl(item) ?? undefined;
 
           const adjustedIndex = index + 1;
           const inputRange = [
@@ -217,15 +209,7 @@ function ShowcaseCarousel({ data, onItemPress, onIndexChange, accentColor = DEFA
             extrapolate: "clamp",
           });
 
-          // Parse product data
-          // Data is already parsed by the API layer
-          const productData = actualItem.products?.data || {};
-
-          const imageUrl =
-            actualItem.image_url ||
-            (productData?.images && productData.images.length > 0
-              ? productData.images[0]
-              : undefined);
+          const imageUrl = getItemCoverUrl(actualItem) ?? undefined;
 
           return (
             <Animated.View

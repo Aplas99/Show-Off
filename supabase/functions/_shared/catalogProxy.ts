@@ -1,7 +1,8 @@
 import { validateCatalogRequest } from "@/lib/catalogValidation";
 import { magicCardSchema, magicCardToCacheRow, scryfallSearchResponseSchema } from "@/lib/magicCatalog";
-import { parseBarcodeNestProducts, parseBarcodeProducts, parseUpcProducts, productsToCacheRows, upcRetryDelay } from "@/lib/productCatalog";
+import { barcodeNestNeedsImage, openLibraryCoverUrl, parseBarcodeNestProducts, parseBarcodeProducts, parseUpcProducts, productsToCacheRows, upcRetryDelay, withBarcodeNestImage } from "@/lib/productCatalog";
 
+import { parseRiftboundCards, riftboundCardToCacheRow } from "@/lib/riftboundCatalog";
 import { parsePokemonSetList, pokemonCardResponseSchema, pokemonSearchResponseSchema, pokemonCardToCacheRow, pokemonSetToCacheRow, type PokemonTcgCard } from "@/lib/pokemonCatalog";
 import { parseTrackingCards, setSearchSchema } from "@/lib/tcgTrackingCatalog";
 
@@ -18,9 +19,10 @@ const corsHeaders = {
 
 export interface CatalogProxyDependencies {
   authenticate: (token: string) => Promise<string | null>;
-  consumeRequest: (userId: string, provider: "pokemon" | "barcode" | "magic" | "upc") => Promise<boolean>;
+  consumeRequest: (userId: string, provider: "pokemon" | "barcode" | "magic" | "upc" | "riftbound") => Promise<boolean>;
   reserveMagicRequest: () => Promise<boolean>;
   persistMagicCards: (rows: ReturnType<typeof magicCardToCacheRow>[]) => Promise<void>;
+  persistRiftboundCards: (rows: ReturnType<typeof riftboundCardToCacheRow>[], signal: AbortSignal) => Promise<void>;
   persistPokemonCards: (rows: ReturnType<typeof pokemonCardToCacheRow>[], signal: AbortSignal) => Promise<void>;
   persistPokemonRoster: (row: Record<string, unknown>, signal: AbortSignal) => Promise<void>;
   persistPokemonSets: (rows: ReturnType<typeof pokemonSetToCacheRow>[], signal: AbortSignal) => Promise<void>;
@@ -138,6 +140,9 @@ export function createCatalogProxyHandler(dependencies: CatalogProxyDependencies
         url.search = new URLSearchParams({ page: "1", pageSize: "250", orderBy: "-releaseDate" }).toString();
       }
       headers["X-Api-Key"] = key!;
+    } else if (request.provider === "riftbound") {
+      url = new URL(`https://api.riftcodex.com${request.path}`);
+      headers["User-Agent"] = "Show-Off/1.0.0 (catalog-proxy)";
     } else if (request.provider === "magic") {
       url = new URL(`https://api.scryfall.com${request.path}`);
       headers["User-Agent"] = "Show-Off/1.0.0 (catalog-proxy)";
@@ -247,6 +252,23 @@ export function createCatalogProxyHandler(dependencies: CatalogProxyDependencies
           return json({ error: "Could not save catalog results. Please try again." }, 503);
         }
       }
+      // BarcodeNest rarely has images for books; use the Open Library cover
+      // when one exists. A failed check just leaves the product imageless.
+      if (request.provider === "barcodenest" && barcodeNestNeedsImage(data)) {
+        const cover = openLibraryCoverUrl(request.code);
+        if (cover) {
+          try {
+            const coverResponse = await dependencies.fetch(cover, { method: "HEAD", signal: controller.signal, redirect: "manual" });
+            await coverResponse.body?.cancel().catch(() => undefined);
+            // Open Library answers an existing cover with a redirect to its CDN.
+            if (coverResponse.ok || (coverResponse.status >= 300 && coverResponse.status < 400)) {
+              data = withBarcodeNestImage(data, cover);
+            }
+          } catch {
+            // Cover lookup is best-effort.
+          }
+        }
+      }
       if (request.provider === "barcode" || request.provider === "upc" || request.provider === "barcodenest") {
         const products = request.provider === "barcode" ? parseBarcodeProducts(data)
           : request.provider === "barcodenest" ? parseBarcodeNestProducts(data) : parseUpcProducts(data);
@@ -256,6 +278,17 @@ export function createCatalogProxyHandler(dependencies: CatalogProxyDependencies
             await dependencies.persistProducts(rows, controller.signal);
           } catch {
             return json({ error: "Could not save product results. Please try again." }, 503);
+          }
+        }
+      }
+      if (request.provider === "riftbound") {
+        const cards = parseRiftboundCards(request.path, data);
+        // Same trusted-write boundary as Magic: only saved cards are returned.
+        if (cards.length > 0) {
+          try {
+            await dependencies.persistRiftboundCards(cards.map(riftboundCardToCacheRow), controller.signal);
+          } catch {
+            return json({ error: "Could not save catalog results. Please try again." }, 503);
           }
         }
       }

@@ -1,4 +1,5 @@
 import { ItemWithProduct } from "@/api/items";
+import { getItemCoverUrl } from "@/lib/itemImages";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "@/src/components/media/ProtectedImage";
 import React from "react";
@@ -40,8 +41,7 @@ const BookItem = React.memo(({ item, positionX, onPress, scrollX }: BookItemProp
     const category = getItemCategory(item);
     const colors = CATEGORY_COLORS[category] || CATEGORY_COLORS["Books"];
 
-    const productData = item.products?.data || {};
-    const imageUrl = item.image_url || (productData?.images?.[0] ?? null);
+    const imageUrl = getItemCoverUrl(item);
 
     // --- Parallax: 2 interpolations only (scale + opacity) ---
     const relativeInputRange = [

@@ -3,8 +3,10 @@ import { useAuthStore } from "@/hooks/useAuthStore";
 import { canServeAds } from "@/lib/adEligibility";
 import { supabase } from "@/lib/supabase";
 import { useQuery } from "@tanstack/react-query";
+import { adsSdk } from "./sdk";
 
-export const ADS_ENABLED = process.env.EXPO_PUBLIC_ADS_ENABLED === "true";
+// Off unless the flag is set and the native SDK is in this binary.
+export const ADS_ENABLED = adsSdk != null;
 export async function isAdEligible(userId: string): Promise<boolean> {
   if (!ADS_ENABLED || useAuthStore.getState().user?.id !== userId) return false;
   const [{ data: age, error }, membership] = await Promise.all([

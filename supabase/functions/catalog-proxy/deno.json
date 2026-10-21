@@ -5,6 +5,7 @@
     "@/lib/magicCatalog": "../../../lib/magicCatalog.ts",
     "@/lib/productCatalog": "../../../lib/productCatalog.ts",
     "@/lib/pokemonCatalog": "../../../lib/pokemonCatalog.ts",
+    "@/lib/riftboundCatalog": "../../../lib/riftboundCatalog.ts",
     "@/lib/tcgTrackingCatalog": "../../../lib/tcgTrackingCatalog.ts"
   }
 }

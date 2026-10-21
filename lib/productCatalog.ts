@@ -110,6 +110,29 @@ export function parseBarcodeNestProducts(raw: unknown): CatalogProduct[] {
   }];
 }
 
+/**
+ * Open Library cover for an ISBN-13 barcode (978/979 prefix), or null. With
+ * `default=false` a missing cover is a 404 rather than a blank image.
+ */
+export function openLibraryCoverUrl(code: string): string | null {
+  if (!/^97[89]\d{10}$/.test(code)) return null;
+  return `https://covers.openlibrary.org/b/isbn/${code}-L.jpg?default=false`;
+}
+
+/** A found, named BarcodeNest product with no usable image needs a fallback cover. */
+export function barcodeNestNeedsImage(raw: unknown): boolean {
+  const [product] = (() => { try { return parseBarcodeNestProducts(raw); } catch { return []; } })();
+  return !!product && !product.images?.length;
+}
+
+/** Fills BarcodeNest's `product.image_url` so parsing and the client see the fallback. */
+export function withBarcodeNestImage(raw: unknown, imageUrl: string): unknown {
+  const parsed = barcodeNestResponseSchema.safeParse(raw);
+  if (!parsed.success || !parsed.data.product) return raw;
+  const body = raw as { product: Record<string, unknown> };
+  return { ...body, product: { ...body.product, image_url: imageUrl } };
+}
+
 /** The existing database key is BIGINT; retain leading zeroes in product data. */
 export function normalizeProductCode(value?: string | null): string | null {
   const normalized = value?.replace(/[\s-]/g, "");

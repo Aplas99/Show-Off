@@ -21,6 +21,11 @@ describe("Item Creation Validation", () => {
         expect(validateCreateItem(valid)).toEqual(valid);
     });
 
+    it("accepts a payload without forSale", () => {
+        const valid = { customTitle: "Manual item", condition: "Good" };
+        expect(validateCreateItem(valid)).toEqual(valid);
+    });
+
     it("fails when query is empty", () => {
         const invalid = {
             searchQuery: "   ",
@@ -47,5 +52,25 @@ describe("Item Creation Validation", () => {
             price: -50,
         };
         expect(() => validateCreateItem(invalid)).toThrow("positive number");
+    });
+
+    it("accepts a known item category", () => {
+        const valid = {
+            customTitle: "Dune",
+            category: "books",
+            condition: "Good",
+            forSale: false,
+        };
+        expect(validateCreateItem(valid).category).toBe("books");
+    });
+
+    it("rejects an unknown item category", () => {
+        const invalid = {
+            customTitle: "Dune",
+            category: "Electronics",
+            condition: "Good",
+            forSale: false,
+        };
+        expect(() => validateCreateItem(invalid)).toThrow();
     });
 });

@@ -1,4 +1,5 @@
 import { supabase } from "@/lib/supabase";
+import { getRiftboundSetName } from "@/constants/riftboundSets";
 import { useInfiniteQuery } from "@tanstack/react-query";
 
 export interface FeedItem {
@@ -70,6 +71,9 @@ export const useGetFeed = ({ limit = 20, enabled = true }: { limit?: number; ena
           ),
           magic_cards (
             id, name, set_name, collector_number, rarity, image_small, image_normal
+          ),
+          riftbound_cards (
+            id, name, set_code, set_name, collector_number, rarity, image_url
           )
         `
                 )
@@ -122,6 +126,7 @@ export const useGetFeed = ({ limit = 20, enabled = true }: { limit?: number; ena
             const items = (itemsData || []).map((item: any) => {
                 const pokemonCard = item.pokemon_tcg_cards;
                 const magicCard = item.magic_cards;
+                const riftboundCard = item.riftbound_cards;
                 let products = item.products;
                 if (!products && pokemonCard) {
                     products = {
@@ -157,6 +162,22 @@ export const useGetFeed = ({ limit = 20, enabled = true }: { limit?: number; ena
                                 magicCard.image_normal,
                                 magicCard.image_small,
                             ].filter(Boolean),
+                        },
+                    };
+                } else if (!products && riftboundCard) {
+                    products = {
+                        ean: null,
+                        searchableTitle: riftboundCard.name,
+                        searchableDescription: [
+                            getRiftboundSetName(riftboundCard.set_code, riftboundCard.set_name),
+                            riftboundCard.collector_number != null
+                                ? `#${riftboundCard.collector_number}`
+                                : null,
+                            riftboundCard.rarity,
+                        ].filter(Boolean).join(" • "),
+                        searchableBrand: "Riftbound",
+                        data: {
+                            images: [riftboundCard.image_url].filter(Boolean),
                         },
                     };
                 }

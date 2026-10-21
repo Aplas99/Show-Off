@@ -1,6 +1,7 @@
 import { useProductSearch, type Product } from "@/api/items";
 import { useMembership } from "@/api/memberships";
 import { useRecordSearchAttempt } from "@/api/scanning";
+import { TAB_BAR_HEIGHT } from "@/constants/layoutConfig";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { useThemeStore } from "@/hooks/useThemeStore";
@@ -336,7 +337,12 @@ export default function Create() {
         <View style={styles.flexContent}>
           {inputMode === "tcg" && (
             <ScrollView
-              contentContainerStyle={styles.scrollPadding}
+              // The tab bar floats over the bottom of the screen; pad past it
+              // so the last game card (Riftbound) stays reachable.
+              contentContainerStyle={[
+                styles.scrollPadding,
+                { paddingBottom: TAB_BAR_HEIGHT + insets.bottom + (Platform.OS === "android" ? 8 : 0) + 28 },
+              ]}
               showsVerticalScrollIndicator={false}
             >
               <View style={styles.formSection}>
@@ -376,10 +382,30 @@ export default function Create() {
                   <View style={styles.flexOne}>
                     <Text style={styles.magicEntryTitle}>Magic: The Gathering</Text>
                     <Text style={styles.magicEntryDescription}>
-                      Search the official database by card name.
+                      Scan a card, or search by name.
                     </Text>
                   </View>
                   <Ionicons name="chevron-forward" size={20} color="#FFF" />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.riftboundEntryCard}
+                  activeOpacity={0.85}
+                  onPress={async () => {
+                    await haptics.medium();
+                    router.push("/(tabs)/riftbound-create" as never);
+                  }}
+                >
+                  <View style={styles.riftboundEntryIcon}>
+                    <Ionicons name="diamond" size={22} color={colors.tertiary} />
+                  </View>
+                  <View style={styles.flexOne}>
+                    <Text style={styles.riftboundEntryTitle}>Riftbound</Text>
+                    <Text style={styles.riftboundEntryDescription}>
+                      Scan a card, or search by name or code.
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={colors.onSurfaceVariant} />
                 </TouchableOpacity>
               </View>
             </ScrollView>
@@ -918,7 +944,7 @@ const getStyles = (colors: ThemeColors) =>
       alignItems: "center",
       gap: 14,
       padding: 16,
-      marginBottom: 18,
+      marginBottom: 12,
       borderRadius: 20,
       backgroundColor: colors.secondary,
     },
@@ -937,6 +963,35 @@ const getStyles = (colors: ThemeColors) =>
     },
     magicEntryDescription: {
       color: "rgba(255,255,255,0.82)",
+      fontSize: 12,
+      marginTop: 1,
+    },
+    riftboundEntryCard: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 14,
+      padding: 16,
+      marginBottom: 18,
+      borderRadius: 20,
+      backgroundColor: colors.surfaceContainerHighest,
+      borderWidth: 1.5,
+      borderColor: colors.tertiary,
+    },
+    riftboundEntryIcon: {
+      width: 44,
+      height: 44,
+      borderRadius: 14,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: `${colors.tertiary}22`,
+    },
+    riftboundEntryTitle: {
+      color: colors.text,
+      fontSize: 16,
+      fontWeight: "800",
+    },
+    riftboundEntryDescription: {
+      color: colors.onSurfaceVariant,
       fontSize: 12,
       marginTop: 1,
     },
@@ -1246,7 +1301,7 @@ const getStyles = (colors: ThemeColors) =>
     },
     resultEan: {
       color: colors.onSurfaceVariant,
-      fontSize: 10,
+      fontSize: 11,
     },
     // Loading States
     loadingContainer: {
@@ -1366,15 +1421,9 @@ const getStyles = (colors: ThemeColors) =>
     },
     modalFooterSecondaryText: {
       color: colors.grey,
-      ...(Platform.OS === "android"
-        ? { paddingRight: 8, fontFamily: "sans-serif" }
-        : null),
     },
     modalFooterPrimaryText: {
       color: colors.primary,
       fontWeight: "600",
-      ...(Platform.OS === "android"
-        ? { paddingRight: 8, fontFamily: "sans-serif-medium" }
-        : null),
     },
   });

@@ -450,7 +450,7 @@ const getStyles = (colors: ThemeColors) =>
     },
     popularText: {
       color: "#1A1A1A",
-      fontSize: 8,
+      fontSize: 10,
       fontWeight: "900",
     },
     planName: {

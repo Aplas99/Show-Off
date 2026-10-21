@@ -9,15 +9,19 @@ import {
 } from "@/api/items";
 import { useMembership } from "@/api/memberships";
 import { useBookmarkItem, useIsItemBookmarked, useUnbookmarkItem } from "@/api/social/interactions";
+import { ITEM_CATEGORY_LABELS, type ItemCategory } from "@/constants/itemCategory";
 import { ITEM_CONDITIONS } from "@/constants/itemCondition";
 import { COLORS } from "@/constants/theme";
 import { useAuthStore } from "@/hooks/useAuthStore";
 import { DEFAULT_SHOWCASE_ACCENT } from "@/src/features/showcase/ShowcaseVisuals";
 import { confirmAction, showMessage } from "@/lib/dialogs";
+import { getItemCategory } from "@/lib/itemCategory";
+import ItemCategoryPicker from "@/src/components/items/ItemCategoryPicker";
 import CyclingImage from "@/src/components/media/CyclingImage";
 import { CuratorGateModal } from "@/src/features/membership/CuratorGate";
 import { Ionicons } from "@expo/vector-icons";
-import * as ImagePicker from "expo-image-picker";
+import { pickImages } from "@/lib/imagePicker";
+import { getItemCoverUrl, getItemImageUrls, hasUploadedItemPhoto } from "@/lib/itemImages";
 import { LinearGradient } from "expo-linear-gradient";
 
 import React, { useEffect, useRef, useState } from "react";
@@ -69,36 +73,36 @@ export default function ItemDetailModal({ visible, item, onClose, accentColor = 
     if (!visible) setEditOpen(false);
   }, [visible]);
 
-  const galleryUrls =
-    item?.image_urls && item.image_urls.length > 0
-      ? item.image_urls
-      : item?.image_url
-        ? [item.image_url]
-        : [];
+  const galleryUrls = getItemImageUrls(item);
+  // Collectors get one photo of their own per item; the gallery is Curator.
+  const canAddFreeCover = !isCurator && !hasUploadedItemPhoto(item);
 
   const handleAddPhotos = async () => {
     if (!item) return;
-    if (!isCurator) {
+    if (!isCurator && !canAddFreeCover) {
       setGalleryPaywallVisible(true);
       return;
     }
-    if (Platform.OS !== "web") {
-      const permission = await ImagePicker.requestMediaLibraryPermissionsAsync();
-      if (!permission.granted) return;
-    }
-    const result = await ImagePicker.launchImageLibraryAsync({
-      mediaTypes: ["images"],
-      allowsMultipleSelection: true,
-      selectionLimit: 8,
-      quality: 0.85,
-    });
-    if (result.canceled || result.assets.length === 0) return;
+    const assets = await pickImages(isCurator
+      ? { title: "Add photos", allowsMultipleSelection: true, selectionLimit: 8, quality: 0.85 }
+      : { title: "Add a photo", quality: 0.85 });
+    if (!assets) return;
     try {
-      await addItemImages.mutateAsync({
+      await addItemImages.mutateAsync(isCurator ? {
         itemId: item.id,
         currentImageUrls: item.image_urls ?? [],
-        currentCoverUrl: item.image_url,
-        newImageUris: result.assets.map((asset) => ({
+        // Keep the catalog image as the cover when the user never set one.
+        currentCoverUrl: item.image_url || getItemCoverUrl(item),
+        newImageUris: assets.map((asset) => ({
+          uri: asset.uri,
+          fileSize: asset.fileSize ?? undefined,
+        })),
+      } : {
+        // The user's own photo replaces the catalog image as the only cover.
+        itemId: item.id,
+        currentImageUrls: [],
+        currentCoverUrl: null,
+        newImageUris: assets.slice(0, 1).map((asset) => ({
           uri: asset.uri,
           fileSize: asset.fileSize ?? undefined,
         })),
@@ -229,10 +233,16 @@ export default function ItemDetailModal({ visible, item, onClose, accentColor = 
       : productData.offers?.[0]?.price;
   const currency = displayItem?.currency_code || productData.offers?.[0]?.currency || "USD";
 
-  const category =
+  const categoryLabel = ITEM_CATEGORY_LABELS[displayItem ? getItemCategory(displayItem) : "general"];
+  // Catalog categories are paths ("Media > Books"); only the leaf reads as a type.
+  const itemType =
     displayItem?.custom_category ||
-    productData.category ||
-    "Uncategorized";
+    (typeof productData.category === "string" ? productData.category.split(">").pop()?.trim() : null) ||
+    null;
+  const category =
+    itemType && itemType.toLowerCase() !== categoryLabel.toLowerCase()
+      ? `${categoryLabel} · ${itemType}`
+      : categoryLabel;
 
   const publisher =
     displayItem?.custom_publisher ||
@@ -373,12 +383,12 @@ export default function ItemDetailModal({ visible, item, onClose, accentColor = 
                         disabled={addItemImages.isPending}
                       >
                         <Ionicons
-                          name={addItemImages.isPending ? "hourglass-outline" : "images"}
+                          name={addItemImages.isPending ? "hourglass-outline" : "camera"}
                           size={14}
                           color="#000"
                         />
                         <Text style={styles.addPhotosButtonText}>
-                          {addItemImages.isPending ? "Uploading..." : "Add photos"}
+                          {addItemImages.isPending ? "Uploading..." : canAddFreeCover ? "Add photo" : "Add photos"}
                         </Text>
                       </TouchableOpacity>
                     )}
@@ -409,11 +419,13 @@ export default function ItemDetailModal({ visible, item, onClose, accentColor = 
                     ) : (
                       <Text style={styles.priceTextPlaceholder}>Price N/A</Text>
                     )}
+                    {/* MVP: selling is out of scope.
                     {displayItem?.for_sale && (
                       <View style={styles.saleBadge}>
                         <Text style={styles.saleBadgeText}>FOR SALE</Text>
                       </View>
                     )}
+                    */}
                   </View>
                   {displayItem?.pokemon_tcg_card_id && price != null && (
                     <Text style={styles.priceDisclaimer}>
@@ -560,10 +572,10 @@ function EditItemDetailsModal({ visible, item, saving, onClose, onSave }: {
   const [title, setTitle] = useState("");
   const [brand, setBrand] = useState("");
   const [publisher, setPublisher] = useState("");
-  const [category, setCategory] = useState("");
+  const [type, setType] = useState("");
+  const [category, setCategory] = useState<ItemCategory>("general");
   const [description, setDescription] = useState("");
   const [price, setPrice] = useState("");
-  const [forSale, setForSale] = useState(false);
   const initializedItemId = useRef<number | null>(null);
 
   useEffect(() => {
@@ -577,10 +589,10 @@ function EditItemDetailsModal({ visible, item, saving, onClose, onSave }: {
     setTitle(item.custom_title || product?.searchableTitle || "");
     setBrand(item.custom_brand || product?.searchableBrand || "");
     setPublisher(item.custom_publisher || "");
-    setCategory(item.custom_category || "");
+    setType(item.custom_category || "");
+    setCategory(getItemCategory(item));
     setDescription(item.user_description || "");
     setPrice(item.price == null ? "" : String(item.price));
-    setForSale(item.for_sale);
   }, [visible, item]);
 
   const save = async () => {
@@ -590,17 +602,19 @@ function EditItemDetailsModal({ visible, item, saving, onClose, onSave }: {
       return showMessage("Invalid price", "Enter a positive number or leave the price blank.");
     }
     try {
-      await onSave({ title, brand, publisher, category, description, price: parsedPrice, forSale });
+      await onSave({ title, brand, publisher, type, category, description, price: parsedPrice });
     } catch (error: unknown) {
       showMessage("Could not save item", error instanceof Error ? error.message : "Please try again.");
     }
   };
 
+  const isCard = !!item.pokemon_tcg_card_id || !!item.magic_card_id || !!item.riftbound_card_id;
+
   const fields = [
     { label: "Title", value: title, onChangeText: setTitle, multiline: false },
     { label: "Brand", value: brand, onChangeText: setBrand, multiline: false },
     { label: "Publisher", value: publisher, onChangeText: setPublisher, multiline: false },
-    { label: "Category", value: category, onChangeText: setCategory, multiline: false },
+    { label: "Type", value: type, onChangeText: setType, multiline: false },
     { label: "Extra details", value: description, onChangeText: setDescription, multiline: true },
   ];
 
@@ -609,6 +623,12 @@ function EditItemDetailsModal({ visible, item, saving, onClose, onSave }: {
       <View style={editStyles.card}>
         <Text style={editStyles.heading}>Edit item details</Text>
         <ScrollView keyboardShouldPersistTaps="handled" contentContainerStyle={editStyles.fields}>
+          <View>
+            <Text style={editStyles.label}>Category</Text>
+            {isCard
+              ? <Text style={editStyles.note}>Trading cards always stay in TCG.</Text>
+              : <ItemCategoryPicker value={category} onChange={setCategory} colors={COLORS} />}
+          </View>
           {fields.map((field) => <View key={field.label}>
             <Text style={editStyles.label}>{field.label}</Text>
             <TextInput
@@ -623,10 +643,12 @@ function EditItemDetailsModal({ visible, item, saving, onClose, onSave }: {
           </View>)}
           <Text style={editStyles.label}>Price ({item.currency_code || "USD"})</Text>
           <TextInput accessibilityLabel="Price" style={editStyles.input} value={price} onChangeText={setPrice} keyboardType="decimal-pad" />
+          {/* MVP: selling is out of scope; for_sale stays false.
           <TouchableOpacity onPress={() => setForSale((current) => !current)} accessibilityRole="switch" accessibilityState={{ checked: forSale }} style={editStyles.saleRow}>
             <Text style={editStyles.label}>For sale</Text>
             <Ionicons name={forSale ? "checkbox" : "square-outline"} size={24} color={COLORS.primary} />
           </TouchableOpacity>
+          */}
         </ScrollView>
         <View style={editStyles.actions}>
           <TouchableOpacity onPress={onClose} disabled={saving} style={editStyles.cancelButton} accessibilityRole="button"><Text style={editStyles.cancelText}>Cancel</Text></TouchableOpacity>
@@ -645,6 +667,7 @@ const editStyles = StyleSheet.create({
   label: { color: COLORS.text, fontSize: 13, fontWeight: "700", marginBottom: 6 },
   input: { color: COLORS.text, backgroundColor: COLORS.background, borderColor: COLORS.outlineVariant, borderWidth: 1, borderRadius: 10, paddingHorizontal: 12, paddingVertical: 10, fontSize: 16 },
   multiline: { minHeight: 96, textAlignVertical: "top" },
+  note: { color: COLORS.onSurfaceVariant, fontSize: 14 },
   saleRow: { minHeight: 48, flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   actions: { flexDirection: "row", justifyContent: "flex-end", gap: 12, paddingTop: 12 },
   cancelButton: { minHeight: 44, paddingHorizontal: 14, justifyContent: "center" },
@@ -675,20 +698,17 @@ const BentoItem = ({
     style={[
       bentoStyles.container,
       flex ? { flex } : {},
-      fullWidth ? { flexDirection: "row", alignItems: "center", justifyContent: "space-between" } : {},
+      fullWidth ? bentoStyles.row : {},
     ]}
     onPress={onPress}
     disabled={!onPress}
   >
     {icon && (
-      <Ionicons
-        name={icon}
-        size={20}
-        color={COLORS.onSurfaceVariant}
-        style={{ marginRight: 12 }}
-      />
+      <View style={bentoStyles.iconTile}>
+        <Ionicons name={icon} size={22} color={COLORS.onSurfaceVariant} />
+      </View>
     )}
-    <View style={fullWidth && !icon ? { flex: 1 } : {}}>
+    <View style={fullWidth ? bentoStyles.rowText : {}}>
       <Text style={bentoStyles.label}>{label}</Text>
       <Text style={bentoStyles.value}>{value}</Text>
     </View>
@@ -703,6 +723,17 @@ const bentoStyles = StyleSheet.create({
     padding: 20,
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.03)",
+  },
+  // Full-width rows: [icon] text [trailing], all vertically centered.
+  row: { flexDirection: "row", alignItems: "center", gap: 16 },
+  rowText: { flex: 1, justifyContent: "center" },
+  iconTile: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    backgroundColor: COLORS.background,
+    justifyContent: "center",
+    alignItems: "center",
   },
   label: {
     fontSize: 10,

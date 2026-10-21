@@ -1,22 +1,22 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { create } from "zustand";
-import mobileAds, { AdEventType, AdsConsent, AdsConsentPrivacyOptionsRequirementStatus, MaxAdContentRating, RewardedAd, RewardedAdEventType, TestIds } from "react-native-google-mobile-ads";
 import { useAuthStore } from "@/hooks/useAuthStore";
 import { createAdConsentController } from "@/lib/adEligibility";
 import { ADS_ENABLED, isAdEligible, useAdEligibility } from "./eligibility";
+import { adsSdk, requireAdsSdk } from "./sdk";
 
 export const AD_UNIT_IDS = {
-  banner: process.env.EXPO_PUBLIC_ADMOB_BANNER_UNIT_ID || TestIds.BANNER,
-  rewarded: process.env.EXPO_PUBLIC_ADMOB_REWARDED_UNIT_ID || TestIds.REWARDED,
+  banner: process.env.EXPO_PUBLIC_ADMOB_BANNER_UNIT_ID || adsSdk?.TestIds.BANNER || "",
+  rewarded: process.env.EXPO_PUBLIC_ADMOB_REWARDED_UNIT_ID || adsSdk?.TestIds.REWARDED || "",
 };
 export const AD_REQUEST_OPTIONS = { requestNonPersonalizedAdsOnly: true } as const;
 export const useAdPrivacyRevision = create<{ revision: number; changing: boolean }>(() => ({ revision: 0, changing: false }));
 const consent = createAdConsentController({
   eligible: isAdEligible,
   currentUser: () => useAuthStore.getState().user?.id,
-  gatherConsent: async () => (await AdsConsent.gatherConsent({ tagForUnderAgeOfConsent: false })).canRequestAds,
-  configure: () => mobileAds().setRequestConfiguration({ maxAdContentRating: MaxAdContentRating.PG }),
-  initialize: () => mobileAds().initialize(),
+  gatherConsent: async () => (await requireAdsSdk().AdsConsent.gatherConsent({ tagForUnderAgeOfConsent: false })).canRequestAds,
+  configure: () => requireAdsSdk().default().setRequestConfiguration({ maxAdContentRating: requireAdsSdk().MaxAdContentRating.PG }),
+  initialize: () => requireAdsSdk().default().initialize(),
 });
 useAuthStore.subscribe((state, previous) => {
   if (state.user?.id !== previous.user?.id) consent.reset();
@@ -30,6 +30,7 @@ export async function openAdPrivacyOptions(): Promise<string> {
   consent.reset();
   useAdPrivacyRevision.setState((state) => ({ revision: state.revision + 1, changing: true }));
   try {
+    const { AdsConsent, AdsConsentPrivacyOptionsRequirementStatus } = requireAdsSdk();
     const info = await AdsConsent.requestInfoUpdate({ tagForUnderAgeOfConsent: false });
     if (info.privacyOptionsRequirementStatus === AdsConsentPrivacyOptionsRequirementStatus.REQUIRED) {
       await AdsConsent.showPrivacyOptionsForm();
@@ -77,6 +78,7 @@ export function useRewardedAd() {
         cancel.current = () => finish("failed");
         timer = setTimeout(() => finish("failed"), 120_000);
         try {
+          const { AdEventType, RewardedAd, RewardedAdEventType } = requireAdsSdk();
           const ad = RewardedAd.createForAdRequest(AD_UNIT_IDS.rewarded, AD_REQUEST_OPTIONS);
           subscriptions.push(
             ad.addAdEventListener(RewardedAdEventType.LOADED, () => {
