@@ -295,6 +295,41 @@ describe("authenticated catalog proxy", () => {
     expect(options.headers.Authorization).toBeUndefined();
   });
 
+  it("looks up BarcodeNest codes with a server-only header key and caches matches", async () => {
+    const { handler, dependencies } = setup();
+    dependencies.fetch.mockResolvedValueOnce(new Response(JSON.stringify({
+      barcode: "3017620422003", barcode_type: "EAN-13", canonical_gtin: "03017620422003", valid: true, found: true,
+      product: { name: "Nutella", brand: "Ferrero", quantity: "400 g", image_url: "https://images.example/n.jpg", allergens: [] },
+      source: { name: "Open Food Facts" }, error: null,
+    })));
+    expect((await handler(request({ provider: "barcodenest", code: "3017620422003" }))).status).toBe(200);
+    const [url, options] = dependencies.fetch.mock.calls[0];
+    expect(url.toString()).toBe("https://api.barcodenest.com/v1/products/3017620422003");
+    expect(options.headers["X-API-Key"]).toBe("server-only-key");
+    expect(dependencies.getSecret).toHaveBeenCalledWith("BARCODENEST_KEY");
+    expect(dependencies.consumeRequest).toHaveBeenCalledWith("user-1", "barcode");
+    expect(dependencies.persistProducts).toHaveBeenCalledWith([expect.objectContaining({
+      ean: "3017620422003", data: expect.objectContaining({ title: "Nutella", brand: "Ferrero", images: ["https://images.example/n.jpg"] }),
+    })], expect.any(AbortSignal));
+  });
+
+  it.each([404, 400])("returns a BarcodeNest not-found body for vendor %s without vendor details", async (status) => {
+    const { handler, dependencies } = setup();
+    dependencies.fetch.mockResolvedValueOnce(new Response("secret vendor detail", { status }));
+    const response = await handler(request({ provider: "barcodenest", code: "12345678" }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ barcode: "12345678", found: false, product: null });
+    expect(dependencies.persistProducts).not.toHaveBeenCalled();
+  });
+
+  it("rejects BarcodeNest codes that are not GTIN lengths or contain path characters", async () => {
+    const { handler, dependencies } = setup();
+    for (const code of ["123456789", "12345678/../x", "abcdefgh"]) {
+      expect((await handler(request({ provider: "barcodenest", code }))).status).toBe(400);
+    }
+    expect(dependencies.fetch).not.toHaveBeenCalled();
+  });
+
   it("preserves not-found behavior without exposing upstream error bodies", async () => {
     const { handler, dependencies } = setup();
     dependencies.fetch.mockResolvedValueOnce(new Response("secret vendor URL", { status: 404 }));

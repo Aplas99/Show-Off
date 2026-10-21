@@ -43,8 +43,10 @@ npx jest --watch                                    # watch mode
 
 Stripe server secrets (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_FOUNDING_CURATOR`, `STRIPE_PRICE_ID_CURATOR_MONTHLY`, `STRIPE_PRICE_ID_CURATOR_ANNUAL`) live in Supabase Edge Function secrets, not app env — see `docs/stripe-memberships.md`.
 
-Catalog secrets (`POKEMON_TCG_API_KEY`, `BARCODE_LOOKUP_API_KEY`) also live only
-in Edge Function secrets. Deploy `catalog-proxy` and all catalog migrations
+Catalog secrets (`POKEMON_TCG_API_KEY`, `BARCODE_LOOKUP_API_KEY`, `BARCODENEST_KEY`) also live only
+in Edge Function secrets. Barcode-code lookups (scan/typed code in the barcode
+wizard) go cache-first, then BarcodeNest; text product search still uses
+UPCItemDB + Barcode Lookup. Deploy `catalog-proxy` and all catalog migrations
 before using the client; see `docs/catalog-proxy.md`. Magic and product cache
 writes now use trusted server code, including UPCItemDB's shared trial budget.
 Pokemon card/roster and manual-card writes still need migration.

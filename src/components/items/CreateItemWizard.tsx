@@ -27,6 +27,7 @@ import Animated, {
 } from "react-native-reanimated";
 
 import {
+    useBarcodeProductLookup,
     useCreateItemWithProductLookup,
     type Product
 } from "@/api/items";
@@ -114,6 +115,20 @@ export default function CreateItemWizard({
         contentOpacity.value = 1;
     }, [currentStep, slideAnim, contentOpacity]);
 
+    // BarcodeNest lookup runs once the user leaves the scan step, so typing
+    // a code doesn't spend lookup credits on every keystroke.
+    const barcodeLookup = useBarcodeProductLookup(
+        itemData.barcode,
+        visible && currentStep >= 2 && !itemData.productData,
+    );
+
+    useEffect(() => {
+        if (barcodeLookup.data && !itemData.productData) {
+            setItemData((prev) => ({ ...prev, productData: barcodeLookup.data }));
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [barcodeLookup.data]);
+
     const createItemWithProduct = useCreateItemWithProductLookup();
     const linkToShowcases = useLinkItemToShowcases();
     const { data: showcases, isLoading: loadingShowcases } = useGetVisibleShowcases();
@@ -166,7 +181,7 @@ export default function CreateItemWizard({
     const handleBarcodeScanned = async (barcode: string) => {
         await haptics.success();
         const sanitizedBarcode = barcode.replace(/[\s-]/g, "").trim();
-        setItemData((prev) => ({ ...prev, barcode: sanitizedBarcode }));
+        setItemData((prev) => ({ ...prev, barcode: sanitizedBarcode, productData: null }));
     };
 
     const handleCreateItem = async () => {
@@ -319,7 +334,7 @@ export default function CreateItemWizard({
                                     barcode={itemData.barcode}
                                     onBarcodeChange={(barcode) => {
                                         const sanitized = barcode.replace(/[\s-]/g, "").trim();
-                                        setItemData((prev) => ({ ...prev, barcode: sanitized }));
+                                        setItemData((prev) => ({ ...prev, barcode: sanitized, productData: null }));
                                     }}
                                     onBarcodeScanned={handleBarcodeScanned}
                                     isValidBarcode={isValidBarcode}
@@ -331,6 +346,8 @@ export default function CreateItemWizard({
                             {currentStep === 2 && (
                                 <Step2Details
                                     productData={itemData.productData}
+                                    isLookingUp={barcodeLookup.isFetching}
+                                    lookupFailed={barcodeLookup.isError || barcodeLookup.data === null}
                                     barcode={itemData.barcode}
                                     condition={itemData.condition}
                                     description={itemData.description}
@@ -555,9 +572,9 @@ function Step1ScanCode({
 
 // Step 2: Details
 function Step2Details({
-    productData, barcode, condition, description, onConditionChange, onDescriptionChange, haptics, imageUri, onImageChange, colors,
+    productData, isLookingUp, lookupFailed, barcode, condition, description, onConditionChange, onDescriptionChange, haptics, imageUri, onImageChange, colors,
 }: {
-    productData?: Product | null; barcode: string; condition: ItemCondition | ""; description: string;
+    productData?: Product | null; isLookingUp: boolean; lookupFailed: boolean; barcode: string; condition: ItemCondition | ""; description: string;
     onConditionChange: (val: ItemCondition | "") => void; onDescriptionChange: (val: string) => void;
     haptics: ReturnType<typeof useHaptics>; imageUri: string | null; onImageChange: (uri: string | null) => void;
     colors: ThemeColors;
@@ -586,12 +603,20 @@ function Step2Details({
         <View style={styles.stepContent}>
             <Text style={styles.stepTitle}>Item Details</Text>
 
-            {productData && (
+            {productData ? (
                 <View style={styles.productSummary}>
                     <Text style={styles.productTitle}>{productData.title}</Text>
                     <Text style={styles.productBrand}>{productData.brand}</Text>
                 </View>
-            )}
+            ) : isLookingUp ? (
+                <View style={styles.productSummary}>
+                    <Text style={styles.productBrand}>Looking up barcode…</Text>
+                </View>
+            ) : lookupFailed ? (
+                <View style={styles.productSummary}>
+                    <Text style={styles.productBrand}>No product found for {barcode}. You can still add it.</Text>
+                </View>
+            ) : null}
 
             <View style={styles.imageSection}>
                 <TouchableOpacity style={styles.imagePreview} onPress={handlePickImage} activeOpacity={0.8}>

@@ -38,6 +38,16 @@ const upcProductSchema = z.object({
   lowest_recorded_price: z.union([z.string(), z.number()]).nullish(),
 });
 
+const barcodeNestResponseSchema = z.object({
+  barcode: z.string().regex(/^\d{8,14}$/),
+  found: z.boolean(),
+  product: z.object({
+    name: z.string().nullish(),
+    brand: z.string().nullish(),
+    image_url: z.string().nullish(),
+  }).nullish(),
+});
+
 function price(value: string | number | null | undefined) {
   if (value == null || String(value).trim() === "") return undefined;
   const parsed = Number(value);
@@ -72,6 +82,32 @@ export function parseUpcProducts(raw: unknown): CatalogProduct[] {
       price: price(item.lowest_recorded_price),
     }];
   });
+}
+
+function httpsImage(value: string | null | undefined) {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password ? [url.toString()] : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** BarcodeNest returns one product per code; not-found and nameless records yield none. */
+export function parseBarcodeNestProducts(raw: unknown): CatalogProduct[] {
+  const parsed = barcodeNestResponseSchema.safeParse(raw);
+  if (!parsed.success) {
+    if (z.object({ found: z.literal(false) }).safeParse(raw).success) return [];
+    throw parsed.error;
+  }
+  const { barcode, found, product } = parsed.data;
+  const title = product?.name?.trim();
+  if (!found || !title) return [];
+  return [{
+    title, ean: barcode, upc: barcode.length === 12 ? barcode : undefined,
+    brand: product?.brand?.trim() || undefined, images: httpsImage(product?.image_url),
+  }];
 }
 
 /** The existing database key is BIGINT; retain leading zeroes in product data. */

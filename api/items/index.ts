@@ -1,4 +1,4 @@
-import { fetchExternalProducts, fetchFromBarcodeLookup, resolveProductForItem } from "@/api/products";
+import { fetchExternalProducts, fetchFromBarcodeLookup, lookupProductByBarcode, resolveProductForItem } from "@/api/products";
 import type { CatalogProduct } from "@/lib/productCatalog";
 import { uploadImageToSupabase } from "@/api/storage";
 import {
@@ -281,6 +281,26 @@ export function useProductSearch(params: SearchParams) {
       return lastPage.hasMore ? allPages.length + 1 : undefined;
     },
     enabled: !!params.query,
+  });
+}
+
+const barcodeDebug = createActionLogger("Barcode");
+
+/** BarcodeNest-backed product lookup for a scanned or typed barcode. */
+export function useBarcodeProductLookup(barcode: string, enabled = true) {
+  const code = barcode.replace(/[\s-]/g, "").trim();
+  return useQuery({
+    queryKey: ["barcode-product", code],
+    queryFn: async (): Promise<Product | null> => {
+      barcodeDebug.log("lookup.started", { code });
+      const product = await lookupProductByBarcode(code);
+      barcodeDebug.log("lookup.completed", { code, found: !!product });
+      return product ?? null;
+    },
+    enabled: enabled && /^\d{8,14}$/.test(code),
+    // Matches are persisted server-side; misses shouldn't re-spend credits.
+    staleTime: Infinity,
+    retry: false,
   });
 }
 

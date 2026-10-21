@@ -50,6 +50,19 @@ records and may fail to save newly discovered results after permissions are revo
 upgrade path before production rollout. Do not restore public cache writes as a
 rollback strategy.
 
+## BarcodeNest (barcode-code lookups)
+
+Provider `barcodenest` takes `{ code }` (8, 12, 13, or 14 digits) and calls
+`GET https://api.barcodenest.com/v1/products/{code}` with the `X-API-Key`
+header from the `BARCODENEST_KEY` Edge Function secret. It is the only
+provider used to resolve a scanned or typed barcode; UPCItemDB and Barcode
+Lookup remain for free-text product search only. Vendor 404
+(`product_not_found`) and 400 (`invalid_barcode`) return
+`{ found: false }` so item creation continues without a product. Matches are
+persisted to `products`, and the client reads that cache first, so a repeat
+scan does not spend BarcodeNest credits. Requests count against the per-user
+`barcode` limiter bucket (no migration needed).
+
 ## Request and response controls
 
 - Only POST (plus OPTIONS) is accepted; identity comes from a verified bearer

@@ -9,6 +9,11 @@ export const catalogRequestSchema = z.discriminatedUnion("provider", [
     query: z.string().trim().min(1).max(200),
   }).strict(),
   z.object({
+    provider: z.literal("barcodenest"),
+    // BarcodeNest accepts EAN-8, UPC-A, EAN-13, and GTIN-14 digit strings.
+    code: z.string().trim().regex(/^(\d{8}|\d{12,14})$/),
+  }).strict(),
+  z.object({
     provider: z.literal("pokemon"),
     path: z.string().min(1).max(2000),
   }).strict(),
@@ -39,7 +44,7 @@ const pokemonParameters = z.object({
 /** Canonicalize a limited set of read operations; never accept a vendor URL. */
 export function validateCatalogRequest(input: unknown) {
   const request = catalogRequestSchema.parse(input);
-  if (request.provider === "barcode" || request.provider === "upc") return request;
+  if (request.provider === "barcode" || request.provider === "upc" || request.provider === "barcodenest") return request;
 
   if (request.provider === "tcgtracking") {
     if (/^\/3\/sets\/[1-9][0-9]{0,9}\/cards$/.test(request.path)) return request;
