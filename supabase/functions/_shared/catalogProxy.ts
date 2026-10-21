@@ -2,7 +2,7 @@ import { validateCatalogRequest } from "@/lib/catalogValidation";
 import { magicCardSchema, magicCardToCacheRow, scryfallSearchResponseSchema } from "@/lib/magicCatalog";
 import { parseBarcodeProducts, parseUpcProducts, productsToCacheRows, upcRetryDelay } from "@/lib/productCatalog";
 
-import { pokemonCardResponseSchema, pokemonSearchResponseSchema, pokemonCardToCacheRow, type PokemonTcgCard } from "@/lib/pokemonCatalog";
+import { parsePokemonSetList, pokemonCardResponseSchema, pokemonSearchResponseSchema, pokemonCardToCacheRow, pokemonSetToCacheRow, type PokemonTcgCard } from "@/lib/pokemonCatalog";
 import { parseTrackingCards, setSearchSchema } from "@/lib/tcgTrackingCatalog";
 
 const REQUEST_LIMIT_BYTES = 8 * 1024;
@@ -23,6 +23,7 @@ export interface CatalogProxyDependencies {
   persistMagicCards: (rows: ReturnType<typeof magicCardToCacheRow>[]) => Promise<void>;
   persistPokemonCards: (rows: ReturnType<typeof pokemonCardToCacheRow>[], signal: AbortSignal) => Promise<void>;
   persistPokemonRoster: (row: Record<string, unknown>, signal: AbortSignal) => Promise<void>;
+  persistPokemonSets: (rows: ReturnType<typeof pokemonSetToCacheRow>[], signal: AbortSignal) => Promise<void>;
   persistProducts: (rows: ReturnType<typeof productsToCacheRows>, signal: AbortSignal) => Promise<void>;
   reserveUpcRequest: (isSearch: boolean) => Promise<boolean>;
   deferUpcRequests: (seconds: number) => Promise<void>;
@@ -121,6 +122,7 @@ export function createCatalogProxyHandler(dependencies: CatalogProxyDependencies
     let body: string | undefined;
     const headers: Record<string, string> = { Accept: "application/json" };
     const rosterId = request.provider === "pokemon" ? request.path.match(/^\/sets\/([a-zA-Z0-9_-]+)\/cards$/)?.[1] : undefined;
+    const isSetList = request.provider === "pokemon" && request.path === "/sets";
     if (request.provider === "tcgtracking") {
       url = new URL(`https://openapi.tcgtracking.com/v1${request.path}`);
     } else if (request.provider === "pokemon") {
@@ -128,6 +130,10 @@ export function createCatalogProxyHandler(dependencies: CatalogProxyDependencies
       if (rosterId) {
         url = new URL("https://api.pokemontcg.io/v2/cards");
         url.search = new URLSearchParams({ q: `set.id:"${rosterId}"`, page: "1", pageSize: "250", orderBy: "number" }).toString();
+      }
+      if (isSetList) {
+        url = new URL("https://api.pokemontcg.io/v2/sets");
+        url.search = new URLSearchParams({ page: "1", pageSize: "250", orderBy: "-releaseDate" }).toString();
       }
       headers["X-Api-Key"] = key!;
     } else if (request.provider === "magic") {
@@ -175,6 +181,17 @@ export function createCatalogProxyHandler(dependencies: CatalogProxyDependencies
         return json({ error: "The catalog provider is temporarily unavailable. Please try again." }, 502);
       }
       let data = await readBoundedJson(response.body, RESPONSE_LIMIT_BYTES);
+      if (isSetList) {
+        const sets = parsePokemonSetList(data);
+        if (sets.length === 0) throw new Error("Empty set list");
+        try {
+          await dependencies.persistPokemonSets(sets.map(pokemonSetToCacheRow), controller.signal);
+        } catch {
+          return json({ error: "Could not save catalog results. Please try again." }, 503);
+        }
+        // Clients re-read the table; never echo vendor payloads they don't need.
+        return json({ count: sets.length });
+      }
       if (request.provider === "pokemon" || request.provider === "tcgtracking") {
         let cards: PokemonTcgCard[];
         if (request.provider === "tcgtracking") {

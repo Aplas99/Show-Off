@@ -38,6 +38,10 @@ Deno.serve(createCatalogProxyHandler({
     const { error } = await admin.from("pokemon_tcg_set_rosters").upsert(row, { onConflict: "set_id" }).abortSignal(signal);
     if (error) throw error;
   },
+  persistPokemonSets: async (rows, signal) => {
+    const { error } = await admin.from("pokemon_tcg_sets").upsert(rows, { onConflict: "id" }).abortSignal(signal);
+    if (error) throw error;
+  },
   persistProducts: async (rows, signal) => {
     const { error } = await admin.from("products").upsert(rows, { onConflict: "ean" }).abortSignal(signal);
     if (!error) return;

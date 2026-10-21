@@ -317,6 +317,21 @@ describe("Pokémon card image recognition", () => {
       );
     });
 
+    it("ignores codes for sets missing from the bundled snapshot", () => {
+      const identifiers = parsePokemonCardText({ text: "Okidogi\nH FUTEN 012/120 k" });
+
+      expect(identifiers.setCode).toBeNull();
+      expect(identifiers.collectionCandidates).not.toContain("Future Set");
+    });
+
+    it("trusts codes and totals from a server-provided set catalog", () => {
+      const sets = [{ id: "me5", name: "Future Set", code: "FUT", printedTotal: 120 }];
+      const identifiers = parsePokemonCardText({ text: "Okidogi\nH FUTEN 012/120 k" }, sets);
+
+      expect(identifiers.setCode).toBe("FUT");
+      expect(identifiers.collectionCandidates).toEqual(["Future Set"]);
+    });
+
     it("repairs a common VMAX foil OCR error", () => {
       const identifiers = parsePokemonCardText({
         text: "VMAX\nGyarados Vny\n029/203",

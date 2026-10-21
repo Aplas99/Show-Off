@@ -21,6 +21,14 @@ describe("catalog request boundary", () => {
     expect(request).toEqual(input);
   });
 
+  it("accepts only the bare set-list path", () => {
+    expect(validateCatalogRequest({ provider: "pokemon", path: "/sets" }))
+      .toEqual({ provider: "pokemon", path: "/sets" });
+    for (const path of ["/sets?pageSize=1000", "/sets?q=name:x", "/sets/", "/setsx"]) {
+      expect(() => validateCatalogRequest({ provider: "pokemon", path })).toThrow();
+    }
+  });
+
   it("accepts a single card lookup", () => {
     expect(validateCatalogRequest({ provider: "pokemon", path: "/cards/base1-4" }))
       .toEqual({ provider: "pokemon", path: "/cards/base1-4" });

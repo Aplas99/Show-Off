@@ -9,6 +9,7 @@ import {
   type RecognizedPokemonCard,
 } from "@/api/pokemon/recognition";
 import { recognizeTextWithEnhancedService } from "@/api/pokemon/ocrFallback";
+import { usePokemonTcgSets } from "@/api/pokemon/sets";
 import { getInstaScanFailureMessage } from "@/api/tcg/enhancedOcr";
 import { TcgScannerTools } from "./TcgScannerTools";
 import {
@@ -39,6 +40,7 @@ import {
 } from "@/api/showcase";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { useHaptics } from "@/hooks/useHaptics";
+import { useScannerPrefsStore } from "@/hooks/useScannerPrefsStore";
 import { useQueryClient } from "@tanstack/react-query";
 import { Ionicons } from "@expo/vector-icons";
 import { CameraView, useCameraPermissions } from "expo-camera";
@@ -519,7 +521,11 @@ function ScannerStep({
   const [fromFailedScan, setFromFailedScan] = useState(false);
   const [scanAttempt, setScanAttempt] = useState(1);
   const [borderState, setBorderState] = useState<"idle" | "error" | "success">("idle");
-  const [torchOn, setTorchOn] = useState(false);
+  const torchOn = useScannerPrefsStore((state) => state.torch);
+  const foilHint = useScannerPrefsStore((state) => state.foil);
+  const promoHint = useScannerPrefsStore((state) => state.promo);
+  const toggleScannerPref = useScannerPrefsStore((state) => state.toggle);
+  const { data: setCatalog } = usePokemonTcgSets();
   const [lastIdentifiers, setLastIdentifiers] = useState<PokemonCardIdentifiers | null>(null);
   const [capturedUri, setCapturedUri] = useState<string | null>(null);
   const [frozenFrame, setFrozenFrame] = useState<FrozenFrameGeometry | null>(null);
@@ -634,14 +640,17 @@ function ScannerStep({
         true,
       );
       setScanStatus(mode === "enhanced" ? "Reading with enhanced OCR..." : "Reading card text...");
+      const scanHints = { foil: foilHint, promo: promoHint };
+      cardScanDebug("camera.scan-hints", { attempt, mode, ...scanHints });
       return identifyPokemonCardImage(
         picture.uri,
         mode === "enhanced"
           ? {
               recognizeText: recognizeTextWithEnhancedService,
               fallbackRecognizeText: undefined,
+              setCatalog,
             }
-          : { fallbackRecognizeText: undefined },
+          : { fallbackRecognizeText: undefined, setCatalog },
         (identifiers) => {
           setLastIdentifiers(identifiers);
           setScanStatus("Searching card database...");
@@ -653,6 +662,7 @@ function ScannerStep({
             setCode: identifiers.setCode,
           });
         },
+        scanHints,
       );
     };
 
@@ -823,10 +833,11 @@ function ScannerStep({
         <TcgScannerTools
           colors={colors}
           torchOn={torchOn}
-          onToggleTorch={() => setTorchOn((current) => !current)}
+          onToggleTorch={() => toggleScannerPref("torch")}
           isCurator={isCurator}
           isBusy={!isReady || isIdentifying}
           onInstaScan={() => capture("enhanced")}
+          scanHints={{ foil: foilHint, promo: promoHint, onToggle: toggleScannerPref }}
         />
         {borderState === "error" && error && (
           <Animated.View entering={FadeIn} style={styles.scanMessageError}>

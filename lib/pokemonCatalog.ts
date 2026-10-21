@@ -73,6 +73,101 @@ export const pokemonCardResponseSchema = z.object({
 
 export type PokemonTcgCard = z.infer<typeof pokemonTcgCardSchema>;
 
+/** One entry of GET /v2/sets. Promo codes are hyphenated (e.g. "PR-SW"). */
+export const pokemonTcgSetSchema = z
+  .object({
+    id: z.string().regex(/^[a-zA-Z0-9_-]{1,100}$/),
+    name: z.string().trim().min(1).max(200),
+    series: z.string().max(200).optional(),
+    printedTotal: z.number().int().min(0).max(2000).optional(),
+    total: z.number().int().min(0).max(2000).optional(),
+    ptcgoCode: z.string().regex(/^[A-Za-z0-9-]{1,12}$/).optional(),
+    releaseDate: z.string().optional(),
+  })
+  .passthrough();
+
+export const pokemonSetListResponseSchema = z.object({
+  data: z.array(z.unknown()).max(250),
+  page: z.number(),
+  pageSize: z.number(),
+  count: z.number(),
+  totalCount: z.number(),
+});
+
+export type PokemonTcgSetRecord = z.infer<typeof pokemonTcgSetSchema>;
+
+/**
+ * Validate each set on its own: one odd vendor entry (e.g. a code with an
+ * unexpected character) is dropped instead of blocking the whole refresh.
+ */
+export function parsePokemonSetList(data: unknown): PokemonTcgSetRecord[] {
+  const response = pokemonSetListResponseSchema.parse(data);
+  // A single page must hold every set; anything larger means the request
+  // shape changed and a partial list would silently hide sets.
+  if (response.page !== 1 || response.totalCount > response.data.length) {
+    throw new Error("Incomplete Pokemon set list");
+  }
+  return response.data.flatMap((entry) => {
+    const parsed = pokemonTcgSetSchema.safeParse(entry);
+    return parsed.success ? [parsed.data] : [];
+  });
+}
+
+export function pokemonSetToCacheRow(set: PokemonTcgSetRecord) {
+  const releaseDate = set.releaseDate && /^\d{4}\/\d{2}\/\d{2}$/.test(set.releaseDate)
+    ? set.releaseDate.replaceAll("/", "-")
+    : null;
+  return {
+    id: set.id,
+    name: set.name,
+    series: set.series ?? null,
+    ptcgo_code: set.ptcgoCode ?? null,
+    printed_total: set.printedTotal ?? null,
+    total: set.total ?? null,
+    release_date: releaseDate,
+    refreshed_at: new Date().toISOString(),
+  };
+}
+
+/** Fields the scanner uses to trust OCR'd set codes, totals and names. */
+export interface PokemonTcgSetSummary {
+  id: string;
+  name: string;
+  code: string | null;
+  printedTotal: number | null;
+}
+
+export interface PokemonTcgSetRow {
+  id: string;
+  name: string;
+  ptcgo_code: string | null;
+  printed_total: number | null;
+}
+
+/**
+ * Server sets win on conflicts (they carry corrections) and come first;
+ * bundled sets missing from the server list are kept so a partial or empty
+ * table never removes a set the app already knew about.
+ */
+export function mergePokemonTcgSets(
+  serverRows: readonly PokemonTcgSetRow[],
+  bundled: readonly PokemonTcgSetSummary[],
+): PokemonTcgSetSummary[] {
+  const merged = new Map<string, PokemonTcgSetSummary>();
+  for (const row of serverRows) {
+    merged.set(row.id, {
+      id: row.id,
+      name: row.name,
+      code: row.ptcgo_code,
+      printedTotal: row.printed_total,
+    });
+  }
+  for (const set of bundled) {
+    if (!merged.has(set.id)) merged.set(set.id, set);
+  }
+  return [...merged.values()];
+}
+
 export function pokemonCardToCacheRow(card: PokemonTcgCard) {
   return {
     id: card.id,

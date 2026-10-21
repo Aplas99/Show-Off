@@ -9,6 +9,7 @@ function setup() {
     persistMagicCards: jest.fn().mockResolvedValue(undefined),
     persistPokemonCards: jest.fn().mockResolvedValue(undefined),
     persistPokemonRoster: jest.fn().mockResolvedValue(undefined),
+    persistPokemonSets: jest.fn().mockResolvedValue(undefined),
     persistProducts: jest.fn().mockResolvedValue(undefined),
     reserveUpcRequest: jest.fn().mockResolvedValue(true),
     deferUpcRequests: jest.fn().mockResolvedValue(undefined),
@@ -65,6 +66,34 @@ describe("authenticated catalog proxy", () => {
     expect((await handler(request({ provider: "pokemon", path: "/sets/base1/cards" }))).status).toBe(502);
     expect(dependencies.persistPokemonRoster).not.toHaveBeenCalled();
     expect(dependencies.persistPokemonCards).not.toHaveBeenCalled();
+  });
+  it("refreshes the shared set list with server-chosen parameters", async () => {
+    const { handler, dependencies } = setup();
+    const sets = [
+      { id: "me5", name: "Future Set", series: "Mega", printedTotal: 120, total: 140, ptcgoCode: "FUT", releaseDate: "2026/11/07" },
+      { id: "swshp", name: "SWSH Black Star Promos", ptcgoCode: "PR-SW" },
+      { id: "bad id!", name: "Forged" },
+    ];
+    dependencies.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: sets, page: 1, pageSize: 250, count: 3, totalCount: 3 })));
+    const response = await handler(request({ provider: "pokemon", path: "/sets" }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual({ count: 2 });
+    expect(dependencies.fetch.mock.calls[0][0].toString())
+      .toBe("https://api.pokemontcg.io/v2/sets?page=1&pageSize=250&orderBy=-releaseDate");
+    expect(dependencies.persistPokemonSets).toHaveBeenCalledWith([
+      expect.objectContaining({ id: "me5", ptcgo_code: "FUT", printed_total: 120, release_date: "2026-11-07" }),
+      expect.objectContaining({ id: "swshp", ptcgo_code: "PR-SW", release_date: null }),
+    ], expect.any(AbortSignal));
+    expect(dependencies.persistPokemonCards).not.toHaveBeenCalled();
+  });
+  it("rejects a partial set list and does not report unsaved sets", async () => {
+    const { handler, dependencies } = setup();
+    dependencies.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ id: "me5", name: "Future Set" }], page: 1, pageSize: 250, count: 1, totalCount: 300 })));
+    expect((await handler(request({ provider: "pokemon", path: "/sets" }))).status).toBe(502);
+    expect(dependencies.persistPokemonSets).not.toHaveBeenCalled();
+    dependencies.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ data: [{ id: "me5", name: "Future Set" }], page: 1, pageSize: 250, count: 1, totalCount: 1 })));
+    dependencies.persistPokemonSets.mockRejectedValueOnce(new Error("db down"));
+    expect((await handler(request({ provider: "pokemon", path: "/sets" }))).status).toBe(503);
   });
   it("caches barcode provider records before returning them", async () => {
     const { handler, dependencies } = setup();
