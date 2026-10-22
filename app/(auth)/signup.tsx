@@ -259,7 +259,7 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   title: {
-    color: "#9333EA",
+    color: "#B57BFF",
     fontSize: 30,
     fontWeight: "600",
     marginBottom: 4,
@@ -350,7 +350,7 @@ const styles = StyleSheet.create({
     fontSize: 18,
   },
   signinLink: {
-    color: "#9333EA",
+    color: "#B57BFF",
     fontSize: 18,
   },
 });

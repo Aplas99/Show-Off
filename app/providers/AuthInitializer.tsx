@@ -1,12 +1,15 @@
 import { useAuthStore } from "@/hooks/useAuthStore";
-import { membershipQueryOptions } from "@/api/memberships";
+import { membershipKeys, membershipQueryOptions } from "@/api/memberships";
 import { needsUsernameOnboarding, resolveAuthRedirect } from "@/lib/onboarding";
 import { supabase } from "@/lib/supabase";
 import { hasAcceptedCurrentPolicy } from "@/lib/policies";
 import { useQueryClient } from "@tanstack/react-query";
+import { Image } from "expo-image";
 import { useRootNavigationState, useRouter, useSegments } from "expo-router";
 import { useEffect, useState } from "react";
-import { ActivityIndicator, Text, TouchableOpacity, View } from "react-native";
+import { ActivityIndicator, AppState, Text, TouchableOpacity, View } from "react-native";
+
+const MEMBERSHIP_FOREGROUND_REFRESH_MS = 5 * 60 * 1000;
 
 export default function AuthInitializer({ children }: { children: React.ReactNode }) {
   const { session, setSession, loading, needsUsername, setNeedsUsername, needsSafety, setNeedsSafety } =
@@ -26,7 +29,11 @@ export default function AuthInitializer({ children }: { children: React.ReactNod
 
     // 2. Listen for auth changes (login, logout, token refresh)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
-      if (useAuthStore.getState().session?.user.id !== session?.user.id) queryClient.clear();
+      if (useAuthStore.getState().session?.user.id !== session?.user.id) {
+        queryClient.clear();
+        // Protected media is memory-cached per viewer; drop it with the account.
+        void Promise.resolve().then(() => Image.clearMemoryCache()).catch(() => undefined);
+      }
       setSession(session);
     });
 
@@ -39,6 +46,16 @@ export default function AuthInitializer({ children }: { children: React.ReactNod
     // One shared membership load when a session is established or restored.
     // Screens consume the cached result without polling on navigation.
     void queryClient.ensureQueryData(membershipQueryOptions(userId)).catch(() => undefined);
+
+    // Expiry, refunds and renewals happen outside the app, so re-check when
+    // it returns to the foreground (throttled; navigation still never polls).
+    let lastCheck = Date.now();
+    const sub = AppState.addEventListener("change", (state) => {
+      if (state !== "active" || Date.now() - lastCheck < MEMBERSHIP_FOREGROUND_REFRESH_MS) return;
+      lastCheck = Date.now();
+      void queryClient.invalidateQueries({ queryKey: membershipKeys.current() });
+    });
+    return () => sub.remove();
   }, [session?.user?.id, queryClient]);
 
   // 3. After any signup/signin method establishes a session, check whether

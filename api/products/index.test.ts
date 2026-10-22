@@ -1,6 +1,6 @@
 import { fetchCatalog } from "@/api/catalog";
 import { supabase } from "@/lib/supabase";
-import { fetchExternalProducts, resolveProductForItem } from "./index";
+import { fetchExternalProducts, lookupProductByBarcode, resolveProductForItem } from "./index";
 
 jest.mock("@/api/catalog", () => ({ fetchCatalog: jest.fn() }));
 jest.mock("@/lib/supabase", () => ({ supabase: { from: jest.fn() } }));
@@ -28,21 +28,35 @@ describe("read-only product linking", () => {
     expect(fetchCatalog).not.toHaveBeenCalled();
   });
 
-  it("falls back on a free-tier failure and links the server-persisted result", async () => {
+  it("looks up uncached barcodes with BarcodeNest and links the server-persisted result", async () => {
     maybeSingle.mockResolvedValueOnce({ data: null, error: null })
-      .mockResolvedValueOnce({ data: { ean: 12345678 }, error: null });
-    jest.mocked(fetchCatalog).mockRejectedValueOnce(new Error("trial cap"))
-      .mockResolvedValueOnce({ products: [{ title: "Found", barcode_number: "12345678" }] });
-    const result = await resolveProductForItem(undefined, "12345678");
-    expect(result).toMatchObject({ productEan: "12345678", product: { title: "Found" } });
-    expect(fetchCatalog).toHaveBeenNthCalledWith(1, { provider: "upc", query: "12345678" });
-    expect(fetchCatalog).toHaveBeenNthCalledWith(2, expect.objectContaining({ provider: "barcode", query: "12345678" }));
+      .mockResolvedValueOnce({ data: null, error: null })
+      .mockResolvedValueOnce({ data: { ean: 3017620422003 }, error: null });
+    jest.mocked(fetchCatalog).mockResolvedValueOnce({
+      barcode: "3017620422003", found: true, product: { name: "Nutella", brand: "Ferrero", image_url: null },
+    });
+    const result = await resolveProductForItem(undefined, "3017620422003");
+    expect(result).toMatchObject({ productEan: "3017620422003", product: { title: "Nutella", brand: "Ferrero" } });
+    expect(fetchCatalog).toHaveBeenCalledTimes(1);
+    expect(fetchCatalog).toHaveBeenCalledWith({ provider: "barcodenest", code: "3017620422003" });
   });
 
-  it("does not link an unrelated result from a numeric search", async () => {
-    jest.mocked(fetchCatalog).mockResolvedValueOnce({ code: "OK", items: [{ title: "Wrong", ean: "99999999" }] })
-      .mockResolvedValueOnce({ products: [] });
+  it("reads cached product data before spending a BarcodeNest lookup", async () => {
+    maybeSingle.mockResolvedValueOnce({ data: { data: { title: "Cached", ean: "12345678" } }, error: null });
+    expect(await lookupProductByBarcode("1234-5678")).toEqual({ title: "Cached", ean: "12345678" });
+    expect(fetchCatalog).not.toHaveBeenCalled();
+  });
+
+  it("does not link an unrelated or missing BarcodeNest result", async () => {
+    jest.mocked(fetchCatalog).mockResolvedValueOnce({ barcode: "99999999", found: true, product: { name: "Wrong" } });
     expect(await resolveProductForItem(undefined, "12345678")).toEqual({ product: undefined, productEan: null });
+    jest.mocked(fetchCatalog).mockResolvedValueOnce({ barcode: "12345678", found: false, product: null });
+    expect(await lookupProductByBarcode("12345678")).toBeUndefined();
+  });
+
+  it("skips BarcodeNest for code lengths it cannot accept", async () => {
+    expect(await lookupProductByBarcode("123456789")).toBeUndefined();
+    expect(fetchCatalog).not.toHaveBeenCalled();
   });
 
   it("uses Barcode Lookup after an empty external search and surfaces its errors", async () => {

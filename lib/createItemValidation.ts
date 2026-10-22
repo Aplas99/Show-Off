@@ -1,3 +1,4 @@
+import { ITEM_CATEGORIES } from "@/constants/itemCategory";
 import { ITEM_CONDITIONS } from "@/constants/itemCondition";
 import { z } from "zod";
 
@@ -31,11 +32,14 @@ export const createItemSchema = z
         customBrand: z.string().trim().optional(),
         customPublisher: z.string().trim().optional(),
         customCategory: z.string().trim().optional(),
+        /** Omit to infer from the barcode and type text. */
+        category: z.enum(ITEM_CATEGORIES).optional(),
         condition: z.enum([...ITEM_CONDITIONS] as [string, ...string[]], {
             message: "Invalid item: Condition is required.",
         }),
         userDescription: z.string().nullable().optional(),
-        forSale: z.boolean(),
+        /** Optional while selling is outside MVP scope; the DB defaults to false. */
+        forSale: z.boolean().optional(),
         price: z
             .number()
             .nonnegative("Invalid item: Price must be a positive number.")

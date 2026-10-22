@@ -38,6 +38,16 @@ const upcProductSchema = z.object({
   lowest_recorded_price: z.union([z.string(), z.number()]).nullish(),
 });
 
+const barcodeNestResponseSchema = z.object({
+  barcode: z.string().regex(/^\d{8,14}$/),
+  found: z.boolean(),
+  product: z.object({
+    name: z.string().nullish(),
+    brand: z.string().nullish(),
+    image_url: z.string().nullish(),
+  }).nullish(),
+});
+
 function price(value: string | number | null | undefined) {
   if (value == null || String(value).trim() === "") return undefined;
   const parsed = Number(value);
@@ -72,6 +82,55 @@ export function parseUpcProducts(raw: unknown): CatalogProduct[] {
       price: price(item.lowest_recorded_price),
     }];
   });
+}
+
+function httpsImage(value: string | null | undefined) {
+  if (!value) return undefined;
+  try {
+    const url = new URL(value);
+    return url.protocol === "https:" && !url.username && !url.password ? [url.toString()] : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** BarcodeNest returns one product per code; not-found and nameless records yield none. */
+export function parseBarcodeNestProducts(raw: unknown): CatalogProduct[] {
+  const parsed = barcodeNestResponseSchema.safeParse(raw);
+  if (!parsed.success) {
+    if (z.object({ found: z.literal(false) }).safeParse(raw).success) return [];
+    throw parsed.error;
+  }
+  const { barcode, found, product } = parsed.data;
+  const title = product?.name?.trim();
+  if (!found || !title) return [];
+  return [{
+    title, ean: barcode, upc: barcode.length === 12 ? barcode : undefined,
+    brand: product?.brand?.trim() || undefined, images: httpsImage(product?.image_url),
+  }];
+}
+
+/**
+ * Open Library cover for an ISBN-13 barcode (978/979 prefix), or null. With
+ * `default=false` a missing cover is a 404 rather than a blank image.
+ */
+export function openLibraryCoverUrl(code: string): string | null {
+  if (!/^97[89]\d{10}$/.test(code)) return null;
+  return `https://covers.openlibrary.org/b/isbn/${code}-L.jpg?default=false`;
+}
+
+/** A found, named BarcodeNest product with no usable image needs a fallback cover. */
+export function barcodeNestNeedsImage(raw: unknown): boolean {
+  const [product] = (() => { try { return parseBarcodeNestProducts(raw); } catch { return []; } })();
+  return !!product && !product.images?.length;
+}
+
+/** Fills BarcodeNest's `product.image_url` so parsing and the client see the fallback. */
+export function withBarcodeNestImage(raw: unknown, imageUrl: string): unknown {
+  const parsed = barcodeNestResponseSchema.safeParse(raw);
+  if (!parsed.success || !parsed.data.product) return raw;
+  const body = raw as { product: Record<string, unknown> };
+  return { ...body, product: { ...body.product, image_url: imageUrl } };
 }
 
 /** The existing database key is BIGINT; retain leading zeroes in product data. */

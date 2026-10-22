@@ -35,20 +35,20 @@ export default function ShowcaseSettingsModal({ showcase, onClose, onDeleted }: 
       {isPublic && <View style={styles.section}>
         <Text style={{ color: colors.text }}>Choose the audience for the whole showcase. An 18+ rating does not allow prohibited content.</Text>
         {([['general', 'General audience'], ['18_plus', '18+ mature collectibles']] as const).map(([value, label]) => <TouchableOpacity key={value} accessibilityRole="radio" accessibilityState={{ checked: rating === value }} style={[styles.button, { borderColor: rating === value ? colors.primary : colors.border, borderWidth: 1 }]} onPress={() => setRating(value)} disabled={pending}>
-          <Text style={{ color: colors.text }}>{rating === value ? "Selected: " : ""}{label}</Text>
+          <Text style={[styles.buttonText, { color: colors.text }]}>{rating === value ? "Selected: " : ""}{label}</Text>
         </TouchableOpacity>)}
         <Text style={{ color: colors.textDim }}>Items or uploaded media also used in an 18+ public showcase stay restricted for younger viewers, even when reused here.</Text>
       </View>}
       {error && <Text accessibilityRole="alert" style={{ color: colors.danger }}>{error}</Text>}
       {pending ? <ActivityIndicator /> : <>
-        <TouchableOpacity accessibilityRole="button" style={[styles.button, { backgroundColor: colors.primary }]} onPress={() => save(false)}><Text style={styles.white}>Save changes</Text></TouchableOpacity>
-        {isPublic && <TouchableOpacity accessibilityRole="button" style={styles.button} onPress={() => save(true)}><Text style={{ color: colors.primary }}>Save and share</Text></TouchableOpacity>}
+        <TouchableOpacity accessibilityRole="button" style={[styles.button, { backgroundColor: colors.primary }]} onPress={() => save(false)}><Text style={[styles.buttonText, styles.white]}>Save changes</Text></TouchableOpacity>
+        {isPublic && <TouchableOpacity accessibilityRole="button" style={styles.button} onPress={() => save(true)}><Text style={[styles.buttonText, { color: colors.primary }]}>Save and share</Text></TouchableOpacity>}
         {!showcase.is_default && <TouchableOpacity accessibilityRole="button" style={styles.button} onPress={() => {
           if (!confirmDelete) { setConfirmDelete(true); return; }
           remove.mutateAsync(showcase.id).then(onDeleted).catch(() => setError("Could not delete this showcase. Please retry."));
-        }}><Text style={{ color: colors.danger }}>{confirmDelete ? "Confirm permanent showcase deletion" : "Delete showcase"}</Text></TouchableOpacity>}
+        }}><Text style={[styles.buttonText, { color: colors.danger }]}>{confirmDelete ? "Confirm permanent showcase deletion" : "Delete showcase"}</Text></TouchableOpacity>}
         {confirmDelete && <Text style={{ color: colors.text }}>The showcase and its links will be deleted. Your collection items remain in your account.</Text>}
-        <TouchableOpacity accessibilityRole="button" style={styles.button} onPress={onClose}><Text style={{ color: colors.primary }}>Close</Text></TouchableOpacity>
+        <TouchableOpacity accessibilityRole="button" style={styles.button} onPress={onClose}><Text style={[styles.buttonText, { color: colors.primary }]}>Close</Text></TouchableOpacity>
       </>}
     </ScrollView></View>
   </Modal>;
@@ -60,6 +60,8 @@ const styles = StyleSheet.create({
   input: { minHeight: 48, padding: 14, borderRadius: 10, fontSize: 16 },
   row: { flexDirection: "row", justifyContent: "space-between", alignItems: "center" },
   section: { gap: 12 },
-  button: { minHeight: 48, padding: 14, borderRadius: 12, alignItems: "center" },
-  white: { color: "#FFFFFF", fontWeight: "600" },
+  button: { minHeight: 48, paddingVertical: 12, paddingHorizontal: 16, borderRadius: 12, justifyContent: "center" },
+  // Labels fill the button width so long or large-font text wraps instead of clipping.
+  buttonText: { alignSelf: "stretch", textAlign: "center", fontSize: 16, fontWeight: "600" },
+  white: { color: "#FFFFFF" },
 });

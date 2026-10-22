@@ -457,6 +457,9 @@ const getStyles = (colors: ThemeColors) =>
             color: colors.text,
         },
         scrollContent: {
+            width: "100%",
+            maxWidth: 720,
+            alignSelf: "center",
             paddingBottom: 48,
         },
         statusCard: {

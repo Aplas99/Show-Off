@@ -1,4 +1,5 @@
 import { ItemWithProduct } from "@/api/items";
+import { getItemCoverUrl } from "@/lib/itemImages";
 import { useBookmarkItem, useIsItemBookmarked, useUnbookmarkItem } from "@/api/social/interactions";
 import { showMessage } from "@/lib/dialogs";
 import { useHaptics } from "@/hooks/useHaptics";
@@ -36,8 +37,7 @@ function ShowcaseListItem({ item, onPress, style, accentColor = DEFAULT_SHOWCASE
   const title = item.custom_title || product?.searchableTitle || "Unknown item";
   const subtitle = [item.custom_category || item.custom_brand || product?.searchableBrand, item.user_description || product?.searchableDescription]
     .filter(Boolean).join("  ·  ");
-  const productData = product?.data || {};
-  const imageUrl = item.image_url || (Array.isArray(productData.images) ? productData.images[0] : null);
+  const imageUrl = getItemCoverUrl(item);
   const currency = item.currency_code || "USD";
   const formattedPrice = useMemo(() => item.price == null ? null : new Intl.NumberFormat("en-US", {
     style: "currency", currency,

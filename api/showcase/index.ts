@@ -263,20 +263,26 @@ export function useDeleteShowcase() {
   }, onSuccess: () => { qc.invalidateQueries({ queryKey: ["showcase"] }); qc.invalidateQueries({ queryKey: ["social"] }); } });
 }
 
-/** Update owner-controlled accent color and optional banner image. */
+/** Update owner-controlled name, accent color, and optional banner image. */
 export function useUpdateShowcaseCustomization() {
   const queryClient = useQueryClient();
 
   return useMutation({
     mutationFn: async (input: {
       showcaseId: string;
+      name?: string;
       accentColor?: string | null;
       bannerImageUrl?: string | null;
     }) => {
       if (input.accentColor && !/^#[0-9A-Fa-f]{6}$/.test(input.accentColor)) {
         throw new Error("Enter a six-digit hex color, such as #A77BFF.");
       }
+      const name = input.name?.trim();
+      if (name !== undefined && (!name || name.length > 100)) {
+        throw new Error("Use a showcase name between 1 and 100 characters.");
+      }
       const update: Record<string, string | null> = {};
+      if (name !== undefined) update.name = name;
       if (input.accentColor !== undefined) update.accent_color = input.accentColor;
       if (input.bannerImageUrl !== undefined)
         update.banner_image_url = input.bannerImageUrl;
@@ -296,6 +302,32 @@ export function useUpdateShowcaseCustomization() {
       queryClient.invalidateQueries({
         queryKey: queryKeys.showcase.byId(vars.showcaseId),
       });
+      if (vars.name !== undefined) queryClient.invalidateQueries({ queryKey: ["social"] });
+    },
+  });
+}
+
+/**
+ * Unlinks items from one showcase. The items stay in the owner's collection
+ * (and any other showcases); RLS "delete_own_showcase_items" enforces ownership.
+ */
+export function useRemoveItemsFromShowcase() {
+  const queryClient = useQueryClient();
+  return useMutation({
+    mutationFn: async ({ showcaseId, itemIds }: { showcaseId: string; itemIds: number[] }) => {
+      if (itemIds.length === 0) return;
+      const { error } = await supabase
+        .from("showcase_items")
+        .delete()
+        .eq("showcase_id", showcaseId)
+        .in("item_id", itemIds);
+      if (error) throw new Error(error.message);
+    },
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ["showcase:items", vars.showcaseId] });
+      queryClient.invalidateQueries({ queryKey: queryKeys.showcase.items(vars.showcaseId) });
+      queryClient.invalidateQueries({ queryKey: ["showcase", "stats", vars.showcaseId] });
+      queryClient.invalidateQueries({ queryKey: ["social"] });
     },
   });
 }

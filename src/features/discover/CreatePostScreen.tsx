@@ -279,7 +279,7 @@ function getStyles(colors: ThemeColors) {
     },
     postButtonText: { color: "#000", fontSize: 14, fontWeight: "800" },
     disabled: { opacity: 0.45 },
-    content: { paddingHorizontal: 20, gap: 10 },
+    content: { width: "100%", maxWidth: 720, alignSelf: "center", paddingHorizontal: 20, gap: 10 },
     captionInput: {
       minHeight: 110,
       borderRadius: 16,
@@ -338,7 +338,7 @@ function getStyles(colors: ThemeColors) {
     },
     addMediaText: {
       color: colors.primary,
-      fontSize: 9,
+      fontSize: 10,
       fontWeight: "700",
       textAlign: "center",
       paddingHorizontal: 4,
@@ -365,7 +365,7 @@ function getStyles(colors: ThemeColors) {
       justifyContent: "center",
       backgroundColor: colors.surfaceContainerHigh,
     },
-    itemOptionTitle: { color: colors.text, fontSize: 10, fontWeight: "700" },
+    itemOptionTitle: { color: colors.text, fontSize: 11, fontWeight: "700" },
     itemSelectedBadge: {
       position: "absolute",
       top: 6,

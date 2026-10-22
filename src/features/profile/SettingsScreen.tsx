@@ -2,6 +2,8 @@ import BlockedAccounts from "@/src/components/social/BlockedAccounts";
 import { useModeratorAccess } from "@/api/safety";
 import { openAdPrivacyOptions } from "@/api/ads";
 import { useDeleteAccount } from "@/api/auth";
+import { CSV_MEMBERSHIP_REQUIRED_MESSAGE, useExportItemsCsv, useImportItemsCsv } from "@/api/items/csv";
+import { useMembership } from "@/api/memberships";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { useThemeStore, type ThemeMode } from "@/hooks/useThemeStore";
 import { confirmAction, showMessage } from "@/lib/dialogs";
@@ -55,7 +57,7 @@ export default function SettingsScreen() {
     };
 
     return (
-        <ScrollView style={styles.container} contentContainerStyle={{ paddingTop: insets.top, paddingBottom: insets.bottom + 24 }}>
+        <ScrollView style={styles.container} contentContainerStyle={{ width: "100%", maxWidth: 720, alignSelf: "center", paddingTop: insets.top, paddingBottom: insets.bottom + 24 }}>
             {/* Header */}
             <View style={styles.header}>
                 <TouchableOpacity
@@ -152,6 +154,7 @@ export default function SettingsScreen() {
                     <Text style={styles.infoLabel}>Manage or cancel membership</Text>
                 </TouchableOpacity>
             </View>
+            <CollectionCsvSection colors={colors} />
             <BlockedAccounts />
             {moderator.data && <TouchableOpacity style={styles.infoRow} onPress={() => router.push("/(admin)")}><Text style={styles.infoLabel}>Moderation queue</Text></TouchableOpacity>}
             {/* Danger Zone */}
@@ -180,6 +183,102 @@ export default function SettingsScreen() {
                 </View>
             </Animated.View>
         </ScrollView>
+    );
+}
+
+/** Curator perk: export the whole collection to CSV, or bulk-add items from one. */
+function CollectionCsvSection({ colors }: { colors: ThemeColors }) {
+    const styles = getStyles(colors);
+    const router = useRouter();
+    const { data: membership } = useMembership();
+    const isPaidUser = membership?.isPaidUser ?? false;
+    const exportCsv = useExportItemsCsv();
+    const importCsv = useImportItemsCsv();
+    const busy = exportCsv.isPending || importCsv.isPending;
+
+    const showError = (title: string, error: unknown) => {
+        const message = error instanceof Error ? error.message : "Please try again.";
+        if (message === CSV_MEMBERSHIP_REQUIRED_MESSAGE) {
+            router.push("/(tabs)/profile/membership");
+            return;
+        }
+        showMessage(title, message);
+    };
+
+    const handleExport = async () => {
+        if (!isPaidUser) return router.push("/(tabs)/profile/membership");
+        try {
+            const result = await exportCsv.mutateAsync();
+            if (result) showMessage("Collection exported", `Saved ${result.count} item${result.count === 1 ? "" : "s"} to CSV.`);
+        } catch (error) {
+            showError("Could not export", error);
+        }
+    };
+
+    const handleImport = async () => {
+        if (!isPaidUser) return router.push("/(tabs)/profile/membership");
+        const proceed = await confirmAction(
+            "Import from CSV",
+            "Each row becomes a new item. Include a \"title\" column; barcode, card id, condition, price and showcases columns are optional. Export first to get a template.",
+            "Choose File",
+        );
+        if (!proceed) return;
+        try {
+            const result = await importCsv.mutateAsync();
+            if (!result) return;
+            const lines = [`Imported ${result.imported} item${result.imported === 1 ? "" : "s"}.`];
+            if (result.showcasesCreated > 0) lines.push(`Created ${result.showcasesCreated} new private showcase${result.showcasesCreated === 1 ? "" : "s"}.`);
+            if (result.unlinked > 0) lines.push(`${result.unlinked} barcode/card id${result.unlinked === 1 ? " was" : "s were"} not recognized; saved as manual items.`);
+            if (result.failed.length > 0) {
+                const preview = result.failed.slice(0, 10).map((e) => `Row ${e.line}: ${e.message}`).join("\n");
+                const more = result.failed.length > 10 ? `\n...and ${result.failed.length - 10} more` : "";
+                lines.push(`${result.failed.length} row${result.failed.length === 1 ? "" : "s"} failed and ${result.failed.length === 1 ? "was" : "were"} not imported:\n${preview}${more}`);
+            }
+            showMessage(result.failed.length > 0 ? "Import finished with errors" : "Import finished", lines.join("\n\n"));
+        } catch (error) {
+            showError("Could not import", error);
+        }
+    };
+
+    const rows = [
+        { key: "export", label: "Export collection to CSV", icon: "download-outline", pending: exportCsv.isPending, onPress: handleExport },
+        { key: "import", label: "Import items from CSV", icon: "cloud-upload-outline", pending: importCsv.isPending, onPress: handleImport },
+    ] as const;
+
+    return (
+        <Animated.View entering={FadeInDown.delay(320).springify()}>
+            <View style={styles.sectionHeader}>
+                <Ionicons name="document-text-outline" size={20} color={colors.primary} />
+                <Text style={styles.sectionTitle}>Collection Data</Text>
+            </View>
+            <View style={styles.themeCard}>
+                {rows.map((row, index) => (
+                    <TouchableOpacity
+                        key={row.key}
+                        style={[styles.infoRow, index === rows.length - 1 && { borderBottomWidth: 0 }]}
+                        onPress={row.onPress}
+                        disabled={busy}
+                        accessibilityRole="button"
+                        accessibilityHint={isPaidUser ? undefined : "Curator feature. Opens membership options."}
+                    >
+                        <View style={styles.csvLabelRow}>
+                            <Ionicons name={row.icon} size={18} color={colors.text} />
+                            <Text style={styles.infoLabel}>{row.label}</Text>
+                        </View>
+                        {row.pending ? (
+                            <ActivityIndicator size="small" color={colors.primary} />
+                        ) : isPaidUser ? (
+                            <Ionicons name="chevron-forward" size={18} color={colors.text} />
+                        ) : (
+                            <View style={styles.curatorBadge}>
+                                <Ionicons name="lock-closed" size={12} color={colors.primary} />
+                                <Text style={styles.curatorBadgeText}>Curator</Text>
+                            </View>
+                        )}
+                    </TouchableOpacity>
+                ))}
+            </View>
+        </Animated.View>
     );
 }
 
@@ -387,6 +486,25 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
     infoLabel: {
         fontSize: 15,
         color: colors.text,
+    },
+    csvLabelRow: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 10,
+    },
+    curatorBadge: {
+        flexDirection: "row",
+        alignItems: "center",
+        gap: 4,
+        paddingHorizontal: 8,
+        paddingVertical: 3,
+        borderRadius: 999,
+        backgroundColor: `${colors.primary}1A`,
+    },
+    curatorBadgeText: {
+        fontSize: 12,
+        fontWeight: "700",
+        color: colors.primary,
     },
     infoValue: {
         fontSize: 15,

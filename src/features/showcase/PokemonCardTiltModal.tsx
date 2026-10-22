@@ -1,6 +1,7 @@
 import { ItemWithProduct } from "@/api/items";
 import { useMembership } from "@/api/memberships";
 import { usePriceHistory } from "@/api/prices";
+import { describeRiftboundSet, formatRiftboundCollectorNumber, getRiftboundSetName } from "@/constants/riftboundSets";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import PriceHistoryChart from "@/src/components/charts/PriceHistoryChart";
 import { CuratorInlineGate } from "@/src/features/membership/CuratorGate";
@@ -56,7 +57,9 @@ type Props = {
 };
 
 type CardDetails = {
-  game: "Pokémon" | "Magic: The Gathering";
+  game: "Pokémon" | "Magic: The Gathering" | "Riftbound";
+  /** Short label for the quick-stats row. */
+  gameLabel: string;
   title: string;
   typeLine: string | null;
   description: string | null;
@@ -67,6 +70,10 @@ type CardDetails = {
   rarity: string | null;
   artist: string | null;
   setLogo: string | null;
+  /** Secondary line under the set name, e.g. "Released Oct 2025 · 298 cards". */
+  setDetail?: string | null;
+  /** Full printed number when the card carries its own total (e.g. "011/298"). */
+  printedNumber?: string | null;
 };
 
 function asRecord(value: unknown): Record<string, unknown> {
@@ -91,9 +98,45 @@ function getCardDetails(item: ItemWithProduct): CardDetails {
   const setImages = asRecord(set.images);
   const isMagic = !!item.magic_card_id;
 
+  if (item.riftbound_card_id) {
+    // products.data is the Riftcodex record (see useGetItemsWithProductData).
+    const classification = asRecord(raw.classification);
+    const text = asRecord(raw.text);
+    const media = asRecord(raw.media);
+    const metadata = asRecord(raw.metadata);
+    const setCode = item.riftboundSetCode || asText(set.set_id);
+    const riftboundId = asText(raw.riftbound_id);
+    const variants = [
+      metadata.signature === true ? "Signature" : null,
+      metadata.overnumbered === true ? "Overnumbered" : null,
+      metadata.alternate_art === true ? "Alt art" : null,
+    ].filter(Boolean);
+    const collectorNumber = raw.collector_number;
+    return {
+      game: "Riftbound",
+      gameLabel: "Riftbound",
+      title: item.products?.searchableTitle || item.custom_title || "Unknown card",
+      typeLine:
+        [asText(classification.supertype), asText(classification.type), joinText(classification.domain, " / ")]
+          .filter(Boolean)
+          .join(" • ") || null,
+      description: asText(text.plain),
+      flavorText: asText(text.flavour),
+      setName: getRiftboundSetName(setCode, item.riftboundSetName || asText(set.label)),
+      setCode,
+      setDetail: describeRiftboundSet(setCode),
+      cardNumber: typeof collectorNumber === "number" ? String(collectorNumber) : null,
+      printedNumber: formatRiftboundCollectorNumber(riftboundId),
+      rarity: [asText(classification.rarity), ...variants].filter(Boolean).join(" · ") || null,
+      artist: asText(media.artist),
+      setLogo: null,
+    };
+  }
+
   if (isMagic) {
     return {
       game: "Magic: The Gathering",
+      gameLabel: "Magic",
       title:
         item.products?.searchableTitle || item.custom_title || "Unknown card",
       typeLine: asText(raw.type_line),
@@ -137,6 +180,7 @@ function getCardDetails(item: ItemWithProduct): CardDetails {
 
   return {
     game: "Pokémon",
+    gameLabel: "Pokémon",
     title: item.products?.searchableTitle || item.custom_title || "Unknown card",
     typeLine:
       [subtypes, hp ? `${hp} HP` : null].filter(Boolean).join(" • ") || null,
@@ -159,7 +203,8 @@ export default function PokemonCardTiltModal({ visible, item, onClose, accentCol
   const { data: membership } = useMembership();
   const isCurator = membership?.isCurator ?? false;
   const priceGame = item?.magic_card_id ? ("magic" as const) : ("pokemon" as const);
-  const priceCardId = item?.magic_card_id ?? item?.pokemon_tcg_card_id ?? null;
+  // Riftcodex has no market prices, so Riftbound cards get no history panel.
+  const priceCardId = item?.riftbound_card_id ? null : item?.magic_card_id ?? item?.pokemon_tcg_card_id ?? null;
   const { data: priceHistory } = usePriceHistory(
     priceGame,
     visible && isCurator ? priceCardId : null,
@@ -340,9 +385,11 @@ export default function PokemonCardTiltModal({ visible, item, onClose, accentCol
 
   const imageUrl = getPokemonCardImage(item);
   const currentMarketPrice =
-    item.magic_card_id
-      ? item.magicMarketPrice ?? item.price
-      : item.pokemonMarketPrice ?? item.price;
+    item.riftbound_card_id
+      ? item.price
+      : item.magic_card_id
+        ? item.magicMarketPrice ?? item.price
+        : item.pokemonMarketPrice ?? item.price;
   const formattedPrice =
     currentMarketPrice != null
       ? new Intl.NumberFormat("en-US", {
@@ -350,9 +397,10 @@ export default function PokemonCardTiltModal({ visible, item, onClose, accentCol
           currency: item.currency_code || "USD",
         }).format(currentMarketPrice)
       : "Not listed";
-  const cardIndex = [details.cardNumber, item.pokemonSetPrintedTotal]
-    .filter((value) => value != null)
-    .join("/");
+  const cardIndex = details.printedNumber
+    ?? [details.cardNumber, item.pokemonSetPrintedTotal]
+      .filter((value) => value != null)
+      .join("/");
 
   return (
     <Modal
@@ -472,7 +520,7 @@ export default function PokemonCardTiltModal({ visible, item, onClose, accentCol
               <QuickStat
                 icon="game-controller-outline"
                 label="Game"
-                value={details.game === "Pokémon" ? "Pokémon" : "Magic"}
+                value={details.gameLabel}
                 colors={colors}
               />
             </View>
@@ -513,6 +561,11 @@ export default function PokemonCardTiltModal({ visible, item, onClose, accentCol
                   <Text style={styles.setName} numberOfLines={1}>
                     {details.setName}
                   </Text>
+                  {details.setDetail ? (
+                    <Text style={styles.setDetail} numberOfLines={1}>
+                      {details.setDetail}
+                    </Text>
+                  ) : null}
                 </View>
               </View>
               <View style={styles.collectorPill}>
@@ -705,7 +758,7 @@ const getStyles = (colors: ThemeColors) =>
     },
     dragHint: {
       color: colors.onSurfaceVariant,
-      fontSize: 9,
+      fontSize: 10,
       fontWeight: "700",
       textTransform: "uppercase",
       letterSpacing: 0.7,
@@ -736,7 +789,7 @@ const getStyles = (colors: ThemeColors) =>
     },
     quickLabel: {
       color: colors.onSurfaceVariant,
-      fontSize: 9,
+      fontSize: 10,
       fontWeight: "700",
       textTransform: "uppercase",
       letterSpacing: 0.7,
@@ -819,7 +872,7 @@ const getStyles = (colors: ThemeColors) =>
     },
     metaLabel: {
       color: colors.onSurfaceVariant,
-      fontSize: 9,
+      fontSize: 10,
       fontWeight: "800",
       textTransform: "uppercase",
       letterSpacing: 1.2,
@@ -829,6 +882,11 @@ const getStyles = (colors: ThemeColors) =>
       fontSize: 14,
       fontWeight: "800",
       marginTop: 3,
+    },
+    setDetail: {
+      color: colors.onSurfaceVariant,
+      fontSize: 12,
+      marginTop: 2,
     },
     collectorPill: {
       minWidth: 68,
@@ -840,7 +898,7 @@ const getStyles = (colors: ThemeColors) =>
     },
     setCode: {
       color: colors.onSurfaceVariant,
-      fontSize: 9,
+      fontSize: 10,
       fontWeight: "900",
     },
     cardNumber: {

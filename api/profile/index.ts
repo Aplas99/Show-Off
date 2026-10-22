@@ -21,7 +21,6 @@ export const useGetCurrentUserProfile = () => {
             }
 
             const userId = session.user.id;
-            console.log("[Profile] 👤 Current user ID:", userId);
 
             // Fetch user profile data from your profile table
             const { data: profile, error: profileError } = await supabase

@@ -7,8 +7,10 @@ import { DEFAULT_SHOWCASE_ACCENT, ShowcaseBanner, ShowcaseStatsBar } from "@/src
 import ContentSafetyMenu from "@/src/components/social/ContentSafetyMenu";
 import { Image } from "@/src/components/media/ProtectedImage";
 import { useAuthStore } from "@/hooks/useAuthStore";
+import { ITEM_CATEGORIES, ITEM_CATEGORY_ICONS, ITEM_CATEGORY_LABELS, type ItemCategory } from "@/constants/itemCategory";
 import { TAB_BAR_HEIGHT } from "@/constants/layoutConfig";
 import { showMessage } from "@/lib/dialogs";
+import { getItemCategory } from "@/lib/itemCategory";
 import { showcaseDisplayAccent, textOnAccent } from "@/lib/showcaseColor";
 import { CuratorGateModal } from "@/src/features/membership/CuratorGate";
 import ItemDetailModal from "@/src/features/showcase/ItemDetailModal";
@@ -19,7 +21,6 @@ import SetCompletionModal from "@/src/features/showcase/SetCompletionModal";
 import ShowcaseListItem from "@/src/features/showcase/ShowcaseListItem";
 import { useShowcaseFilters } from "@/src/features/showcase/useShowcaseFilters";
 import { Ionicons } from "@expo/vector-icons";
-import { LinearGradient } from "expo-linear-gradient";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import React, {
   useCallback,
@@ -84,8 +85,12 @@ export default function ShowcaseDetail() {
   // View mode state
   const [viewMode, setViewMode] = useState<"grid" | "carousel">("grid");
 
+  // Category tabs (TCG / Books / Games / General), shown when a showcase
+  // holds items from more than one category.
+  const [categoryFilter, setCategoryFilter] = useState<"all" | ItemCategory>("all");
+
   // Game filter tabs, shown when a card showcase mixes multiple games
-  const [gameFilter, setGameFilter] = useState<"all" | "pokemon" | "magic">(
+  const [gameFilter, setGameFilter] = useState<"all" | "pokemon" | "magic" | "riftbound">(
     "all",
   );
 
@@ -182,7 +187,7 @@ export default function ShowcaseDetail() {
   }, [keyboardOffset]);
 
   const handleItemPress = useCallback((item: ItemWithProduct) => {
-    if (item.pokemon_tcg_card_id || item.magic_card_id) {
+    if (item.pokemon_tcg_card_id || item.magic_card_id || item.riftbound_card_id) {
       setTiltItem(item);
       setTiltVisible(true);
       return;
@@ -217,12 +222,51 @@ export default function ShowcaseDetail() {
   } = useGetItemsWithProductData(showcaseId!);
 
 
+  const itemCategories = useMemo(() => {
+    const categories = new Map<number, ItemCategory>();
+    for (const item of items ?? []) categories.set(item.id, getItemCategory(item));
+    return categories;
+  }, [items]);
+
+  const categoryCounts = useMemo(() => {
+    const counts = new Map<ItemCategory, number>();
+    for (const category of itemCategories.values()) {
+      counts.set(category, (counts.get(category) ?? 0) + 1);
+    }
+    return counts;
+  }, [itemCategories]);
+
+  const presentCategories = useMemo(
+    () => ITEM_CATEGORIES.filter((category) => (categoryCounts.get(category) ?? 0) > 0),
+    [categoryCounts],
+  );
+  const showCategoryTabs = presentCategories.length > 1;
+  // Fall back to "all" if the selected category no longer has items.
+  const activeCategory =
+    categoryFilter !== "all" && presentCategories.includes(categoryFilter) ? categoryFilter : "all";
+
+  const [categoryMenuOpen, setCategoryMenuOpen] = useState(false);
+  const handleCategoryChange = useCallback((next: "all" | ItemCategory) => {
+    setCategoryFilter(next);
+    setCategoryMenuOpen(false);
+    // Card type/set picks only make sense inside the TCG view.
+    setGameFilter("all");
+    clearSelections();
+  }, [clearSelections]);
+  // The category lives in the filter modal, so it counts toward the badge.
+  const totalFilterCount = activeFilterCount + (activeCategory === "all" ? 0 : 1);
+  const resetAllFilters = useCallback(() => {
+    resetFilters();
+    setCategoryFilter("all");
+    setGameFilter("all");
+  }, [resetFilters]);
+
   // Duplicate count per card, computed off the unfiltered list so the badge
   // always reflects true showcase-wide duplication regardless of active filters.
   const duplicateCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const item of items ?? []) {
-      const cardId = item.pokemon_tcg_card_id || item.magic_card_id;
+      const cardId = item.pokemon_tcg_card_id || item.magic_card_id || item.riftbound_card_id;
       if (!cardId) continue;
       counts.set(cardId, (counts.get(cardId) ?? 0) + 1);
     }
@@ -237,17 +281,36 @@ export default function ShowcaseDetail() {
     () => (items ?? []).some((item) => !!item.magic_card_id),
     [items],
   );
-  const showGameTabs = hasPokemonCards && hasMagicCards;
+  const hasRiftboundCards = useMemo(
+    () => (items ?? []).some((item) => !!item.riftbound_card_id),
+    [items],
+  );
+  // A showcase made entirely of trading cards (Pokémon, Magic, Riftbound) renders as a
+  // TCG Pocket-style collection grid instead of the generic item grid.
+  const isPokemonShowcase = useMemo(
+    () =>
+      (items?.length ?? 0) > 0 &&
+      (items ?? []).every(
+        (item) => !!item.pokemon_tcg_card_id || !!item.magic_card_id || !!item.riftbound_card_id,
+      ),
+    [items],
+  );
+  // Card showcases and the TCG tab of a mixed showcase use the card grid.
+  const isCardView = isPokemonShowcase || activeCategory === "tcg";
+  const gameCount = [hasPokemonCards, hasMagicCards, hasRiftboundCards].filter(Boolean).length;
+  const showGameTabs = isCardView && gameCount > 1;
 
   // Which game's filters apply: the selected tab, or — in a single-game
   // showcase where tabs are hidden — that showcase's only game. A mixed
   // showcase on the "All" tab gets generic sort-only filtering.
-  const effectiveGame: "all" | "pokemon" | "magic" = useMemo(() => {
+  const effectiveGame: "all" | "pokemon" | "magic" | "riftbound" = useMemo(() => {
+    if (!isCardView) return "all";
     if (gameFilter !== "all") return gameFilter;
-    if (hasPokemonCards && !hasMagicCards) return "pokemon";
-    if (hasMagicCards && !hasPokemonCards) return "magic";
-    return "all";
-  }, [gameFilter, hasPokemonCards, hasMagicCards]);
+    if (gameCount !== 1) return "all";
+    if (hasPokemonCards) return "pokemon";
+    if (hasMagicCards) return "magic";
+    return "riftbound";
+  }, [isCardView, gameFilter, gameCount, hasPokemonCards, hasMagicCards]);
 
   // Distinct type/color/set options actually present in this showcase for the
   // active game — narrower than the full catalog so a filter never yields an
@@ -272,6 +335,15 @@ export default function ShowcaseDetail() {
       }
       return MAGIC_COLOR_ORDER.filter((entry) => codes.has(entry.value));
     }
+    if (effectiveGame === "riftbound") {
+      const domains = new Set<string>();
+      for (const item of items ?? []) {
+        for (const domain of item.riftboundDomains ?? []) domains.add(domain);
+      }
+      return Array.from(domains)
+        .sort()
+        .map((domain) => ({ value: domain, label: domain }));
+    }
     return [];
   }, [items, effectiveGame]);
 
@@ -293,6 +365,12 @@ export default function ShowcaseDetail() {
           sets.set(item.magicSetCode, item.magicSetName || item.magicSetCode);
         }
       }
+    } else if (effectiveGame === "riftbound") {
+      for (const item of items ?? []) {
+        if (item.riftbound_card_id && item.riftboundSetCode) {
+          sets.set(item.riftboundSetCode, item.riftboundSetName || item.riftboundSetCode);
+        }
+      }
     }
     return Array.from(sets.entries()).map(([id, name]) => ({ id, name }));
   }, [items, effectiveGame]);
@@ -300,21 +378,24 @@ export default function ShowcaseDetail() {
   // Header-pill count: total cards in the selected game tab, ignoring
   // search/type/set filters (matches the pre-tabs "unfiltered count" behavior).
   const gameFilteredCount = useMemo(() => {
-    if (gameFilter === "all") return items?.length ?? 0;
-    return (items ?? []).filter((item) =>
-      gameFilter === "pokemon"
-        ? !!item.pokemon_tcg_card_id
-        : !!item.magic_card_id,
-    ).length;
-  }, [items, gameFilter]);
+    return (items ?? []).filter((item) => {
+      if (activeCategory !== "all" && itemCategories.get(item.id) !== activeCategory) return false;
+      if (gameFilter === "pokemon") return !!item.pokemon_tcg_card_id;
+      if (gameFilter === "magic") return !!item.magic_card_id;
+      if (gameFilter === "riftbound") return !!item.riftbound_card_id;
+      return true;
+    }).length;
+  }, [items, gameFilter, activeCategory, itemCategories]);
 
   // Filter and sort
   const filteredItems = useMemo(() => {
     if (!items) return [];
 
     let filtered = items.filter((item) => {
+      if (activeCategory !== "all" && itemCategories.get(item.id) !== activeCategory) return false;
       if (gameFilter === "pokemon" && !item.pokemon_tcg_card_id) return false;
       if (gameFilter === "magic" && !item.magic_card_id) return false;
+      if (gameFilter === "riftbound" && !item.riftbound_card_id) return false;
 
       if (searchQuery) {
         const searchLower = searchQuery.toLowerCase();
@@ -334,6 +415,11 @@ export default function ShowcaseDetail() {
           if (!selectedTypes.some((code) => codes.includes(code))) {
             return false;
           }
+        } else if (effectiveGame === "riftbound") {
+          const domains = item.riftboundDomains ?? [];
+          if (!selectedTypes.some((domain) => domains.includes(domain))) {
+            return false;
+          }
         } else {
           const itemTypes = item.pokemonTypes ?? [];
           if (!selectedTypes.some((type) => itemTypes.includes(type))) {
@@ -344,7 +430,9 @@ export default function ShowcaseDetail() {
 
       if (selectedSetIds.length > 0) {
         const itemSetId =
-          effectiveGame === "magic" ? item.magicSetCode : item.pokemonSetId;
+          effectiveGame === "magic" ? item.magicSetCode
+            : effectiveGame === "riftbound" ? item.riftboundSetCode
+              : item.pokemonSetId;
         if (!itemSetId || !selectedSetIds.includes(itemSetId)) {
           return false;
         }
@@ -374,18 +462,7 @@ export default function ShowcaseDetail() {
     });
 
     return filtered;
-  }, [items, searchQuery, sortBy, sortOrder, selectedTypes, selectedSetIds, gameFilter, effectiveGame]);
-
-  // A showcase made entirely of trading cards (Pokémon or Magic) renders as a
-  // TCG Pocket-style collection grid instead of the generic item grid.
-  const isPokemonShowcase = useMemo(
-    () =>
-      (items?.length ?? 0) > 0 &&
-      (items ?? []).every(
-        (item) => !!item.pokemon_tcg_card_id || !!item.magic_card_id,
-      ),
-    [items],
-  );
+  }, [items, searchQuery, sortBy, sortOrder, selectedTypes, selectedSetIds, gameFilter, effectiveGame, activeCategory, itemCategories]);
 
   const handleToggleView = useCallback(() => {
     setViewMode((prev) => (prev === "grid" ? "carousel" : "grid"));
@@ -424,7 +501,7 @@ export default function ShowcaseDetail() {
       <TouchableOpacity onPress={() => router.back()} style={styles.headerIcon} accessibilityRole="button" accessibilityLabel="Back to showcases">
         <Ionicons name="arrow-back" size={25} color="#FFF" />
       </TouchableOpacity>
-      <Text style={styles.topTitle} numberOfLines={1}>{showcase.name}</Text>
+      <View style={styles.flexSpacer} />
       <TouchableOpacity onPress={() => void handleShare()} style={styles.headerIcon} accessibilityRole="button" accessibilityLabel="Share showcase">
         <Ionicons name="share-social-outline" size={23} color="#FFF" />
       </TouchableOpacity>
@@ -451,23 +528,20 @@ export default function ShowcaseDetail() {
           </View>
           <Text style={styles.ownerBio} numberOfLines={1}>{owner?.bio || "Collecting what brings joy"}</Text>
         </View>
+        {isOwner ? <TouchableOpacity style={styles.headerIcon} onPress={() => setCustomizeVisible(true)}
+          accessibilityRole="button" accessibilityLabel="Edit showcase">
+          <Ionicons name="pencil" size={20} color="#FFF" />
+        </TouchableOpacity> : <TouchableOpacity disabled={follow.isPending}
+          style={[styles.followIcon, stats?.isFollowing ? styles.followIconActive : { backgroundColor: accentColor, borderColor: accentColor }]}
+          onPress={async () => {
+            try { await follow.mutateAsync({ showcaseId: showcase.id, following: !!stats?.isFollowing }); }
+            catch (failure: unknown) { showMessage("Could not update follow", failure instanceof Error ? failure.message : "Please try again."); }
+          }} accessibilityRole="button" accessibilityLabel={stats?.isFollowing ? "Unfollow showcase" : "Follow showcase"}
+          accessibilityState={{ selected: !!stats?.isFollowing }}>
+          {follow.isPending ? <ActivityIndicator size="small" color={stats?.isFollowing ? "#FFF" : onAccent} />
+            : <Ionicons name={stats?.isFollowing ? "checkmark" : "add"} size={24} color={stats?.isFollowing ? "#FFF" : onAccent} />}
+        </TouchableOpacity>}
       </View>
-    </View>
-    <View style={styles.heroActions}>
-      <TouchableOpacity disabled={isOwner || follow.isPending} style={styles.followButton}
-        onPress={async () => {
-          try { await follow.mutateAsync({ showcaseId: showcase.id, following: !!stats?.isFollowing }); }
-          catch (failure: unknown) { showMessage("Could not update follow", failure instanceof Error ? failure.message : "Please try again."); }
-        }} accessibilityRole="button" accessibilityLabel={isOwner || stats?.isFollowing ? "Following showcase" : "Follow showcase"}>
-        <LinearGradient colors={onAccent === "#17121F" ? [accentColor, "#E2D8FF"] : [accentColor, "#6950E9"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={styles.actionGradient}>
-          <Ionicons name={isOwner || stats?.isFollowing ? "checkmark" : "person-add-outline"} size={20} color={onAccent} />
-          <Text style={[styles.followText, { color: onAccent }]}>{isOwner || stats?.isFollowing ? "Following" : "Follow"}</Text>
-        </LinearGradient>
-      </TouchableOpacity>
-      {isOwner && <TouchableOpacity style={styles.editShowcaseButton} onPress={() => setCustomizeVisible(true)}
-        accessibilityRole="button" accessibilityLabel="Edit showcase appearance">
-        <Ionicons name="pencil" size={19} color="#FFF" /><Text style={styles.editShowcaseText}>Edit Showcase</Text>
-      </TouchableOpacity>}
     </View>
     <View style={styles.statsPanel}>
       <ShowcaseStatsBar itemCount={stats?.itemCount ?? items?.length ?? null} followerCount={stats?.followerCount ?? null}
@@ -482,6 +556,56 @@ export default function ShowcaseDetail() {
         </TouchableOpacity>)}
     </View>
   </View> : null;
+
+  // Search, view toggle, set completion, and filters. Rendered inline above
+  // the grid, and floating at the bottom of the screen in carousel view.
+  const searchControls = <>
+    <View style={styles.searchInputContainer}>
+      <Ionicons name="search" size={18} color="rgba(255,255,255,0.35)" style={styles.searchIcon} />
+      <TextInput
+        style={styles.searchInput}
+        placeholder="Search items..."
+        placeholderTextColor="rgba(255,255,255,0.3)"
+        value={searchQuery}
+        onChangeText={setSearchQuery}
+        accessibilityLabel="Search items"
+      />
+      {searchQuery.length > 0 && (
+        <TouchableOpacity onPress={() => setSearchQuery("")} accessibilityLabel="Clear search">
+          <Ionicons name="close-circle" size={18} color="rgba(255,255,255,0.35)" />
+        </TouchableOpacity>
+      )}
+    </View>
+    <TouchableOpacity style={styles.viewToggleButton} onPress={handleToggleView}
+      accessibilityLabel={viewMode === "grid" ? "Show carousel" : "Show grid"}>
+      <Ionicons name={viewMode === "grid" ? "albums" : "grid"} size={18} color="#9B5DE5" />
+    </TouchableOpacity>
+    {hasPokemonCards && (
+      <TouchableOpacity
+        style={styles.viewToggleButton}
+        onPress={() => {
+          if (isCurator) {
+            setSetCompletionVisible(true);
+          } else {
+            setSetCompletionPaywallVisible(true);
+          }
+        }}
+        accessibilityLabel="Set completion"
+      >
+        <Ionicons name="extension-puzzle-outline" size={18} color="#9B5DE5" />
+      </TouchableOpacity>
+    )}
+    <TouchableOpacity style={styles.filterButton} onPress={() => setFilterModalOpen(true)}
+      accessibilityLabel={totalFilterCount > 0 ? `Filters, ${totalFilterCount} active` : "Filters"}>
+      <Ionicons name="options" size={18} color="#9B5DE5" />
+      {totalFilterCount > 0 && (
+        <View style={styles.filterCountBadge}>
+          <Text style={styles.filterCountBadgeText}>{totalFilterCount}</Text>
+        </View>
+      )}
+    </TouchableOpacity>
+  </>;
+  const inlineSearchBar = <View style={styles.inlineSearchBar}>{searchControls}</View>;
 
   return (
     <View style={styles.container}>
@@ -503,7 +627,7 @@ export default function ShowcaseDetail() {
             {activeTab === "about" && showcase && <Text style={styles.infoMeta}>Created {new Date(showcase.created_at).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}</Text>}
           </View>
         </ScrollView>}
-        {activeTab === "items" && viewMode === "grid" && isPokemonShowcase && (
+        {activeTab === "items" && viewMode === "grid" && isCardView && (
           <Reanimated.View
             entering={FadeIn.duration(150)}
             style={styles.viewContainer}
@@ -511,21 +635,27 @@ export default function ShowcaseDetail() {
             <PokemonCardGridView
               items={filteredItems}
               onItemPress={handleItemPress}
-              bottomPadding={bottomOffset + 80}
+              bottomPadding={bottomOffset + 16}
               refreshing={isRefetching}
               onRefresh={refetch}
               totalCount={gameFilteredCount}
               duplicateCounts={duplicateCounts}
               accentColor={accentColor}
               headerAccessory={
-                <>{detailHeader}{showGameTabs ? (
+                <>{detailHeader}{inlineSearchBar}{showGameTabs ? (
                   <View style={styles.gameTabs}>
                     {(
                       [
                         { key: "all", label: "All" },
                         { key: "pokemon", label: "Pokémon" },
                         { key: "magic", label: "Magic" },
+                        { key: "riftbound", label: "Riftbound" },
                       ] as const
+                    ).filter((tab) =>
+                      tab.key === "all" ||
+                      (tab.key === "pokemon" && hasPokemonCards) ||
+                      (tab.key === "magic" && hasMagicCards) ||
+                      (tab.key === "riftbound" && hasRiftboundCards),
                     ).map((tab) => (
                       <TouchableOpacity
                         key={tab.key}
@@ -559,7 +689,7 @@ export default function ShowcaseDetail() {
           </Reanimated.View>
         )}
 
-        {activeTab === "items" && viewMode === "grid" && !isPokemonShowcase && (
+        {activeTab === "items" && viewMode === "grid" && !isCardView && (
           <Reanimated.View
             entering={FadeIn.duration(150)}
             style={styles.viewContainer}
@@ -577,14 +707,14 @@ export default function ShowcaseDetail() {
             contentInsetAdjustmentBehavior="automatic"
             contentContainerStyle={[
               styles.listContent,
-              { paddingBottom: bottomOffset + 80 }, // Add extra padding for bottom bar
+              { paddingBottom: bottomOffset + 16 },
             ]}
             columnWrapperStyle={styles.row}
             refreshControl={
               <RefreshControl refreshing={isRefetching} onRefresh={refetch} />
             }
             ListHeaderComponent={
-              <>{detailHeader}{filteredItems.length !== (items?.length || 0) ? (
+              <>{detailHeader}{inlineSearchBar}{filteredItems.length !== (items?.length || 0) ? (
                 <Text style={styles.resultsText}>
                   Showing {filteredItems.length} of {items?.length || 0} items
                 </Text>
@@ -592,7 +722,7 @@ export default function ShowcaseDetail() {
             }
             ListEmptyComponent={
               <Text style={styles.emptyText}>
-                {searchQuery
+                {searchQuery || activeCategory !== "all"
                   ? "No items match your filters"
                   : "No items in this showcase yet."}
               </Text>
@@ -633,8 +763,8 @@ export default function ShowcaseDetail() {
 
       </View>
 
-      {/* Search and Filter Controls - Positioned above Tab Bar */}
-      {activeTab === "items" && <Animated.View
+      {/* Carousel view keeps the search bar floating above the tab bar */}
+      {activeTab === "items" && viewMode === "carousel" && <Animated.View
         style={[
           styles.searchContainer,
           {
@@ -643,75 +773,19 @@ export default function ShowcaseDetail() {
           },
         ]}
       >
-        <View style={styles.searchInputContainer}>
-          <Ionicons
-            name="search"
-            size={18}
-            color="rgba(255,255,255,0.35)"
-            style={styles.searchIcon}
-          />
-          <TextInput
-            style={styles.searchInput}
-            placeholder="Search items..."
-            placeholderTextColor="rgba(255,255,255,0.3)"
-            value={searchQuery}
-            onChangeText={setSearchQuery}
-          />
-          {searchQuery.length > 0 && (
-            <TouchableOpacity onPress={() => setSearchQuery("")}>
-              <Ionicons name="close-circle" size={18} color="rgba(255,255,255,0.35)" />
-            </TouchableOpacity>
-          )}
-        </View>
-
-        <TouchableOpacity
-          style={styles.viewToggleButton}
-          onPress={handleToggleView}
-        >
-          <Ionicons
-            name={viewMode === "grid" ? "albums" : "grid"}
-            size={18}
-            color="#9B5DE5"
-          />
-        </TouchableOpacity>
-
-        {hasPokemonCards && (
-          <TouchableOpacity
-            style={styles.viewToggleButton}
-            onPress={() => {
-              if (isCurator) {
-                setSetCompletionVisible(true);
-              } else {
-                setSetCompletionPaywallVisible(true);
-              }
-            }}
-            accessibilityLabel="Set completion"
-          >
-            <Ionicons name="extension-puzzle-outline" size={18} color="#9B5DE5" />
-          </TouchableOpacity>
-        )}
-
-        <TouchableOpacity
-          style={styles.filterButton}
-          onPress={() => setFilterModalOpen(true)}
-        >
-          <Ionicons name="options" size={18} color="#9B5DE5" />
-          {activeFilterCount > 0 && (
-            <View style={styles.filterCountBadge}>
-              <Text style={styles.filterCountBadgeText}>{activeFilterCount}</Text>
-            </View>
-          )}
-        </TouchableOpacity>
+        {searchControls}
       </Animated.View>}
 
       {settingsVisible && showcaseQuery.data && <ShowcaseSettingsModal showcase={showcaseQuery.data}
         onClose={() => setSettingsVisible(false)} onDeleted={() => { setSettingsVisible(false); router.back(); }} />}
       {customizeVisible && showcase && <ShowcaseCustomizeModal visible={customizeVisible} showcaseId={showcase.id}
-        initialAccentColor={showcase.accent_color} initialBannerImageUrl={showcase.banner_image_url}
-        canEditBanner={isCurator} onDismiss={() => setCustomizeVisible(false)} />}
+        initialName={showcase.name} initialAccentColor={showcase.accent_color} initialBannerImageUrl={showcase.banner_image_url}
+        canEditBanner={isCurator} items={items ?? []} onDismiss={() => setCustomizeVisible(false)} />}
       <ItemDetailModal
         visible={modalVisible}
-        item={selectedItem}
+        // Read the item back from the live query so edits (new photos,
+        // condition) show without closing the modal.
+        item={(selectedItem && items?.find((entry) => entry.id === selectedItem.id)) || selectedItem}
         accentColor={accentColor}
         onClose={handleCloseModal}
       />
@@ -740,6 +814,44 @@ export default function ShowcaseDetail() {
               showsVerticalScrollIndicator={false}
               contentContainerStyle={styles.modalScrollContent}
             >
+              {showCategoryTabs && (
+                <>
+                  <Text style={styles.sectionLabel}>Category</Text>
+                  <TouchableOpacity style={styles.dropdown} onPress={() => setCategoryMenuOpen((open) => !open)}
+                    accessibilityRole="button" accessibilityState={{ expanded: categoryMenuOpen }}
+                    accessibilityLabel={`Category, ${activeCategory === "all" ? "All" : ITEM_CATEGORY_LABELS[activeCategory]}`}>
+                    {activeCategory !== "all" && <Ionicons name={ITEM_CATEGORY_ICONS[activeCategory]} size={18} color="#D4D0DE" />}
+                    <Text style={styles.dropdownText}>
+                      {activeCategory === "all" ? "All categories" : ITEM_CATEGORY_LABELS[activeCategory]}
+                    </Text>
+                    <Text style={styles.dropdownCount}>
+                      {activeCategory === "all" ? items?.length ?? 0 : categoryCounts.get(activeCategory) ?? 0}
+                    </Text>
+                    <Ionicons name={categoryMenuOpen ? "chevron-up" : "chevron-down"} size={18} color="#D4D0DE" />
+                  </TouchableOpacity>
+                  {categoryMenuOpen && (
+                    <View style={styles.dropdownMenu} accessibilityRole="menu">
+                      {(["all", ...presentCategories] as const).map((key) => {
+                        const selected = activeCategory === key;
+                        return (
+                          <TouchableOpacity key={key} style={[styles.dropdownOption, selected && styles.dropdownOptionSelected]}
+                            onPress={() => handleCategoryChange(key)} accessibilityRole="menuitem" accessibilityState={{ selected }}>
+                            <Ionicons name={key === "all" ? "apps-outline" : ITEM_CATEGORY_ICONS[key]} size={18}
+                              color={selected ? "#FFF" : "#B5B1C2"} />
+                            <Text style={[styles.dropdownText, selected && styles.dropdownTextSelected]}>
+                              {key === "all" ? "All categories" : ITEM_CATEGORY_LABELS[key]}
+                            </Text>
+                            <Text style={styles.dropdownCount}>
+                              {key === "all" ? items?.length ?? 0 : categoryCounts.get(key) ?? 0}
+                            </Text>
+                          </TouchableOpacity>
+                        );
+                      })}
+                    </View>
+                  )}
+                </>
+              )}
+
               <Text style={styles.sectionLabel}>Sort by</Text>
               <View style={styles.sortOptions}>
                 {[
@@ -820,7 +932,7 @@ export default function ShowcaseDetail() {
               {availableTypes.length > 0 && (
                 <>
                   <Text style={styles.sectionLabel}>
-                    {effectiveGame === "magic" ? "Color" : "Type"}
+                    {effectiveGame === "magic" ? "Color" : effectiveGame === "riftbound" ? "Domain" : "Type"}
                   </Text>
                   <View style={styles.sortOptions}>
                     {availableTypes.map((type) => (
@@ -881,14 +993,14 @@ export default function ShowcaseDetail() {
             </ScrollView>
 
             <View style={styles.modalActions}>
-              {activeFilterCount > 0 && (
-                <TouchableOpacity style={styles.resetButton} onPress={resetFilters}>
+              {totalFilterCount > 0 && (
+                <TouchableOpacity style={styles.resetButton} onPress={resetAllFilters}>
                   <Text style={styles.resetButtonText}>Reset</Text>
                 </TouchableOpacity>
               )}
               <TouchableOpacity
                 style={styles.cancelButton}
-                onPress={() => setFilterModalOpen(false)}
+                onPress={() => { setCategoryMenuOpen(false); setFilterModalOpen(false); }}
               >
                 <Text style={styles.cancelButtonText}>Done</Text>
               </TouchableOpacity>
@@ -925,10 +1037,11 @@ const styles = StyleSheet.create({
   topRow: { flexDirection: "row", alignItems: "center", gap: 9, marginBottom: 14 },
   headerIcon: { width: 42, height: 42, borderRadius: 21, alignItems: "center", justifyContent: "center", backgroundColor: "#201F28", borderWidth: 1, borderColor: "#3B3648" },
   topTitle: { flex: 1, color: "#FFF", fontSize: 18, fontWeight: "900", textAlign: "center" },
+  flexSpacer: { flex: 1 },
   heroText: { marginTop: 14 },
   heroTitle: { color: "#FFF", fontSize: 32, fontWeight: "900", letterSpacing: -1 },
   heroDescription: { color: "#AAA5B6", fontSize: 15, marginTop: 3 },
-  ownerRow: { marginTop: 18, marginBottom: 13 },
+  ownerRow: { marginTop: 18, marginBottom: 18 },
   ownerIdentity: { flexDirection: "row", alignItems: "center", gap: 11 },
   ownerAvatar: { width: 48, height: 48, borderRadius: 24, borderWidth: 2, backgroundColor: "#302344", alignItems: "center", justifyContent: "center", overflow: "hidden" },
   ownerCopy: { flex: 1, minWidth: 0 },
@@ -936,12 +1049,8 @@ const styles = StyleSheet.create({
   ownerName: { color: "#FFF", fontSize: 15, fontWeight: "800", flexShrink: 1 },
   ownerBadge: { borderWidth: 1, borderRadius: 999, overflow: "hidden", paddingHorizontal: 8, paddingVertical: 2, fontSize: 11, fontWeight: "700" },
   ownerBio: { color: "#A9A5B2", fontSize: 12, marginTop: 2 },
-  heroActions: { flexDirection: "row", gap: 10, marginBottom: 15 },
-  followButton: { flex: 1, minHeight: 46, borderRadius: 24, overflow: "hidden" },
-  actionGradient: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8 },
-  followText: { color: "#FFF", fontWeight: "900", fontSize: 15 },
-  editShowcaseButton: { flex: 1, minHeight: 46, borderRadius: 24, borderWidth: 1, borderColor: "#605B6D", flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, backgroundColor: "#201F27" },
-  editShowcaseText: { color: "#FFF", fontWeight: "800", fontSize: 14 },
+  followIcon: { width: 44, height: 44, borderRadius: 22, alignItems: "center", justifyContent: "center", borderWidth: 1 },
+  followIconActive: { backgroundColor: "#201F28", borderColor: "#3B3648" },
   statsPanel: { borderWidth: 1, borderColor: "#45414E", borderRadius: 22, backgroundColor: "#1C1B22", marginBottom: 12 },
   detailTabs: { flexDirection: "row", borderWidth: 1, borderColor: "#45414E", borderRadius: 24, backgroundColor: "#1C1B22", padding: 5 },
   detailTab: { flex: 1, flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 6, minHeight: 43, borderRadius: 20 },
@@ -956,6 +1065,14 @@ const styles = StyleSheet.create({
   viewContainer: {
     flex: 1,
   },
+  inlineSearchBar: { flexDirection: "row", gap: 8, paddingHorizontal: 5, marginBottom: 12 },
+  dropdown: { flexDirection: "row", alignItems: "center", gap: 10, minHeight: 48, paddingHorizontal: 14, borderRadius: 12, borderWidth: 1, borderColor: "#45414E", backgroundColor: "#2a2a2a", marginBottom: 8 },
+  dropdownMenu: { borderRadius: 12, borderWidth: 1, borderColor: "#45414E", backgroundColor: "#202020", overflow: "hidden", marginBottom: 8 },
+  dropdownOption: { flexDirection: "row", alignItems: "center", gap: 10, minHeight: 46, paddingHorizontal: 14 },
+  dropdownOptionSelected: { backgroundColor: "rgba(155,93,229,0.35)" },
+  dropdownText: { flex: 1, color: "#E4E1EC", fontSize: 15, fontWeight: "600" },
+  dropdownTextSelected: { color: "#FFF" },
+  dropdownCount: { color: "#B5B1C2", fontSize: 14, fontWeight: "600", fontVariant: ["tabular-nums"] },
   gameTabs: {
     flexDirection: "row",
     alignSelf: "flex-start",
@@ -994,7 +1111,7 @@ const styles = StyleSheet.create({
   errorText: { color: "#FCA5A5" },
   listContent: { width: "100%", maxWidth: 900, alignSelf: "center", paddingHorizontal: 5, gap: 10 },
   row: { justifyContent: "space-between", gap: 10 },
-  resultsText: { color: "#666", fontSize: 14, marginBottom: 8, marginTop: 10 },
+  resultsText: { color: "#A3A3A3", fontSize: 14, marginBottom: 8, marginTop: 10 },
   emptyText: { color: "#9CA3AF", textAlign: "center", marginTop: 20 },
   carouselContainer: { flex: 1 },
   carouselTop: { position: "absolute", top: 14, left: 12, right: 12, zIndex: 10, flexDirection: "row", alignItems: "center", gap: 8 },
@@ -1109,7 +1226,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#9B5DE5",
     borderColor: "#9B5DE5",
   },
-  sortOrderText: { color: "#666", fontSize: 14, fontWeight: "500" },
+  sortOrderText: { color: "#A3A3A3", fontSize: 14, fontWeight: "500" },
   sortOrderTextSelected: { color: "#FFF", fontWeight: "600" },
 
   modalActions: {
@@ -1120,7 +1237,7 @@ const styles = StyleSheet.create({
     marginTop: 12,
   },
   cancelButton: { padding: 10 },
-  cancelButtonText: { color: "#9B5DE5", fontSize: 16, fontWeight: "600" },
+  cancelButtonText: { color: "#B794F6", fontSize: 16, fontWeight: "600" },
   resetButton: { padding: 10 },
   resetButtonText: { color: "#999", fontSize: 16, fontWeight: "600" },
   filterCountBadge: {

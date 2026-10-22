@@ -4,21 +4,21 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { validateCreateItem } from "@/lib/createItemValidation";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "@/src/components/media/ProtectedImage";
-import * as ImagePicker from "expo-image-picker";
+import { askYesNo, showMessage } from "@/lib/dialogs";
+import { pickImages } from "@/lib/imagePicker";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
     FlatList,
     Modal,
-    Platform,
     StyleSheet,
-    Switch,
     Text,
     TextInput,
     TouchableOpacity,
     View
 } from "react-native";
 import { KeyboardAwareScrollView } from "react-native-keyboard-controller";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import Animated, {
     useAnimatedStyle,
     useSharedValue,
@@ -27,6 +27,7 @@ import Animated, {
 } from "react-native-reanimated";
 
 import {
+    useBarcodeProductLookup,
     useCreateItemWithProductLookup,
     type Product
 } from "@/api/items";
@@ -51,7 +52,6 @@ interface ItemData {
     condition: ItemCondition | "";
     description: string;
     price: string;
-    forSale: boolean;
     selectedShowcaseIds: string[];
     imageUri: string | null;
 }
@@ -67,6 +67,7 @@ export default function CreateItemWizard({
     const haptics = useHaptics();
     const colors = useColors();
     const styles = getStyles(colors);
+    const insets = useSafeAreaInsets();
 
     const [currentStep, setCurrentStep] = useState<Step>(1);
     const [successModalOpen, setSuccessModalOpen] = useState(false);
@@ -79,7 +80,6 @@ export default function CreateItemWizard({
         condition: "",
         description: "",
         price: "",
-        forSale: false,
         selectedShowcaseIds: [],
         imageUri: null,
     });
@@ -113,6 +113,48 @@ export default function CreateItemWizard({
         slideAnim.value = 0;
         contentOpacity.value = 1;
     }, [currentStep, slideAnim, contentOpacity]);
+
+    // BarcodeNest lookup runs once the user leaves the scan step, so typing
+    // a code doesn't spend lookup credits on every keystroke.
+    const barcodeLookup = useBarcodeProductLookup(
+        itemData.barcode,
+        visible && currentStep >= 2 && !itemData.productData,
+    );
+
+    useEffect(() => {
+        if (barcodeLookup.data && !itemData.productData) {
+            setItemData((prev) => ({ ...prev, productData: barcodeLookup.data }));
+        }
+        // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, [barcodeLookup.data]);
+
+    // Ask once per matched product when the catalog has no image for it.
+    const [photoPromptedFor, setPhotoPromptedFor] = useState<Product | null>(null);
+    useEffect(() => {
+        const product = itemData.productData;
+        if (!visible || currentStep !== 2 || !product || product === photoPromptedFor) return;
+        if (product.images?.length || itemData.imageUri) return;
+        setPhotoPromptedFor(product);
+        void (async () => {
+            const wantsPhoto = await askYesNo(
+                "No image found",
+                `We couldn't find an image for ${product.title || "this item"}. Would you like to add one?`,
+                "Add Photo",
+                "No",
+            );
+            const assets = wantsPhoto
+                ? await pickImages({ title: "Item photo", allowsEditing: true, aspect: [1, 1], quality: 0.8 })
+                : [];
+            if (assets?.length) {
+                setItemData((prev) => ({ ...prev, imageUri: assets[0].uri }));
+            } else if (!wantsPhoto) {
+                showMessage(
+                    "No problem",
+                    "We'll use a fallback image for now. You can add a photo anytime from the item's details.",
+                );
+            }
+        })();
+    }, [visible, currentStep, itemData.productData, itemData.imageUri, photoPromptedFor]);
 
     const createItemWithProduct = useCreateItemWithProductLookup();
     const linkToShowcases = useLinkItemToShowcases();
@@ -166,10 +208,11 @@ export default function CreateItemWizard({
     const handleBarcodeScanned = async (barcode: string) => {
         await haptics.success();
         const sanitizedBarcode = barcode.replace(/[\s-]/g, "").trim();
-        setItemData((prev) => ({ ...prev, barcode: sanitizedBarcode }));
+        setItemData((prev) => ({ ...prev, barcode: sanitizedBarcode, productData: null }));
     };
 
     const handleCreateItem = async () => {
+        let createdItemId: number | null = null;
         try {
             await haptics.heavy();
             const payload = {
@@ -179,7 +222,6 @@ export default function CreateItemWizard({
                 customBrand: undefined,
                 condition: itemData.condition as ItemCondition,
                 userDescription: itemData.description || null,
-                forSale: itemData.forSale,
                 price: itemData.price.trim() !== "" ? Number(itemData.price) : null,
                 imageFile: itemData.imageUri || undefined,
                 imageUrl: null,
@@ -191,6 +233,7 @@ export default function CreateItemWizard({
 
             const res = await createItemWithProduct.mutateAsync(payload);
             setApiFinished(true);
+            createdItemId = res?.itemId ?? null;
 
             if (itemData.selectedShowcaseIds.length > 0 && res?.itemId) {
                 await linkToShowcases.mutateAsync({
@@ -202,7 +245,14 @@ export default function CreateItemWizard({
             setGenerationModalOpen(false);
             await haptics.error();
             console.error("Error creating item:", error);
-            alert(error instanceof Error ? error.message : "Failed to create item");
+            // The item exists if only the showcase link failed; say so, so a
+            // retry doesn't create a duplicate.
+            showMessage(
+                createdItemId ? "Item saved" : "Could not create item",
+                createdItemId
+                    ? "Your item was created, but it couldn't be added to the selected showcase. Add it from the showcase screen."
+                    : error instanceof Error ? error.message : "Failed to create item",
+            );
         }
     };
 
@@ -231,13 +281,13 @@ export default function CreateItemWizard({
 
     const resetWizard = () => {
         setCurrentStep(1);
+        setPhotoPromptedFor(null);
         setItemData({
             barcode: "",
             productData: null,
             condition: "",
             description: "",
             price: "",
-            forSale: false,
             selectedShowcaseIds: [],
             imageUri: null,
         });
@@ -282,7 +332,7 @@ export default function CreateItemWizard({
             <View style={styles.backdrop}>
                 <View style={styles.modal}>
                     {/* Header */}
-                    <View style={styles.header}>
+                    <View style={[styles.header, { paddingTop: insets.top + 12 }]}>
                         <TouchableOpacity
                             onPress={handleClose}
                             hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}
@@ -319,7 +369,7 @@ export default function CreateItemWizard({
                                     barcode={itemData.barcode}
                                     onBarcodeChange={(barcode) => {
                                         const sanitized = barcode.replace(/[\s-]/g, "").trim();
-                                        setItemData((prev) => ({ ...prev, barcode: sanitized }));
+                                        setItemData((prev) => ({ ...prev, barcode: sanitized, productData: null }));
                                     }}
                                     onBarcodeScanned={handleBarcodeScanned}
                                     isValidBarcode={isValidBarcode}
@@ -331,6 +381,8 @@ export default function CreateItemWizard({
                             {currentStep === 2 && (
                                 <Step2Details
                                     productData={itemData.productData}
+                                    isLookingUp={barcodeLookup.isFetching}
+                                    lookupFailed={barcodeLookup.isError || barcodeLookup.data === null}
                                     barcode={itemData.barcode}
                                     condition={itemData.condition}
                                     description={itemData.description}
@@ -346,10 +398,8 @@ export default function CreateItemWizard({
                             {currentStep === 3 && (
                                 <Step3PricingVisibility
                                     price={itemData.price}
-                                    forSale={itemData.forSale}
                                     selectedShowcaseIds={itemData.selectedShowcaseIds}
                                     onPriceChange={(p) => setItemData(prev => ({ ...prev, price: p }))}
-                                    onForSaleChange={(f) => setItemData(prev => ({ ...prev, forSale: f }))}
                                     onToggleShowcase={toggleShowcase}
                                     showcases={showcases || []}
                                     loadingShowcases={loadingShowcases}
@@ -361,7 +411,7 @@ export default function CreateItemWizard({
                     </Animated.View>
 
                     {/* Navigation */}
-                    <View style={styles.navigation}>
+                    <View style={[styles.navigation, { paddingBottom: insets.bottom + 20 }]}>
                         {currentStep > 1 && (
                             <TouchableOpacity style={styles.backButton} onPress={prevStep} activeOpacity={0.7}>
                                 <Text style={styles.backButtonText}>Back</Text>
@@ -555,9 +605,9 @@ function Step1ScanCode({
 
 // Step 2: Details
 function Step2Details({
-    productData, barcode, condition, description, onConditionChange, onDescriptionChange, haptics, imageUri, onImageChange, colors,
+    productData, isLookingUp, lookupFailed, barcode, condition, description, onConditionChange, onDescriptionChange, haptics, imageUri, onImageChange, colors,
 }: {
-    productData?: Product | null; barcode: string; condition: ItemCondition | ""; description: string;
+    productData?: Product | null; isLookingUp: boolean; lookupFailed: boolean; barcode: string; condition: ItemCondition | ""; description: string;
     onConditionChange: (val: ItemCondition | "") => void; onDescriptionChange: (val: string) => void;
     haptics: ReturnType<typeof useHaptics>; imageUri: string | null; onImageChange: (uri: string | null) => void;
     colors: ThemeColors;
@@ -566,17 +616,11 @@ function Step2Details({
     const [conditionModalOpen, setConditionModalOpen] = useState(false);
 
     const handlePickImage = async () => {
-        const result = await ImagePicker.launchImageLibraryAsync({
-            mediaTypes: ['images'], allowsEditing: true, aspect: [1, 1], quality: 0.8, base64: false,
-        });
-        if (!result.canceled && result.assets[0]) {
-            const asset = result.assets[0];
-            if (asset.fileSize && asset.fileSize > 5 * 1024 * 1024) {
-                alert("Image too large. Please select an image smaller than 5MB.");
-                return;
-            }
+        // Size limits are tier-specific and enforced at upload time.
+        const assets = await pickImages({ title: "Item photo", allowsEditing: true, aspect: [1, 1], quality: 0.8 });
+        if (assets?.[0]) {
             await haptics.selection();
-            onImageChange(asset.uri);
+            onImageChange(assets[0].uri);
         }
     };
 
@@ -586,12 +630,20 @@ function Step2Details({
         <View style={styles.stepContent}>
             <Text style={styles.stepTitle}>Item Details</Text>
 
-            {productData && (
+            {productData ? (
                 <View style={styles.productSummary}>
                     <Text style={styles.productTitle}>{productData.title}</Text>
                     <Text style={styles.productBrand}>{productData.brand}</Text>
                 </View>
-            )}
+            ) : isLookingUp ? (
+                <View style={styles.productSummary}>
+                    <Text style={styles.productBrand}>Looking up barcode…</Text>
+                </View>
+            ) : lookupFailed ? (
+                <View style={styles.productSummary}>
+                    <Text style={styles.productBrand}>No product found for {barcode}. You can still add it.</Text>
+                </View>
+            ) : null}
 
             <View style={styles.imageSection}>
                 <TouchableOpacity style={styles.imagePreview} onPress={handlePickImage} activeOpacity={0.8}>
@@ -676,10 +728,10 @@ function Step2Details({
 
 // Step 3: Pricing & Visibility
 function Step3PricingVisibility({
-    price, forSale, selectedShowcaseIds, onPriceChange, onForSaleChange, onToggleShowcase, showcases, loadingShowcases, haptics, colors,
+    price, selectedShowcaseIds, onPriceChange, onToggleShowcase, showcases, loadingShowcases, haptics, colors,
 }: {
-    price: string; forSale: boolean; selectedShowcaseIds: string[];
-    onPriceChange: (val: string) => void; onForSaleChange: (val: boolean) => void;
+    price: string; selectedShowcaseIds: string[];
+    onPriceChange: (val: string) => void;
     onToggleShowcase: (id: string) => void; showcases: ShowcaseRow[]; loadingShowcases: boolean;
     haptics: ReturnType<typeof useHaptics>; colors: ThemeColors;
 }) {
@@ -705,6 +757,7 @@ function Step3PricingVisibility({
                 </View>
             </View>
 
+            {/* MVP: selling is out of scope; items default to for_sale = false in the DB.
             <View style={styles.fieldContainer}>
                 <View style={styles.switchRow}>
                     <View>
@@ -719,6 +772,7 @@ function Step3PricingVisibility({
                     />
                 </View>
             </View>
+            */}
 
             <View style={styles.fieldContainer}>
                 <Text style={styles.fieldLabel}>Add to Showcase(s)</Text>
@@ -781,7 +835,7 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
     modal: { flex: 1, backgroundColor: colors.background },
     header: {
         flexDirection: "row", justifyContent: "space-between", alignItems: "center",
-        padding: 16, paddingTop: Platform.OS === "ios" ? 60 : 16,
+        padding: 16,
         borderBottomWidth: 1, borderBottomColor: colors.border,
     },
     title: { color: colors.text, fontSize: 18, fontWeight: "700" },
@@ -824,7 +878,7 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
     validBarcode: { color: "#4CAF50" },
     navigation: {
         flexDirection: "row", padding: 20, borderTopWidth: 1, borderTopColor: colors.border,
-        marginBottom: Platform.OS === "ios" ? 20 : 0, alignItems: "center",
+        alignItems: "center",
     },
     backButton: { paddingVertical: 12, paddingHorizontal: 8 },
     backButtonText: { color: colors.grey, fontSize: 16, fontWeight: "600" },

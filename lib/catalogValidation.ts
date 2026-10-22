@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { RIFTBOUND_ID_PATTERN, RIFTCODEX_ID_PATTERN } from "@/lib/riftboundCatalog";
+
 const filterSchema = z.string().trim().max(160);
 
 export const catalogRequestSchema = z.discriminatedUnion("provider", [
@@ -9,8 +11,17 @@ export const catalogRequestSchema = z.discriminatedUnion("provider", [
     query: z.string().trim().min(1).max(200),
   }).strict(),
   z.object({
+    provider: z.literal("barcodenest"),
+    // BarcodeNest accepts EAN-8, UPC-A, EAN-13, and GTIN-14 digit strings.
+    code: z.string().trim().regex(/^(\d{8}|\d{12,14})$/),
+  }).strict(),
+  z.object({
     provider: z.literal("pokemon"),
     path: z.string().min(1).max(2000),
+  }).strict(),
+  z.object({
+    provider: z.literal("riftbound"),
+    path: z.string().min(1).max(1000),
   }).strict(),
   z.object({
     provider: z.literal("magic"),
@@ -36,10 +47,50 @@ const pokemonParameters = z.object({
     .default("-set.releaseDate,number"),
 }).strict();
 
+const riftboundPaging = {
+  page: z.coerce.number().int().min(1).max(100).default(1),
+  size: z.coerce.number().int().min(1).max(100).default(50),
+};
+const riftboundSetId = z.string().trim().regex(/^[a-zA-Z0-9]{2,10}$/);
+
+/** Riftcodex reads: name lookup, set listing, and exact card IDs only. */
+function canonicalRiftboundPath(path: string) {
+  const id = path.match(/^\/cards\/riftbound\/([^/?#]+)$/)?.[1];
+  if (id !== undefined) {
+    if (!RIFTBOUND_ID_PATTERN.test(id)) throw new Error("Invalid Riftbound ID");
+    return `/cards/riftbound/${id.toLowerCase()}`;
+  }
+  const riftcodexId = path.match(/^\/cards\/([^/?#]+)$/)?.[1];
+  if (riftcodexId !== undefined && riftcodexId !== "name") {
+    if (!RIFTCODEX_ID_PATTERN.test(riftcodexId)) throw new Error("Invalid Riftcodex ID");
+    return path;
+  }
+  const prefix = path.startsWith("/cards/name?") ? "/cards/name?" : "/cards?";
+  if (!path.startsWith(prefix)) throw new Error("Unsupported Riftbound catalog request.");
+  const entries = [...new URLSearchParams(path.slice(prefix.length)).entries()];
+  if (new Set(entries.map(([key]) => key)).size !== entries.length) {
+    throw new Error("Duplicate catalog parameters are not supported.");
+  }
+  const values = Object.fromEntries(entries);
+  const params = prefix === "/cards/name?"
+    ? z.object({
+        fuzzy: z.string().trim().min(1).max(200).optional(),
+        exact: z.string().trim().min(1).max(200).optional(),
+        set_id: riftboundSetId.optional(),
+        ...riftboundPaging,
+      }).strict().refine((value) => !!value.fuzzy !== !!value.exact, "Use exactly one of fuzzy or exact").parse(values)
+    // Set listings are the only unfiltered read; always sorted by collector number.
+    : z.object({ set_id: riftboundSetId, sort: z.literal("collector_number").default("collector_number"), ...riftboundPaging })
+      .strict().parse(values);
+  return prefix + new URLSearchParams(
+    Object.entries(params).filter(([, value]) => value !== undefined).map(([key, value]) => [key, String(value)]),
+  ).toString();
+}
+
 /** Canonicalize a limited set of read operations; never accept a vendor URL. */
 export function validateCatalogRequest(input: unknown) {
   const request = catalogRequestSchema.parse(input);
-  if (request.provider === "barcode" || request.provider === "upc") return request;
+  if (request.provider === "barcode" || request.provider === "upc" || request.provider === "barcodenest") return request;
 
   if (request.provider === "tcgtracking") {
     if (/^\/3\/sets\/[1-9][0-9]{0,9}\/cards$/.test(request.path)) return request;
@@ -49,6 +100,8 @@ export function validateCatalogRequest(input: unknown) {
     if (entries.length !== 1) throw new Error("Invalid tracking query");
     return { ...request, path: `/3/search?${new URLSearchParams(params)}` };
   }
+
+  if (request.provider === "riftbound") return { ...request, path: canonicalRiftboundPath(request.path) };
 
   if (request.provider === "magic") {
     const prefix = request.path.startsWith("/cards/search?") ? "/cards/search?" : "/cards/named?";

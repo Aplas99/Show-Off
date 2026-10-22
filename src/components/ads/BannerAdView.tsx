@@ -1,8 +1,8 @@
 import { AD_REQUEST_OPTIONS, AD_UNIT_IDS, ensureMobileAdsInitialized, useAdPrivacyRevision } from "@/api/ads";
 import { useAdEligibility } from "@/api/ads/eligibility";
+import { adsSdk } from "@/api/ads/sdk";
 import React, { useEffect, useState } from "react";
 import { StyleSheet, View } from "react-native";
-import { BannerAd, BannerAdSize } from "react-native-google-mobile-ads";
 
 export default function BannerAdView() {
   const { userId, eligible } = useAdEligibility();
@@ -20,7 +20,8 @@ export default function BannerAdView() {
     }
     return () => { active = false; };
   }, [eligible, userId, key, changing]);
-  if (!eligible || changing || ready !== key) return null;
+  if (!adsSdk || !eligible || changing || ready !== key) return null;
+  const { BannerAd, BannerAdSize } = adsSdk;
   return <View style={styles.container}>
     <BannerAd key={key} unitId={AD_UNIT_IDS.banner} size={BannerAdSize.ANCHORED_ADAPTIVE_BANNER} requestOptions={AD_REQUEST_OPTIONS} onAdFailedToLoad={() => setReady(null)} />
   </View>;

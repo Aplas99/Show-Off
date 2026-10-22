@@ -1,6 +1,6 @@
 {
   "expo": {
-    "name": "show-off",
+    "name": "Show Off",
     "slug": "show-off",
     "version": "1.0.0",
     "orientation": "portrait",
@@ -25,7 +25,7 @@
       },
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
-      "package": "com.zed99.showoff"
+      "package": "com.onistudios.showoff"
     },
     "web": {
       "output": "static",
@@ -49,25 +49,20 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Allow Show Off to access your camera to scan cards and barcodes.",
+          "cameraPermission": "Allow Show Off to use your camera to scan cards and barcodes and take photos of your collectibles.",
           "barcodeScannerEnabled": true
         }
       ],
       [
         "expo-image-picker",
         {
-          "photosPermission": "Allow Show Off to access your photos so you can add images of your collectibles."
+          "photosPermission": "Allow Show Off to access your photos so you can add images of your collectibles.",
+          "cameraPermission": "Allow Show Off to use your camera to scan cards and barcodes and take photos of your collectibles.",
+          "microphonePermission": false
         }
       ],
       "expo-font",
       "expo-web-browser",
-      [
-        "react-native-google-mobile-ads",
-        {
-          "androidAppId": "ca-app-pub-3940256099942544~3347511713",
-          "iosAppId": "ca-app-pub-3940256099942544~1458002511"
-        }
-      ],
       [
         "expo-build-properties",
         {

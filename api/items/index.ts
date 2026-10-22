@@ -1,4 +1,4 @@
-import { fetchExternalProducts, fetchFromBarcodeLookup, resolveProductForItem } from "@/api/products";
+import { fetchExternalProducts, fetchFromBarcodeLookup, lookupProductByBarcode, resolveProductForItem } from "@/api/products";
 import type { CatalogProduct } from "@/lib/productCatalog";
 import { uploadImageToSupabase } from "@/api/storage";
 import {
@@ -6,7 +6,10 @@ import {
   type PokemonTcgCard,
 } from "@/api/pokemon";
 import { extractMarketPrice } from "@/api/pokemon/ocrPostprocessing";
+import { getRiftboundSetName } from "@/constants/riftboundSets";
+import type { ItemCategory } from "@/constants/itemCategory";
 import { createActionLogger } from "@/lib/actionDebug";
+import { inferItemCategory } from "@/lib/itemCategory";
 import {
   CreateItemPayload,
   validateCreateItem,
@@ -61,6 +64,7 @@ export interface ItemWithProduct {
   product_ean: string | null;
   pokemon_tcg_card_id?: string | null;
   magic_card_id?: string | null;
+  riftbound_card_id?: string | null;
   created_at: string;
   image_url: string;
   /** Full ordered photo gallery (Curator multi-image); `image_url` is the cover. */
@@ -74,7 +78,10 @@ export interface ItemWithProduct {
   custom_title?: string | null;
   custom_brand?: string | null;
   custom_publisher?: string | null;
+  /** Free-text type label (Vinyl, Figure...); the top-level bucket is `category`. */
   custom_category?: string | null;
+  /** Top-level category; read it through `resolveItemCategory` for legacy rows. */
+  category?: string | null;
   /** Populated only for Pokémon TCG items, from the pokemon_tcg_cards cache. */
   pokemonTypes?: string[];
   pokemonSetId?: string | null;
@@ -88,6 +95,11 @@ export interface ItemWithProduct {
   magicMarketPrice?: number | null;
   /** Scryfall color codes (W/U/B/R/G); empty for colorless cards. */
   magicColors?: string[];
+  /** Populated only for Riftbound items, from the riftbound_cards cache. */
+  riftboundSetCode?: string | null;
+  riftboundSetName?: string | null;
+  /** Riftbound domains (Fury, Calm, Mind, Body, Chaos, Order). */
+  riftboundDomains?: string[];
 }
 
 const searchDebug = createActionLogger("Search");
@@ -115,28 +127,33 @@ export interface ItemDetailsUpdate {
   title: string;
   brand: string;
   publisher: string;
-  category: string;
+  /** Free-text type label, stored in `custom_category`. */
+  type: string;
+  category: ItemCategory;
   description: string;
   price: number | null;
-  forSale: boolean;
+  /** Selling is outside MVP scope; omit to leave `for_sale` unchanged. */
+  forSale?: boolean;
 }
 
 export function useUpdateItemDetails() {
   const queryClient = useQueryClient();
   return useMutation({
-    mutationFn: async ({ itemId, title, brand, publisher, category, description, price, forSale }: ItemDetailsUpdate) => {
+    mutationFn: async ({ itemId, title, brand, publisher, type, category, description, price, forSale }: ItemDetailsUpdate) => {
       const { data: { user }, error: authError } = await supabase.auth.getUser();
       if (authError || !user) throw new Error("Please sign in again to edit this item.");
       const { data, error } = await supabase.from("items").update({
         custom_title: title.trim(),
         custom_brand: brand.trim() || null,
         custom_publisher: publisher.trim() || null,
-        custom_category: category.trim() || null,
+        custom_category: type.trim() || null,
+        // Linked cards stay 'tcg' regardless; the items_set_category trigger enforces it.
+        category,
         user_description: description.trim() || null,
         price,
-        for_sale: forSale,
+        ...(forSale !== undefined && { for_sale: forSale }),
       }).eq("id", itemId).eq("user_id", user.id)
-        .select("custom_title, custom_brand, custom_publisher, custom_category, user_description, price, for_sale")
+        .select("custom_title, custom_brand, custom_publisher, custom_category, category, user_description, price, for_sale")
         .single();
       if (error) throw new Error(error.message);
       return data;
@@ -284,6 +301,26 @@ export function useProductSearch(params: SearchParams) {
   });
 }
 
+const barcodeDebug = createActionLogger("Barcode");
+
+/** BarcodeNest-backed product lookup for a scanned or typed barcode. */
+export function useBarcodeProductLookup(barcode: string, enabled = true) {
+  const code = barcode.replace(/[\s-]/g, "").trim();
+  return useQuery({
+    queryKey: ["barcode-product", code],
+    queryFn: async (): Promise<Product | null> => {
+      barcodeDebug.log("lookup.started", { code });
+      const product = await lookupProductByBarcode(code);
+      barcodeDebug.log("lookup.completed", { code, found: !!product });
+      return product ?? null;
+    },
+    enabled: enabled && /^\d{8,14}$/.test(code),
+    // Matches are persisted server-side; misses shouldn't re-spend credits.
+    staleTime: Infinity,
+    retry: false,
+  });
+}
+
 // External API Search Hook (Simple)
 export function useSearchExternalApi(query: string) {
   return useQuery({
@@ -365,9 +402,15 @@ export function useCreateItemWithProductLookup() {
           custom_brand: payload.customBrand || personalProduct?.brand || null,
           custom_publisher: payload.customPublisher || null,
           custom_category: payload.customCategory || personalProduct?.category || null,
+          category: payload.category ?? inferItemCategory({
+            pokemonTcgCardId,
+            productEan,
+            hints: [payload.customCategory, productData?.category],
+          }),
           condition: payload.condition,
           user_description: payload.userDescription ?? personalProduct?.description,
-          for_sale: payload.forSale,
+          // Selling is outside MVP scope: omitted, the column defaults to false.
+          ...(payload.forSale !== undefined && { for_sale: payload.forSale }),
           price: payload.price,
           image_url: finalImageUrl || personalProduct?.images?.[0] || null,
         })
@@ -483,7 +526,8 @@ export function useGetMyItems({ enabled = true }: { enabled?: boolean } = {}) {
           id, image_url, custom_title, created_at,
           products ( searchableTitle, data ),
           pokemon_tcg_cards ( name, image_small ),
-          magic_cards ( name, image_small )
+          magic_cards ( name, image_small ),
+          riftbound_cards ( name, image_url )
         `,
         )
         .eq("user_id", user.id)
@@ -497,12 +541,14 @@ export function useGetMyItems({ enabled = true }: { enabled?: boolean } = {}) {
           row.products?.searchableTitle ||
           row.pokemon_tcg_cards?.name ||
           row.magic_cards?.name ||
+          row.riftbound_cards?.name ||
           row.custom_title ||
           "Collection item",
         imageUrl:
           row.image_url ||
           row.pokemon_tcg_cards?.image_small ||
           row.magic_cards?.image_small ||
+          row.riftbound_cards?.image_url ||
           row.products?.data?.images?.[0] ||
           null,
       }));
@@ -529,7 +575,7 @@ export function useGetItemsWithProductData(showcaseId: string) {
                     item_id,
                     showcase_id,
                     items (
-                        id, user_id, product_ean, pokemon_tcg_card_id, magic_card_id, created_at, image_url, image_urls, condition, user_description, for_sale, price, currency_code, custom_title, custom_brand, custom_publisher, custom_category,
+                        id, user_id, product_ean, pokemon_tcg_card_id, magic_card_id, riftbound_card_id, created_at, image_url, image_urls, condition, user_description, for_sale, price, currency_code, custom_title, custom_brand, custom_publisher, custom_category, category,
                         products (
                             ean, searchableTitle, searchableDescription, searchableBrand, data
                         ),
@@ -539,6 +585,9 @@ export function useGetItemsWithProductData(showcaseId: string) {
                         ),
                         magic_cards (
                             id, name, set_code, set_name, collector_number, rarity, image_normal, image_small, raw_data, type_line, price_usd, colors
+                        ),
+                        riftbound_cards (
+                            id, riftbound_id, name, set_code, set_name, collector_number, rarity, card_type, domains, image_url, raw_data
                         )
                     )
                 `,
@@ -554,6 +603,7 @@ export function useGetItemsWithProductData(showcaseId: string) {
           const product = item.products;
           const pokemonCard = item.pokemon_tcg_cards;
           const magicCard = item.magic_cards;
+          const riftboundCard = item.riftbound_cards;
 
           // Parse data field if it's a string (legacy/db support)
           let parsedProductData: any = {};
@@ -587,6 +637,9 @@ export function useGetItemsWithProductData(showcaseId: string) {
             magicSetName: magicCard?.set_name ?? null,
             magicMarketPrice: magicCard?.price_usd ?? null,
             magicColors: magicCard?.colors ?? undefined,
+            riftboundSetCode: riftboundCard?.set_code ?? null,
+            riftboundSetName: riftboundCard ? getRiftboundSetName(riftboundCard.set_code, riftboundCard.set_name) : null,
+            riftboundDomains: riftboundCard?.domains ?? undefined,
             products: product
               ? {
                 ...product,
@@ -633,7 +686,24 @@ export function useGetItemsWithProductData(showcaseId: string) {
                       ].filter(Boolean),
                     },
                   }
-                  : null,
+                  : riftboundCard
+                    ? {
+                      ean: null,
+                      searchableTitle: riftboundCard.name,
+                      searchableDescription: [
+                        getRiftboundSetName(riftboundCard.set_code, riftboundCard.set_name),
+                        riftboundCard.collector_number != null ? `#${riftboundCard.collector_number}` : null,
+                        riftboundCard.rarity,
+                      ].filter(Boolean).join(" • "),
+                      searchableBrand: "Riftbound",
+                      data: {
+                        ...(riftboundCard.raw_data ?? {}),
+                        category: "TCG",
+                        publisher: "Riot Games",
+                        images: [riftboundCard.image_url].filter(Boolean),
+                      },
+                    }
+                    : null,
           } as ItemWithProduct;
         })
         .filter((item): item is ItemWithProduct => item !== null);

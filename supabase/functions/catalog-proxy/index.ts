@@ -30,6 +30,10 @@ Deno.serve(createCatalogProxyHandler({
     const { error } = await admin.from("magic_cards").upsert(rows, { onConflict: "id" });
     if (error) throw error;
   },
+  persistRiftboundCards: async (rows, signal) => {
+    const { error } = await admin.from("riftbound_cards").upsert(rows, { onConflict: "id" }).abortSignal(signal);
+    if (error) throw error;
+  },
   persistPokemonCards: async (rows, signal) => {
     const { error } = await admin.from("pokemon_tcg_cards").upsert(rows, { onConflict: "id" }).abortSignal(signal);
     if (error) throw error;

@@ -18,7 +18,7 @@ export default function ModerationScreen() {
     {reports.isError && <Text style={{ color: colors.danger }} onPress={() => void reports.refetch()}>Reports could not be loaded. Tap to retry.</Text>}
     {reports.data?.length === 0 && <Text style={{ color: colors.text }}>No reports.</Text>}
     {reports.data?.map((report) => <View key={report.id} style={{ padding: 16, borderWidth: 1, borderColor: colors.border, gap: 8 }}>
-      <Text style={{ color: colors.text }}>{report.target_type} {report.target_id} — {report.reason} — {report.status}</Text>
+      <Text style={{ color: colors.text }}>{report.target_type} {report.target_id} â€” {report.reason} â€” {report.status}</Text>
       <Text selectable style={{ color: colors.text }}>{report.details}</Text>
       <Text selectable style={{ color: colors.text }}>{JSON.stringify(report.context, null, 2)}</Text>
       {!!report.resolution && <Text style={{ color: colors.text }}>{report.resolution}</Text>}

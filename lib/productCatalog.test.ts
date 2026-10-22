@@ -1,4 +1,4 @@
-import { getProductCode, parseBarcodeProducts, parseUpcProducts, productsToCacheRows, upcRetryDelay } from "./productCatalog";
+import { getProductCode, parseBarcodeNestProducts, parseBarcodeProducts, parseUpcProducts, productsToCacheRows, upcRetryDelay } from "./productCatalog";
 
 describe("trusted product normalization", () => {
   it("preserves barcode zeroes, ignores malformed records, and normalizes prices", () => {
@@ -42,5 +42,13 @@ describe("trusted product normalization", () => {
     expect(upcRetryDelay(new Headers(), 0)).toBe(60);
     expect(upcRetryDelay(new Headers({ "X-RateLimit-Reset": "1120" }), 1_000_000)).toBe(120);
     expect(upcRetryDelay(new Headers({ "Retry-After": "9999999" }))).toBe(86400);
+  });
+
+  it("parses BarcodeNest products and drops unsafe images or nameless records", () => {
+    expect(parseBarcodeNestProducts({ barcode: "036000291452", found: true, product: { name: " Tissue ", brand: "Kleenex", image_url: "http://insecure/x.png" } }))
+      .toEqual([{ title: "Tissue", ean: "036000291452", upc: "036000291452", brand: "Kleenex", images: undefined }]);
+    expect(parseBarcodeNestProducts({ barcode: "12345678", found: true, product: { name: null } })).toEqual([]);
+    expect(parseBarcodeNestProducts({ found: false })).toEqual([]);
+    expect(() => parseBarcodeNestProducts({ barcode: "x", found: true })).toThrow();
   });
 });

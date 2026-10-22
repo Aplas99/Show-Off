@@ -137,7 +137,7 @@ interface PokemonCardGridViewProps {
   onRefresh?: () => void;
   /** Total card count for the showcase, shown in the header pill. Defaults to `items.length` (i.e. the unfiltered count when the caller passes the full list, or the currently-displayed count otherwise). */
   totalCount?: number;
-  /** Maps a card id (`pokemon_tcg_card_id` or `magic_card_id`) -> how many times that card appears in the showcase, for the "×N" corner badge. Omit or leave a card's id out to render no badge. */
+  /** Maps a card id (`pokemon_tcg_card_id`, `magic_card_id`, or `riftbound_card_id`) -> how many times that card appears in the showcase, for the "×N" corner badge. Omit or leave a card's id out to render no badge. */
   duplicateCounts?: Map<string, number>;
   /** Rendered above the count pill in the list header (e.g. game filter tabs). */
   headerAccessory?: React.ReactNode;
@@ -183,7 +183,7 @@ export const PokemonCardGridView: React.FC<PokemonCardGridViewProps> = ({
 
   const renderItem = useCallback(
     ({ item }: { item: ItemWithProduct }) => {
-      const cardId = item.pokemon_tcg_card_id || item.magic_card_id;
+      const cardId = item.pokemon_tcg_card_id || item.magic_card_id || item.riftbound_card_id;
       return (
         <CardCell
           item={item}

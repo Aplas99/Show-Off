@@ -148,7 +148,7 @@ const styles = StyleSheet.create({
   hintText: { color: "#FFF", fontSize: 12, fontWeight: "700" },
   disclosure: {
     color: "rgba(255,255,255,0.82)",
-    fontSize: 10,
+    fontSize: 11,
     textAlign: "center",
     marginTop: 7,
   },
