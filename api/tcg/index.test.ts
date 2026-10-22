@@ -1,5 +1,5 @@
 import { CatalogRequestError } from "@/api/catalog";
-import { searchTcgCardsCacheFirst, type TcgCard, type TcgDependencies } from "@/api/tcg";
+import { fetchTcgSetRoster, searchTcgCardsCacheFirst, type TcgCard, type TcgDependencies } from "@/api/tcg";
 
 jest.mock("@/lib/supabase", () => ({ supabase: { rpc: jest.fn() } }));
 jest.mock("@/api/catalog", () => {
@@ -57,5 +57,24 @@ describe("shared TCG search", () => {
     await expect(searchTcgCardsCacheFirst({ game: "fab", query: "bravo" }, busy)).rejects.toThrow("busy");
     const malformed = deps({ searchProvider: jest.fn().mockResolvedValue({ cards: [{ id: "bad" }] }) });
     await expect(searchTcgCardsCacheFirst({ game: "fab", query: "bravo" }, malformed)).rejects.toThrow();
+  });
+});
+
+describe("shared TCG set rosters", () => {
+  it("serves a fully cached set without calling the provider", async () => {
+    const d = { findCachedRoster: jest.fn().mockResolvedValue([card]), fetchRoster: jest.fn() };
+    expect(await fetchTcgSetRoster("ygo", "1001", d)).toEqual([card]);
+    expect(d.fetchRoster).not.toHaveBeenCalled();
+  });
+
+  it("fetches through the proxy on a miss and skips non-numeric set ids", async () => {
+    const d = {
+      findCachedRoster: jest.fn().mockResolvedValue(null),
+      fetchRoster: jest.fn().mockResolvedValue({ setName: "Legend of Blue Eyes", cards: [card] }),
+    };
+    expect(await fetchTcgSetRoster("ygo", "1001", d)).toEqual([card]);
+    expect(d.fetchRoster).toHaveBeenCalledWith("ygo", "1001");
+    expect(await fetchTcgSetRoster("ygo", "LOB", d)).toEqual([]);
+    expect(d.fetchRoster).toHaveBeenCalledTimes(1);
   });
 });

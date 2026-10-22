@@ -281,7 +281,6 @@ export default function ShowcaseDetail() {
     }
     return ITEM_GAMES.filter((game) => games.has(game.key));
   }, [items]);
-  const hasPokemonCards = presentGames.some((game) => game.key === "pokemon");
   // A showcase made entirely of trading cards renders as a TCG Pocket-style
   // collection grid instead of the generic item grid.
   const isPokemonShowcase = useMemo(
@@ -572,7 +571,7 @@ export default function ShowcaseDetail() {
       accessibilityLabel={viewMode === "grid" ? "Show carousel" : "Show grid"}>
       <Ionicons name={viewMode === "grid" ? "albums" : "grid"} size={18} color="#9B5DE5" />
     </TouchableOpacity>
-    {hasPokemonCards && (
+    {presentGames.length > 0 && (
       <TouchableOpacity
         style={styles.viewToggleButton}
         onPress={() => {

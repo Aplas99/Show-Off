@@ -2,7 +2,17 @@ import { validateCatalogRequest } from "@/lib/catalogValidation";
 import { magicCardSchema, magicCardToCacheRow, scryfallSearchResponseSchema } from "@/lib/magicCatalog";
 import { barcodeNestNeedsImage, openLibraryCoverUrl, parseBarcodeNestProducts, parseBarcodeProducts, parseUpcProducts, productsToCacheRows, upcRetryDelay, withBarcodeNestImage } from "@/lib/productCatalog";
 
-import { POKEWALLET_PAGE_SIZE, cacheRowToTcgCard, parsePokewalletSearch, tcgCardImagePath, tcgCardToCacheRow } from "@/lib/pokewalletCatalog";
+import {
+  POKEWALLET_PAGE_SIZE,
+  POKEWALLET_SET_MAX_PAGES,
+  POKEWALLET_SET_PAGE_SIZE,
+  cacheRowToTcgCard,
+  parsePokewalletSearch,
+  parsePokewalletSetPage,
+  tcgCardImagePath,
+  tcgCardToCacheRow,
+  type PokewalletCard,
+} from "@/lib/pokewalletCatalog";
 import { parseRiftboundCards, riftboundCardToCacheRow } from "@/lib/riftboundCatalog";
 import { parsePokemonSetList, pokemonCardResponseSchema, pokemonSearchResponseSchema, pokemonCardToCacheRow, pokemonSetToCacheRow, type PokemonTcgCard } from "@/lib/pokemonCatalog";
 import { parseTrackingCards, setSearchSchema } from "@/lib/tcgTrackingCatalog";
@@ -33,6 +43,8 @@ export interface CatalogProxyDependencies {
   persistTcgCards: (rows: ReturnType<typeof tcgCardToCacheRow>[], signal: AbortSignal) => Promise<void>;
   /** Already-copied image URLs for cached cards, keyed by card id. */
   findTcgCardImages: (ids: string[], signal: AbortSignal) => Promise<Record<string, string | null>>;
+  /** Marks a PokéWallet set as fully cached in tcg_cards (tcg_set_rosters). */
+  persistTcgSetRoster: (row: { game: string; set_id: string; set_name: string | null; card_count: number; cached_at: string }, signal: AbortSignal) => Promise<void>;
   /** Uploads a card image to the public tcg-card-images bucket; returns its public URL. */
   storeTcgCardImage: (path: string, bytes: Uint8Array, contentType: string, signal: AbortSignal) => Promise<string>;
   reserveUpcRequest: (isSearch: boolean) => Promise<boolean>;
@@ -96,6 +108,71 @@ async function readBoundedBytes(body: ReadableStream<Uint8Array> | null, limit: 
   return bytes;
 }
 
+/**
+ * Full roster of one PokéWallet set for set completion. Up to five pages of
+ * 200 cards; each page after the first spends another limiter request.
+ * Images are not copied here (that would cost one request per card): cards
+ * keep any image already stored, and search copies the rest later.
+ */
+async function handlePokewalletSet(request: PokewalletRequest, setId: string, key: string, dependencies: CatalogProxyDependencies, userId: string) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), POKEWALLET_TIMEOUT_MS);
+  const headers = { Accept: "application/json", "X-API-Key": key };
+  try {
+    const cards: PokewalletCard[] = [];
+    let setName: string | null = null;
+    for (let page = 1; page <= POKEWALLET_SET_MAX_PAGES; page += 1) {
+      if (page > 1 && !await dependencies.consumeRequest(userId, "pokewallet")) {
+        return json({ error: "Catalog request limit reached. Please try again later." }, 429);
+      }
+      const url = new URL(`https://api.pokewallet.io/${request.game}/sets/${setId}`);
+      url.search = new URLSearchParams({ page: String(page), limit: String(POKEWALLET_SET_PAGE_SIZE) }).toString();
+      const response = await dependencies.fetch(url, { headers, signal: controller.signal, redirect: "error" });
+      if (!response.ok) {
+        await response.body?.cancel().catch(() => undefined);
+        if (response.status === 404) return json({ error: "That set was not found." }, 404);
+        if (response.status === 429) return json({ error: "The card catalog is busy. Please try again later." }, 429);
+        return json({ error: "The catalog provider is temporarily unavailable. Please try again." }, 502);
+      }
+      const parsed = parsePokewalletSetPage(await readBoundedJson(response.body, RESPONSE_LIMIT_BYTES));
+      setName ??= parsed.setName;
+      cards.push(...parsed.cards);
+      if (parsed.rawCount < POKEWALLET_SET_PAGE_SIZE) break;
+      // A set that fills every page may be truncated; don't mark it complete.
+      if (page === POKEWALLET_SET_MAX_PAGES) throw new Error("Set roster too large");
+    }
+
+    const unique = [...new Map(cards.map((card) => [card.id, card])).values()];
+    let stored: Record<string, string | null> = {};
+    try {
+      stored = await dependencies.findTcgCardImages(unique.map((card) => card.id), controller.signal);
+    } catch {
+      // Without the lookup, rows are written without images; search re-copies them.
+    }
+    const rows = unique.map((card) => tcgCardToCacheRow(request.game, card, stored[card.id] ?? null));
+    try {
+      if (rows.length > 0) await dependencies.persistTcgCards(rows, controller.signal);
+      await dependencies.persistTcgSetRoster({
+        game: request.game,
+        set_id: setId,
+        set_name: setName,
+        card_count: rows.length,
+        cached_at: new Date().toISOString(),
+      }, controller.signal);
+    } catch {
+      return json({ error: "Could not save catalog results. Please try again." }, 503);
+    }
+    return json({ setName, cards: rows.map(cacheRowToTcgCard) });
+  } catch {
+    return json({ error: controller.signal.aborted
+      ? "Catalog search timed out. Please try again."
+      : "The catalog provider could not be reached. Please try again." },
+    controller.signal.aborted ? 504 : 502);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 type PokewalletRequest = Extract<ReturnType<typeof validateCatalogRequest>, { provider: "pokewallet" }>;
 
 /**
@@ -103,14 +180,16 @@ type PokewalletRequest = Extract<ReturnType<typeof validateCatalogRequest>, { pr
  * are returned, and each card image is copied once into Storage, because
  * PokéWallet images need the API key and can't be loaded by the app.
  */
-async function handlePokewallet(request: PokewalletRequest, key: string, dependencies: CatalogProxyDependencies) {
+async function handlePokewallet(request: PokewalletRequest, key: string, dependencies: CatalogProxyDependencies, userId: string) {
+  if (request.setId) return handlePokewalletSet(request, request.setId, key, dependencies, userId);
   const controller = new AbortController();
   const timeout = setTimeout(() => controller.abort(), POKEWALLET_TIMEOUT_MS);
   const headers = { Accept: "application/json", "X-API-Key": key };
   try {
     const url = new URL(`https://api.pokewallet.io/${request.game}/search`);
     url.search = new URLSearchParams({
-      q: request.query,
+      // validateCatalogRequest guarantees a query when there is no setId.
+      q: request.query ?? "",
       page: String(request.page),
       limit: String(POKEWALLET_PAGE_SIZE),
     }).toString();
@@ -232,7 +311,7 @@ export function createCatalogProxyHandler(dependencies: CatalogProxyDependencies
       return json({ error: "Catalog search is temporarily unavailable. Please try again." }, 503);
     }
 
-    if (request.provider === "pokewallet") return handlePokewallet(request, key!, dependencies);
+    if (request.provider === "pokewallet") return handlePokewallet(request, key!, dependencies, userId);
 
     let url: URL;
     let body: string | undefined;

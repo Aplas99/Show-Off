@@ -3,7 +3,13 @@ import { keepPreviousData, useMutation, useQuery, useQueryClient } from "@tansta
 import { CatalogRequestError, fetchCatalog } from "@/api/catalog";
 import type { TcgGameCode } from "@/constants/tcgGames";
 import { createActionLogger } from "@/lib/actionDebug";
-import { tcgCardSchema, tcgSearchResponseSchema, type TcgCard } from "@/lib/pokewalletCatalog";
+import {
+  POKEWALLET_SET_ID_PATTERN,
+  tcgCardSchema,
+  tcgSearchResponseSchema,
+  tcgSetRosterResponseSchema,
+  type TcgCard,
+} from "@/lib/pokewalletCatalog";
 import { supabase } from "@/lib/supabase";
 
 export { type TcgCard } from "@/lib/pokewalletCatalog";
@@ -87,6 +93,78 @@ export async function searchTcgCardsCacheFirst(
     tcgDebug.error("search.failed", error);
     throw error;
   }
+}
+
+export interface TcgSetRosterDependencies {
+  /** Rows for a set, or null unless tcg_set_rosters says the set is fully cached. */
+  findCachedRoster: (game: TcgGameCode, setId: string) => Promise<TcgCard[] | null>;
+  fetchRoster: (game: TcgGameCode, setId: string) => Promise<unknown>;
+}
+
+const defaultRosterDependencies: TcgSetRosterDependencies = {
+  findCachedRoster: async (game, setId) => {
+    const { data: manifest, error: manifestError } = await supabase
+      .from("tcg_set_rosters")
+      .select("card_count")
+      .eq("game", game)
+      .eq("set_id", setId)
+      .maybeSingle();
+    if (manifestError || !manifest) return null;
+    const { data, error } = await supabase
+      .from("tcg_cards")
+      .select("id, game, name, set_name, set_code, set_id, card_number, rarity, card_type, image_url, market_price")
+      .eq("game", game)
+      .eq("set_id", setId)
+      .limit(2000);
+    if (error) return null;
+    const cards = (data ?? []).flatMap((row) => {
+      const parsed = tcgCardSchema.safeParse(row);
+      return parsed.success ? [parsed.data] : [];
+    });
+    // Search also adds cards to tcg_cards; only the manifest's count proves the set is whole.
+    return cards.length >= (manifest as { card_count: number }).card_count ? cards : null;
+  },
+  fetchRoster: (game, setId) => fetchCatalog({ provider: "pokewallet", game, setId }),
+};
+
+/**
+ * Every card in a PokéWallet set, for set completion. Reads the shared cache
+ * first; a miss costs one PokéWallet request per 200 cards, after which the
+ * set is cached for every user.
+ */
+export async function fetchTcgSetRoster(
+  game: TcgGameCode,
+  setId: string,
+  dependencies: TcgSetRosterDependencies = defaultRosterDependencies,
+): Promise<TcgCard[]> {
+  if (!POKEWALLET_SET_ID_PATTERN.test(setId)) return [];
+  const cached = await dependencies.findCachedRoster(game, setId);
+  if (cached) {
+    tcgDebug.log("set-roster.completed", { game, setId, source: "cache", cardCount: cached.length });
+    return cached;
+  }
+  const parsed = tcgSetRosterResponseSchema.parse(await dependencies.fetchRoster(game, setId));
+  tcgDebug.log("set-roster.completed", { game, setId, source: "api", cardCount: parsed.cards.length });
+  return parsed.cards;
+}
+
+/** Cached card counts per set id, read from tcg_set_rosters; sets never loaded are absent. */
+export function useTcgSetRosterCounts(game: TcgGameCode | null, setIds: string[]) {
+  const ids = [...new Set(setIds.filter((id) => POKEWALLET_SET_ID_PATTERN.test(id)))].sort();
+  return useQuery({
+    queryKey: ["tcg-cards", "set-roster-counts", game, ids],
+    queryFn: async () => {
+      const { data, error } = await supabase
+        .from("tcg_set_rosters")
+        .select("set_id, card_count")
+        .eq("game", game!)
+        .in("set_id", ids);
+      if (error) throw new Error(error.message);
+      return new Map((data ?? []).map((row) => [String(row.set_id), Number(row.card_count)]));
+    },
+    enabled: !!game && ids.length > 0,
+    staleTime: 10 * 60_000,
+  });
 }
 
 export function useTcgCardSearch(input: SearchTcgCardsInput) {

@@ -110,6 +110,14 @@ hour, 1,000 a day), and each new card costs one extra request for its image.
 The client searches the `tcg_cards` cache first (`search_tcg_cards` RPC) and
 only calls the proxy on a miss or when the user asks for the full catalog.
 
+Set completion sends `{ provider: "pokewallet", game, setId }` instead of a
+query: the proxy fetches `/{game}/sets/{setId}` (200 cards a page, at most 5
+pages, each extra page spending a limiter request), saves the cards without
+copying images (search copies them later), and records the set in
+`tcg_set_rosters` so later viewers read it from the cache. A set that fills
+all 5 pages is treated as truncated and is not marked complete. Apply
+`20261025100000_tcg_set_rosters.sql` before deploying this.
+
 Apply `20261024100000_tcg_cards.sql` (table, search RPC, image bucket,
 limiter bucket) before deploying the proxy update, then
 `20261024110000_tcg_card_items.sql` (`items.tcg_card_id`,

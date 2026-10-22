@@ -7,6 +7,13 @@ export const POKEWALLET_ID_PATTERN = /^(pk_)?[a-f0-9]{16,160}$/;
 
 export const tcgGameSchema = z.enum(TCG_GAME_CODES);
 
+/** PokéWallet set ids are numeric group ids; CardMarket-only sets are negative. */
+export const POKEWALLET_SET_ID_PATTERN = /^-?\d{1,12}$/;
+
+/** Cards per set-roster page (PokéWallet's maximum) and the most pages fetched. */
+export const POKEWALLET_SET_PAGE_SIZE = 200;
+export const POKEWALLET_SET_MAX_PAGES = 5;
+
 /** Results per PokéWallet search; each uncached card also costs one image request. */
 export const POKEWALLET_PAGE_SIZE = 10;
 
@@ -61,6 +68,30 @@ export function parsePokewalletSearch(raw: unknown) {
   return { cards, page: parsed.pagination.page, total: parsed.pagination.total, totalPages: parsed.pagination.total_pages };
 }
 
+const setRosterResponseSchema = z.object({
+  set: z.object({ name: looseText, set_id: looseText }).passthrough(),
+  cards: z.array(z.unknown()).max(POKEWALLET_SET_PAGE_SIZE),
+});
+
+/**
+ * One page of `/{game}/sets/{setId}`. A disambiguation reply (several sets
+ * share a code) has no `cards`; it can't happen for numeric set ids, so it
+ * is treated as malformed.
+ */
+export function parsePokewalletSetPage(raw: unknown) {
+  const parsed = setRosterResponseSchema.parse(raw);
+  const cards = parsed.cards.flatMap((result) => {
+    const card = pokewalletCardSchema.safeParse(result);
+    return card.success && card.data.card_info.product_type !== "sealed" ? [card.data] : [];
+  });
+  return { setName: parsed.set.name, rawCount: parsed.cards.length, cards };
+}
+
+export const tcgSetRosterResponseSchema = z.object({
+  setName: z.string().nullable(),
+  cards: z.array(z.lazy(() => tcgCardSchema)).max(POKEWALLET_SET_PAGE_SIZE * POKEWALLET_SET_MAX_PAGES),
+});
+
 /** Lowest TCGplayer market price across finishes, in USD. */
 export function getPokewalletMarketPrice(card: PokewalletCard): number | null {
   const prices = (card.tcgplayer?.prices ?? [])
@@ -110,6 +141,7 @@ export const tcgCardSchema = z.object({
   market_price: z.coerce.number().nullable(),
 });
 
+
 export type TcgCard = z.infer<typeof tcgCardSchema>;
 
 export const tcgSearchResponseSchema = z.object({
@@ -125,7 +157,7 @@ export function cacheRowToTcgCard(row: TcgCardCacheRow): TcgCard {
 }
 
 /** Columns item queries select from tcg_cards (`tcg_cards ( ${TCG_CARD_ITEM_COLUMNS} )`). */
-export const TCG_CARD_ITEM_COLUMNS = "id, game, name, set_name, set_code, card_number, rarity, card_type, image_url, market_price";
+export const TCG_CARD_ITEM_COLUMNS = "id, game, name, set_name, set_code, set_id, card_number, rarity, card_type, image_url, market_price";
 
 export interface TcgCardItemRow {
   id: string;
@@ -133,6 +165,7 @@ export interface TcgCardItemRow {
   name: string;
   set_name: string | null;
   set_code: string | null;
+  set_id?: string | null;
   card_number: string | null;
   rarity: string | null;
   card_type?: string | null;

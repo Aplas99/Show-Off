@@ -132,6 +132,7 @@ ML Kit (`@infinitered/react-native-mlkit-text-recognition`) is a native module �
 - `magic_cards` — Magic card cache (Scryfall); `id` is the Scryfall UUID
 - `riftbound_cards` — Riftbound card cache (Riftcodex, no API key); `id` is the Riftcodex ObjectId, `riftbound_id` the printed code (e.g. `ogn-011-298`, signatures use `*`). Written only by `catalog-proxy`; searched via the `search_riftbound_cards` RPC
 - `tcg_cards` — shared card cache for the PokéWallet games; `id` is the PokéWallet id (`pk_…` or bare hex), `game` the code from `constants/tcgGames.ts`, `image_url` a copy in the public `tcg-card-images` bucket. Written only by `catalog-proxy`; searched via the `search_tcg_cards` RPC. PokéWallet's plan limits are shared by all users, so always search this cache first
+- `tcg_set_rosters` — complete-set manifest for the PokéWallet games (like `pokemon_tcg_set_rosters`); set completion (`api/sets`, `useSetRoster`) reads `tcg_cards` for a set only when this says it is whole
 - `price_history` — daily per-card market price snapshots, written by SECURITY DEFINER triggers on both card caches
 - `scan_usage` / `search_usage` — free-tier daily quota counters, written only via SECURITY DEFINER RPCs
 - `showcase_items` — join table linking items to showcases

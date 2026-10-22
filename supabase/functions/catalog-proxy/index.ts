@@ -65,6 +65,10 @@ Deno.serve(createCatalogProxyHandler({
     if (error) throw error;
     return Object.fromEntries((data ?? []).map((row) => [row.id as string, (row.image_url as string | null) ?? null]));
   },
+  persistTcgSetRoster: async (row, signal) => {
+    const { error } = await admin.from("tcg_set_rosters").upsert(row, { onConflict: "game,set_id" }).abortSignal(signal);
+    if (error) throw error;
+  },
   storeTcgCardImage: async (path, bytes, contentType) => {
     const bucket = admin.storage.from("tcg-card-images");
     const { error } = await bucket.upload(path, bytes, { contentType, upsert: true, cacheControl: "31536000" });

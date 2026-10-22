@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-import { tcgGameSchema } from "@/lib/pokewalletCatalog";
+import { POKEWALLET_SET_ID_PATTERN, tcgGameSchema } from "@/lib/pokewalletCatalog";
 import { RIFTBOUND_ID_PATTERN, RIFTCODEX_ID_PATTERN } from "@/lib/riftboundCatalog";
 
 const filterSchema = z.string().trim().max(160);
@@ -27,8 +27,10 @@ export const catalogRequestSchema = z.discriminatedUnion("provider", [
   z.object({
     provider: z.literal("pokewallet"),
     game: tcgGameSchema,
+    // Exactly one of: a search query, or a set id for a full set roster.
     // PokéWallet rejects queries outside 2-100 characters.
-    query: z.string().trim().min(2).max(100),
+    query: z.string().trim().min(2).max(100).optional(),
+    setId: z.string().trim().regex(POKEWALLET_SET_ID_PATTERN).optional(),
     page: z.number().int().min(1).max(50).default(1),
   }).strict(),
   z.object({
@@ -98,8 +100,11 @@ function canonicalRiftboundPath(path: string) {
 /** Canonicalize a limited set of read operations; never accept a vendor URL. */
 export function validateCatalogRequest(input: unknown) {
   const request = catalogRequestSchema.parse(input);
-  if (request.provider === "barcode" || request.provider === "upc" || request.provider === "barcodenest"
-    || request.provider === "pokewallet") return request;
+  if (request.provider === "barcode" || request.provider === "upc" || request.provider === "barcodenest") return request;
+  if (request.provider === "pokewallet") {
+    if (!request.query === !request.setId) throw new Error("Use exactly one of query or setId");
+    return request;
+  }
 
   if (request.provider === "tcgtracking") {
     if (/^\/3\/sets\/[1-9][0-9]{0,9}\/cards$/.test(request.path)) return request;

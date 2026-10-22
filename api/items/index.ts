@@ -107,6 +107,8 @@ export interface ItemWithProduct {
   /** Populated only for shared-pipeline cards, from the tcg_cards cache. */
   tcgGame?: string | null;
   tcgSetCode?: string | null;
+  /** PokéWallet set id (numeric), used to load the full set roster. */
+  tcgSetId?: string | null;
   tcgSetName?: string | null;
   tcgRarity?: string | null;
   tcgMarketPrice?: number | null;
@@ -657,6 +659,7 @@ export function useGetItemsWithProductData(showcaseId: string) {
             riftboundDomains: riftboundCard?.domains ?? undefined,
             tcgGame: tcgCard?.game ?? null,
             tcgSetCode: tcgCard?.set_code ?? null,
+            tcgSetId: tcgCard?.set_id ?? null,
             tcgSetName: tcgCard?.set_name ?? null,
             tcgRarity: tcgCard?.rarity ?? null,
             tcgMarketPrice: tcgCard?.market_price != null ? Number(tcgCard.market_price) : null,

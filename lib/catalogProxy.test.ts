@@ -15,6 +15,7 @@ function setup() {
     persistProducts: jest.fn().mockResolvedValue(undefined),
     persistTcgCards: jest.fn().mockResolvedValue(undefined),
     findTcgCardImages: jest.fn().mockResolvedValue({}),
+    persistTcgSetRoster: jest.fn().mockResolvedValue(undefined),
     storeTcgCardImage: jest.fn().mockImplementation(async (path: string) => `https://project.invalid/storage/v1/object/public/tcg-card-images/${path}`),
     reserveUpcRequest: jest.fn().mockResolvedValue(true),
     deferUpcRequests: jest.fn().mockResolvedValue(undefined),
@@ -410,7 +411,57 @@ describe("authenticated catalog proxy", () => {
     expect(await failed.text()).not.toContain("pk_live");
   });
 
+  it("caches a full PokéWallet set roster without copying images", async () => {
+    const { handler, dependencies } = setup();
+    dependencies.findTcgCardImages.mockResolvedValueOnce({ pk_aaaaaaaaaaaaaaaaaaaa: "https://project.invalid/a.jpg" });
+    dependencies.fetch.mockResolvedValueOnce(new Response(JSON.stringify({
+      success: true,
+      set: { name: "Legend of Blue Eyes", set_code: "LOB", set_id: "1001", total_cards: 3 },
+      cards: [
+        pokewalletCard("pk_aaaaaaaaaaaaaaaaaaaa"),
+        pokewalletCard("pk_bbbbbbbbbbbbbbbbbbbb"),
+        pokewalletCard("pk_cccccccccccccccccccc", { product_type: "sealed" }),
+      ],
+    })));
+    const response = await handler(request({ provider: "pokewallet", game: "ygo", setId: "1001" }));
+    expect(response.status).toBe(200);
+    expect(dependencies.fetch).toHaveBeenCalledTimes(1);
+    expect(dependencies.fetch.mock.calls[0][0].toString()).toBe("https://api.pokewallet.io/ygo/sets/1001?page=1&limit=200");
+    expect(dependencies.storeTcgCardImage).not.toHaveBeenCalled();
+    expect(dependencies.persistTcgCards).toHaveBeenCalledWith([
+      expect.objectContaining({ id: "pk_aaaaaaaaaaaaaaaaaaaa", image_url: "https://project.invalid/a.jpg" }),
+      expect.objectContaining({ id: "pk_bbbbbbbbbbbbbbbbbbbb", image_url: null }),
+    ], expect.any(AbortSignal));
+    expect(dependencies.persistTcgSetRoster).toHaveBeenCalledWith(
+      expect.objectContaining({ game: "ygo", set_id: "1001", set_name: "Legend of Blue Eyes", card_count: 2 }),
+      expect.any(AbortSignal),
+    );
+    expect((await response.json()).cards).toHaveLength(2);
+  });
+
+  it("pages large PokéWallet sets against the limiter and never marks a truncated set complete", async () => {
+    const { handler, dependencies } = setup();
+    const fullPage = (offset: number) => new Response(JSON.stringify({
+      success: true,
+      set: { name: "Huge", set_id: "7" },
+      cards: Array.from({ length: 200 }, (_, index) =>
+        pokewalletCard(`pk_${(offset + index).toString(16).padStart(20, "0")}`)),
+    }));
+    dependencies.fetch.mockImplementation(async (url: URL) => fullPage(Number(url.searchParams.get("page")) * 1000));
+    expect((await handler(request({ provider: "pokewallet", game: "fab", setId: "7" }))).status).toBe(502);
+    expect(dependencies.fetch).toHaveBeenCalledTimes(5);
+    expect(dependencies.consumeRequest).toHaveBeenCalledTimes(5);
+    expect(dependencies.persistTcgSetRoster).not.toHaveBeenCalled();
+  });
+
   it("rejects PokéWallet requests for unknown games, existing pipelines, or bad queries", async () => {
+    for (const extra of [
+      { provider: "pokewallet", game: "ygo", setId: "LOB" },
+      { provider: "pokewallet", game: "ygo", query: "dark", setId: "1001" },
+      { provider: "pokewallet", game: "ygo" },
+    ]) {
+      expect((await setup().handler(request(extra))).status).toBe(400);
+    }
     const { handler, dependencies } = setup();
     for (const body of [
       { provider: "pokewallet", game: "mtg", query: "bolt" },
