@@ -40,11 +40,12 @@ function chunk<T>(values: readonly T[], size: number): T[][] {
 const EXPORT_SELECT = `
   id, created_at, custom_title, custom_brand, custom_publisher, custom_category, category,
   condition, user_description, price, currency_code, image_url,
-  product_ean, pokemon_tcg_card_id, magic_card_id, riftbound_card_id,
+  product_ean, pokemon_tcg_card_id, magic_card_id, riftbound_card_id, tcg_card_id,
   products ( searchableTitle, searchableBrand ),
   pokemon_tcg_cards ( name ),
   magic_cards ( name ),
   riftbound_cards ( name ),
+  tcg_cards ( name ),
   showcase_items ( showcase ( name ) )
 `;
 
@@ -68,6 +69,7 @@ async function fetchExportItems(userId: string): Promise<ItemCsvExportSource[]> 
           row.pokemon_tcg_cards?.name ||
           row.magic_cards?.name ||
           row.riftbound_cards?.name ||
+          row.tcg_cards?.name ||
           "",
         brand: row.custom_brand || row.products?.searchableBrand || null,
         publisher: row.custom_publisher,
@@ -81,6 +83,7 @@ async function fetchExportItems(userId: string): Promise<ItemCsvExportSource[]> 
         pokemonCardId: row.pokemon_tcg_card_id,
         magicCardId: row.magic_card_id,
         riftboundCardId: row.riftbound_card_id,
+        tcgCardId: row.tcg_card_id,
         showcases: ((row.showcase_items ?? []) as { showcase: { name: string } | null }[])
           .map((link) => link.showcase?.name)
           .filter((name): name is string => !!name),
@@ -182,6 +185,7 @@ async function importRows(userId: string, rows: ItemCsvImportRow[], failed: Item
         pokemon_card_id: row.pokemon_card_id,
         magic_card_id: row.magic_card_id,
         riftbound_card_id: row.riftbound_card_id,
+        tcg_card_id: row.tcg_card_id,
         image_url: row.image_url,
         showcase_ids: row.showcases.flatMap((name) => showcaseIds.get(name.toLowerCase()) ?? []),
       })),
@@ -204,7 +208,7 @@ async function importRows(userId: string, rows: ItemCsvImportRow[], failed: Item
         return;
       }
       imported++;
-      const requestedLink = !!(row.pokemon_card_id || row.magic_card_id || row.riftbound_card_id || row.barcode);
+      const requestedLink = !!(row.pokemon_card_id || row.magic_card_id || row.riftbound_card_id || row.tcg_card_id || row.barcode);
       if (requestedLink && !result.linked) unlinked++;
     });
   }

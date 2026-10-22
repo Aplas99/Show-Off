@@ -84,6 +84,38 @@ before shipping the client with `RiftboundCreateScreen`.
 Riftcodex publishes no rate limits and returns 500 (not 404) for unknown
 ObjectIds, which the proxy reports as a generic provider error.
 
+## Other card games (PokéWallet)
+
+Provider `pokewallet` serves every card game without a dedicated pipeline
+through one shared pipeline: Yu-Gi-Oh! (`ygo`), One Piece (`op`), Disney
+Lorcana (`lor`), Flesh and Blood (`fab`), Digimon (`dgm`), Star Wars:
+Unlimited (`swu`), Dragon Ball Super (`dbs`), Cardfight!! Vanguard (`cfv`) and
+Cyberpunk (`cpk`). The list lives in `constants/tcgGames.ts` and the
+`tcg_cards.game` CHECK constraint; adding a game means updating both.
+Pokémon, Magic and Riftbound keep their own providers.
+
+- Request: `{ provider: "pokewallet", game, query, page }`; the proxy calls
+  `https://api.pokewallet.io/{game}/search` (10 results per page) with the
+  `X-API-Key` header from the `POKEWALLET_API_KEY` Edge Function secret.
+- Cards are validated (`lib/pokewalletCatalog.ts`), sealed products are
+  dropped, and rows are upserted into `tcg_cards` before they are returned.
+- PokéWallet images need the key, so the proxy copies each card image once
+  (`/{game}/images/{id}?size=high`) into the public `tcg-card-images` bucket
+  and stores that URL. Cards already stored skip the image request; a failed
+  copy saves the card without an image.
+- Requests use the per-user `pokewallet` limiter bucket.
+
+PokéWallet's plan limits are shared across all users (free: 100 requests an
+hour, 1,000 a day), and each new card costs one extra request for its image.
+The client searches the `tcg_cards` cache first (`search_tcg_cards` RPC) and
+only calls the proxy on a miss or when the user asks for the full catalog.
+
+Apply `20261024100000_tcg_cards.sql` (table, search RPC, image bucket,
+limiter bucket) before deploying the proxy update, then
+`20261024110000_tcg_card_items.sql` (`items.tcg_card_id`,
+`create_tcg_card_batch`, category trigger, CSV import column) before shipping
+the client with `TcgGameCreateScreen`.
+
 ## Request and response controls
 
 - Only POST (plus OPTIONS) is accepted; identity comes from a verified bearer

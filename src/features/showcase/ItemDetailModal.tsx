@@ -16,6 +16,7 @@ import { useAuthStore } from "@/hooks/useAuthStore";
 import { DEFAULT_SHOWCASE_ACCENT } from "@/src/features/showcase/ShowcaseVisuals";
 import { confirmAction, showMessage } from "@/lib/dialogs";
 import { getItemCategory } from "@/lib/itemCategory";
+import { isCardItem } from "@/lib/itemCards";
 import ItemCategoryPicker from "@/src/components/items/ItemCategoryPicker";
 import CyclingImage from "@/src/components/media/CyclingImage";
 import { CuratorGateModal } from "@/src/features/membership/CuratorGate";
@@ -608,7 +609,7 @@ function EditItemDetailsModal({ visible, item, saving, onClose, onSave }: {
     }
   };
 
-  const isCard = !!item.pokemon_tcg_card_id || !!item.magic_card_id || !!item.riftbound_card_id;
+  const isCard = isCardItem(item);
 
   const fields = [
     { label: "Title", value: title, onChangeText: setTitle, multiline: false },

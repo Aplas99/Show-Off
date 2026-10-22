@@ -55,6 +55,22 @@ Deno.serve(createCatalogProxyHandler({
       .upsert(rows.map(({ ean, data }) => ({ ean, data })), { onConflict: "ean" }).abortSignal(signal);
     if (retryError) throw retryError;
   },
+  persistTcgCards: async (rows, signal) => {
+    const { error } = await admin.from("tcg_cards").upsert(rows, { onConflict: "id" }).abortSignal(signal);
+    if (error) throw error;
+  },
+  findTcgCardImages: async (ids, signal) => {
+    if (ids.length === 0) return {};
+    const { data, error } = await admin.from("tcg_cards").select("id, image_url").in("id", ids).abortSignal(signal);
+    if (error) throw error;
+    return Object.fromEntries((data ?? []).map((row) => [row.id as string, (row.image_url as string | null) ?? null]));
+  },
+  storeTcgCardImage: async (path, bytes, contentType) => {
+    const bucket = admin.storage.from("tcg-card-images");
+    const { error } = await bucket.upload(path, bytes, { contentType, upsert: true, cacheControl: "31536000" });
+    if (error) throw error;
+    return bucket.getPublicUrl(path).data.publicUrl;
+  },
   reserveUpcRequest: async (isSearch) => {
     const { data, error } = await admin.rpc("reserve_upc_catalog_request", { p_is_search: isSearch });
     if (error) throw error;

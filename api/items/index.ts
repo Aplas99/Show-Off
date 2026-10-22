@@ -7,6 +7,8 @@ import {
 } from "@/api/pokemon";
 import { extractMarketPrice } from "@/api/pokemon/ocrPostprocessing";
 import { getRiftboundSetName } from "@/constants/riftboundSets";
+import { getTcgGameName } from "@/constants/tcgGames";
+import { TCG_CARD_ITEM_COLUMNS, tcgCardItemProduct } from "@/lib/pokewalletCatalog";
 import type { ItemCategory } from "@/constants/itemCategory";
 import { createActionLogger } from "@/lib/actionDebug";
 import { inferItemCategory } from "@/lib/itemCategory";
@@ -65,6 +67,8 @@ export interface ItemWithProduct {
   pokemon_tcg_card_id?: string | null;
   magic_card_id?: string | null;
   riftbound_card_id?: string | null;
+  /** Shared-pipeline card (constants/tcgGames.ts), from the tcg_cards cache. */
+  tcg_card_id?: string | null;
   created_at: string;
   image_url: string;
   /** Full ordered photo gallery (Curator multi-image); `image_url` is the cover. */
@@ -100,6 +104,12 @@ export interface ItemWithProduct {
   riftboundSetName?: string | null;
   /** Riftbound domains (Fury, Calm, Mind, Body, Chaos, Order). */
   riftboundDomains?: string[];
+  /** Populated only for shared-pipeline cards, from the tcg_cards cache. */
+  tcgGame?: string | null;
+  tcgSetCode?: string | null;
+  tcgSetName?: string | null;
+  tcgRarity?: string | null;
+  tcgMarketPrice?: number | null;
 }
 
 const searchDebug = createActionLogger("Search");
@@ -527,7 +537,8 @@ export function useGetMyItems({ enabled = true }: { enabled?: boolean } = {}) {
           products ( searchableTitle, data ),
           pokemon_tcg_cards ( name, image_small ),
           magic_cards ( name, image_small ),
-          riftbound_cards ( name, image_url )
+          riftbound_cards ( name, image_url ),
+          tcg_cards ( name, image_url )
         `,
         )
         .eq("user_id", user.id)
@@ -542,6 +553,7 @@ export function useGetMyItems({ enabled = true }: { enabled?: boolean } = {}) {
           row.pokemon_tcg_cards?.name ||
           row.magic_cards?.name ||
           row.riftbound_cards?.name ||
+          row.tcg_cards?.name ||
           row.custom_title ||
           "Collection item",
         imageUrl:
@@ -549,6 +561,7 @@ export function useGetMyItems({ enabled = true }: { enabled?: boolean } = {}) {
           row.pokemon_tcg_cards?.image_small ||
           row.magic_cards?.image_small ||
           row.riftbound_cards?.image_url ||
+          row.tcg_cards?.image_url ||
           row.products?.data?.images?.[0] ||
           null,
       }));
@@ -575,7 +588,7 @@ export function useGetItemsWithProductData(showcaseId: string) {
                     item_id,
                     showcase_id,
                     items (
-                        id, user_id, product_ean, pokemon_tcg_card_id, magic_card_id, riftbound_card_id, created_at, image_url, image_urls, condition, user_description, for_sale, price, currency_code, custom_title, custom_brand, custom_publisher, custom_category, category,
+                        id, user_id, product_ean, pokemon_tcg_card_id, magic_card_id, riftbound_card_id, tcg_card_id, created_at, image_url, image_urls, condition, user_description, for_sale, price, currency_code, custom_title, custom_brand, custom_publisher, custom_category, category,
                         products (
                             ean, searchableTitle, searchableDescription, searchableBrand, data
                         ),
@@ -588,7 +601,8 @@ export function useGetItemsWithProductData(showcaseId: string) {
                         ),
                         riftbound_cards (
                             id, riftbound_id, name, set_code, set_name, collector_number, rarity, card_type, domains, image_url, raw_data
-                        )
+                        ),
+                        tcg_cards ( ${TCG_CARD_ITEM_COLUMNS} )
                     )
                 `,
         )
@@ -604,6 +618,7 @@ export function useGetItemsWithProductData(showcaseId: string) {
           const pokemonCard = item.pokemon_tcg_cards;
           const magicCard = item.magic_cards;
           const riftboundCard = item.riftbound_cards;
+          const tcgCard = item.tcg_cards;
 
           // Parse data field if it's a string (legacy/db support)
           let parsedProductData: any = {};
@@ -640,6 +655,11 @@ export function useGetItemsWithProductData(showcaseId: string) {
             riftboundSetCode: riftboundCard?.set_code ?? null,
             riftboundSetName: riftboundCard ? getRiftboundSetName(riftboundCard.set_code, riftboundCard.set_name) : null,
             riftboundDomains: riftboundCard?.domains ?? undefined,
+            tcgGame: tcgCard?.game ?? null,
+            tcgSetCode: tcgCard?.set_code ?? null,
+            tcgSetName: tcgCard?.set_name ?? null,
+            tcgRarity: tcgCard?.rarity ?? null,
+            tcgMarketPrice: tcgCard?.market_price != null ? Number(tcgCard.market_price) : null,
             products: product
               ? {
                 ...product,
@@ -703,7 +723,9 @@ export function useGetItemsWithProductData(showcaseId: string) {
                         images: [riftboundCard.image_url].filter(Boolean),
                       },
                     }
-                    : null,
+                    : tcgCard
+                      ? tcgCardItemProduct(tcgCard, getTcgGameName(tcgCard.game))
+                      : null,
           } as ItemWithProduct;
         })
         .filter((item): item is ItemWithProduct => item !== null);

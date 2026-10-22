@@ -2,6 +2,7 @@ import { validateCatalogRequest } from "@/lib/catalogValidation";
 import { magicCardSchema, magicCardToCacheRow, scryfallSearchResponseSchema } from "@/lib/magicCatalog";
 import { barcodeNestNeedsImage, openLibraryCoverUrl, parseBarcodeNestProducts, parseBarcodeProducts, parseUpcProducts, productsToCacheRows, upcRetryDelay, withBarcodeNestImage } from "@/lib/productCatalog";
 
+import { POKEWALLET_PAGE_SIZE, cacheRowToTcgCard, parsePokewalletSearch, tcgCardImagePath, tcgCardToCacheRow } from "@/lib/pokewalletCatalog";
 import { parseRiftboundCards, riftboundCardToCacheRow } from "@/lib/riftboundCatalog";
 import { parsePokemonSetList, pokemonCardResponseSchema, pokemonSearchResponseSchema, pokemonCardToCacheRow, pokemonSetToCacheRow, type PokemonTcgCard } from "@/lib/pokemonCatalog";
 import { parseTrackingCards, setSearchSchema } from "@/lib/tcgTrackingCatalog";
@@ -9,6 +10,8 @@ import { parseTrackingCards, setSearchSchema } from "@/lib/tcgTrackingCatalog";
 const REQUEST_LIMIT_BYTES = 8 * 1024;
 const RESPONSE_LIMIT_BYTES = 8 * 1024 * 1024;
 const UPSTREAM_TIMEOUT_MS = 15_000;
+const POKEWALLET_TIMEOUT_MS = 30_000;
+const CARD_IMAGE_LIMIT_BYTES = 5 * 1024 * 1024;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -19,7 +22,7 @@ const corsHeaders = {
 
 export interface CatalogProxyDependencies {
   authenticate: (token: string) => Promise<string | null>;
-  consumeRequest: (userId: string, provider: "pokemon" | "barcode" | "magic" | "upc" | "riftbound") => Promise<boolean>;
+  consumeRequest: (userId: string, provider: "pokemon" | "barcode" | "magic" | "upc" | "riftbound" | "pokewallet") => Promise<boolean>;
   reserveMagicRequest: () => Promise<boolean>;
   persistMagicCards: (rows: ReturnType<typeof magicCardToCacheRow>[]) => Promise<void>;
   persistRiftboundCards: (rows: ReturnType<typeof riftboundCardToCacheRow>[], signal: AbortSignal) => Promise<void>;
@@ -27,9 +30,14 @@ export interface CatalogProxyDependencies {
   persistPokemonRoster: (row: Record<string, unknown>, signal: AbortSignal) => Promise<void>;
   persistPokemonSets: (rows: ReturnType<typeof pokemonSetToCacheRow>[], signal: AbortSignal) => Promise<void>;
   persistProducts: (rows: ReturnType<typeof productsToCacheRows>, signal: AbortSignal) => Promise<void>;
+  persistTcgCards: (rows: ReturnType<typeof tcgCardToCacheRow>[], signal: AbortSignal) => Promise<void>;
+  /** Already-copied image URLs for cached cards, keyed by card id. */
+  findTcgCardImages: (ids: string[], signal: AbortSignal) => Promise<Record<string, string | null>>;
+  /** Uploads a card image to the public tcg-card-images bucket; returns its public URL. */
+  storeTcgCardImage: (path: string, bytes: Uint8Array, contentType: string, signal: AbortSignal) => Promise<string>;
   reserveUpcRequest: (isSearch: boolean) => Promise<boolean>;
   deferUpcRequests: (seconds: number) => Promise<void>;
-  getSecret: (name: "POKEMON_TCG_API_KEY" | "BARCODE_LOOKUP_API_KEY" | "BARCODENEST_KEY") => string | undefined;
+  getSecret: (name: "POKEMON_TCG_API_KEY" | "BARCODE_LOOKUP_API_KEY" | "BARCODENEST_KEY" | "POKEWALLET_API_KEY") => string | undefined;
   fetch: typeof fetch;
 }
 
@@ -62,6 +70,106 @@ async function readBoundedJson(body: ReadableStream<Uint8Array> | null, limit: n
   }
 }
 
+async function readBoundedBytes(body: ReadableStream<Uint8Array> | null, limit: number) {
+  if (!body) throw new Error("Missing body");
+  const reader = body.getReader();
+  const chunks: Uint8Array[] = [];
+  let size = 0;
+  try {
+    for (;;) {
+      const chunk = await reader.read();
+      if (chunk.done) break;
+      size += chunk.value.byteLength;
+      if (size > limit) throw new Error("Body exceeds limit");
+      chunks.push(chunk.value);
+    }
+  } finally {
+    await reader.cancel().catch(() => undefined);
+    reader.releaseLock();
+  }
+  const bytes = new Uint8Array(size);
+  let offset = 0;
+  for (const chunk of chunks) {
+    bytes.set(chunk, offset);
+    offset += chunk.byteLength;
+  }
+  return bytes;
+}
+
+type PokewalletRequest = Extract<ReturnType<typeof validateCatalogRequest>, { provider: "pokewallet" }>;
+
+/**
+ * PokéWallet search for the shared TCG pipeline. Cards are saved before they
+ * are returned, and each card image is copied once into Storage, because
+ * PokéWallet images need the API key and can't be loaded by the app.
+ */
+async function handlePokewallet(request: PokewalletRequest, key: string, dependencies: CatalogProxyDependencies) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), POKEWALLET_TIMEOUT_MS);
+  const headers = { Accept: "application/json", "X-API-Key": key };
+  try {
+    const url = new URL(`https://api.pokewallet.io/${request.game}/search`);
+    url.search = new URLSearchParams({
+      q: request.query,
+      page: String(request.page),
+      limit: String(POKEWALLET_PAGE_SIZE),
+    }).toString();
+    const response = await dependencies.fetch(url, { headers, signal: controller.signal, redirect: "error" });
+    if (!response.ok) {
+      await response.body?.cancel().catch(() => undefined);
+      if (response.status === 404) return json({ cards: [], page: request.page, total: 0, totalPages: 0 });
+      if (response.status === 429) return json({ error: "The card catalog is busy. Please try again later." }, 429);
+      // Vendor responses can echo the key in examples. Never forward them.
+      return json({ error: "The catalog provider is temporarily unavailable. Please try again." }, 502);
+    }
+    const search = parsePokewalletSearch(await readBoundedJson(response.body, RESPONSE_LIMIT_BYTES));
+
+    let stored: Record<string, string | null> = {};
+    try {
+      stored = await dependencies.findTcgCardImages(search.cards.map((card) => card.id), controller.signal);
+    } catch {
+      // Without the lookup, images are copied again; the upload overwrites.
+    }
+    const images = await Promise.all(search.cards.map(async (card) => {
+      const existing = stored[card.id];
+      if (existing) return existing;
+      try {
+        const imageResponse = await dependencies.fetch(
+          new URL(`https://api.pokewallet.io/${request.game}/images/${card.id}?size=high`),
+          { headers: { "X-API-Key": key }, signal: controller.signal, redirect: "error" },
+        );
+        const contentType = imageResponse.headers.get("Content-Type")?.split(";")[0].trim() ?? "";
+        if (!imageResponse.ok || !["image/jpeg", "image/png", "image/webp"].includes(contentType)) {
+          await imageResponse.body?.cancel().catch(() => undefined);
+          return null;
+        }
+        const bytes = await readBoundedBytes(imageResponse.body, CARD_IMAGE_LIMIT_BYTES);
+        return await dependencies.storeTcgCardImage(tcgCardImagePath(request.game, card.id), bytes, contentType, controller.signal);
+      } catch {
+        // A card without an image is still saved; the app shows a placeholder.
+        return null;
+      }
+    }));
+
+    const rows = search.cards.map((card, index) => tcgCardToCacheRow(request.game, card, images[index]));
+    if (rows.length > 0) {
+      try {
+        await dependencies.persistTcgCards(rows, controller.signal);
+      } catch {
+        return json({ error: "Could not save catalog results. Please try again." }, 503);
+      }
+    }
+    return json({ cards: rows.map(cacheRowToTcgCard), page: search.page, total: search.total, totalPages: search.totalPages });
+  } catch {
+    return json({ error: controller.signal.aborted
+      ? "Catalog search timed out. Please try again."
+      : "The catalog provider could not be reached. Please try again." },
+    controller.signal.aborted ? 504 : 502);
+  } finally {
+    clearTimeout(timeout);
+  }
+}
+
 export function createCatalogProxyHandler(dependencies: CatalogProxyDependencies) {
   return async (req: Request): Promise<Response> => {
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
@@ -88,8 +196,10 @@ export function createCatalogProxyHandler(dependencies: CatalogProxyDependencies
 
     const secretName = request.provider === "pokemon"
       ? "POKEMON_TCG_API_KEY"
-      : request.provider === "barcodenest" ? "BARCODENEST_KEY" : "BARCODE_LOOKUP_API_KEY";
-    const needsKey = request.provider === "pokemon" || request.provider === "barcode" || request.provider === "barcodenest";
+      : request.provider === "barcodenest" ? "BARCODENEST_KEY"
+      : request.provider === "pokewallet" ? "POKEWALLET_API_KEY" : "BARCODE_LOOKUP_API_KEY";
+    const needsKey = request.provider === "pokemon" || request.provider === "barcode" || request.provider === "barcodenest"
+      || request.provider === "pokewallet";
     const key = needsKey ? dependencies.getSecret(secretName) : undefined;
     if (needsKey && !key) {
       return json({ error: "Catalog search is not configured. Please try again later." }, 503);
@@ -121,6 +231,8 @@ export function createCatalogProxyHandler(dependencies: CatalogProxyDependencies
       // Do not spend vendor quota if the authoritative limiter is unavailable.
       return json({ error: "Catalog search is temporarily unavailable. Please try again." }, 503);
     }
+
+    if (request.provider === "pokewallet") return handlePokewallet(request, key!, dependencies);
 
     let url: URL;
     let body: string | undefined;

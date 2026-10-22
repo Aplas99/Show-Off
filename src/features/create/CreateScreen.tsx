@@ -14,6 +14,7 @@ import {
   SkeletonSearchResults,
 } from "@/src/components/ui/SkeletonLoader";
 import { Ionicons } from "@expo/vector-icons";
+import { TCG_GAMES } from "@/constants/tcgGames";
 import { Image } from "@/src/components/media/ProtectedImage";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
@@ -338,7 +339,7 @@ export default function Create() {
           {inputMode === "tcg" && (
             <ScrollView
               // The tab bar floats over the bottom of the screen; pad past it
-              // so the last game card (Riftbound) stays reachable.
+              // so the last game card stays reachable.
               contentContainerStyle={[
                 styles.scrollPadding,
                 { paddingBottom: TAB_BAR_HEIGHT + insets.bottom + (Platform.OS === "android" ? 8 : 0) + 28 },
@@ -403,6 +404,26 @@ export default function Create() {
                     <Text style={styles.riftboundEntryTitle}>Riftbound</Text>
                     <Text style={styles.riftboundEntryDescription}>
                       Scan a card, or search by name or code.
+                    </Text>
+                  </View>
+                  <Ionicons name="chevron-forward" size={20} color={colors.onSurfaceVariant} />
+                </TouchableOpacity>
+
+                <TouchableOpacity
+                  style={styles.moreGamesEntryCard}
+                  activeOpacity={0.85}
+                  onPress={async () => {
+                    await haptics.medium();
+                    router.push("/(tabs)/tcg-game-create" as never);
+                  }}
+                >
+                  <View style={styles.moreGamesEntryIcon}>
+                    <Ionicons name="layers" size={22} color={colors.primary} />
+                  </View>
+                  <View style={styles.flexOne}>
+                    <Text style={styles.riftboundEntryTitle}>More card games</Text>
+                    <Text style={styles.riftboundEntryDescription} numberOfLines={2}>
+                      {TCG_GAMES.map((game) => game.name).join(", ")}
                     </Text>
                   </View>
                   <Ionicons name="chevron-forward" size={20} color={colors.onSurfaceVariant} />
@@ -984,6 +1005,25 @@ const getStyles = (colors: ThemeColors) =>
       alignItems: "center",
       justifyContent: "center",
       backgroundColor: `${colors.tertiary}22`,
+    },
+    moreGamesEntryCard: {
+      flexDirection: "row",
+      alignItems: "center",
+      gap: 14,
+      padding: 16,
+      marginBottom: 18,
+      borderRadius: 20,
+      backgroundColor: colors.surfaceContainerHighest,
+      borderWidth: 1.5,
+      borderColor: colors.outlineVariant,
+    },
+    moreGamesEntryIcon: {
+      width: 44,
+      height: 44,
+      borderRadius: 14,
+      alignItems: "center",
+      justifyContent: "center",
+      backgroundColor: `${colors.primary}22`,
     },
     riftboundEntryTitle: {
       color: colors.text,

@@ -43,7 +43,7 @@ npx jest --watch                                    # watch mode
 
 Stripe server secrets (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_FOUNDING_CURATOR`, `STRIPE_PRICE_ID_CURATOR_MONTHLY`, `STRIPE_PRICE_ID_CURATOR_ANNUAL`) live in Supabase Edge Function secrets, not app env — see `docs/stripe-memberships.md`.
 
-Catalog secrets (`POKEMON_TCG_API_KEY`, `BARCODE_LOOKUP_API_KEY`, `BARCODENEST_KEY`) also live only
+Catalog secrets (`POKEMON_TCG_API_KEY`, `BARCODE_LOOKUP_API_KEY`, `BARCODENEST_KEY`, `POKEWALLET_API_KEY`) also live only
 in Edge Function secrets. Barcode-code lookups (scan/typed code in the barcode
 wizard) go cache-first, then BarcodeNest; text product search still uses
 UPCItemDB + Barcode Lookup. Deploy `catalog-proxy` and all catalog migrations
@@ -66,6 +66,7 @@ api/              All Supabase + external API calls, exported as TanStack Query 
   pokemon/        TCG card cache, OCR recognition pipeline, search, scan debug logging
   magic/          Magic: The Gathering via Scryfall (name search, OCR scan, card cache)
   riftbound/      Riftbound TCG via Riftcodex (cache-first name search, printed-code lookup, set listing, batch save)
+  tcg/            Shared pipeline for every other card game (constants/tcgGames.ts) via PokéWallet: cache-first search, batch save
   prices/         Per-card market price history (Curator graph; DB triggers snapshot daily)
   scanning/       Free-tier daily quotas: card/barcode scans (10/day) and searches (15/day)
   showcase/       Showcase CRUD
@@ -88,17 +89,19 @@ All data access goes through `api/*`:
 
 ### Item creation paths
 
-Items can be created six ways (the sixth is the Curator-only CSV import below):
+Items can be created seven ways (the last is the Curator-only CSV import below):
 - **Barcode scan** → `BarcodeScannerModal` → `useCreateItemWithProductLookup` (in `api/items`)
 - **Manual wizard** → `ManualCreateItemWizard` → same mutation
 - **Pokémon TCG card** → `TcgCreateScreen` (scan queue) → `useCreatePokemonCardBatch` RPC
 - **Magic: The Gathering card** → `MagicCreateScreen` (camera scan via ML Kit OCR + Scryfall fuzzy lookup, or name search) → `useCreateMagicCardBatch` RPC
 - **Riftbound card** → `RiftboundCreateScreen` (camera scan via ML Kit OCR of the lower card: footer code like `OGN • 011/298` first, name banner as fallback — `api/riftbound/scan.ts`; name/code search as backup; no prices) → `useCreateRiftboundCardBatch` → `create_riftbound_card_batch` RPC
 
-All TCG create screens are scanner-first: after picking a showcase they open the camera, and manual search is the backup path.
+- **Other card games** (Yu-Gi-Oh!, One Piece, Lorcana, Flesh and Blood, Digimon, Star Wars: Unlimited, Dragon Ball Super, Vanguard, Cyberpunk) → `TcgGameCreateScreen` (game picker, then search only; no scanner) → `useCreateTcgCardBatch` (`api/tcg`) → `create_tcg_card_batch` RPC. One shared table and item column serve all of them; add a game in `constants/tcgGames.ts` plus the `tcg_cards.game` CHECK constraint.
+
+The Pokémon, Magic and Riftbound create screens are scanner-first: after picking a showcase they open the camera, and manual search is the backup path.
 - **CSV import** (Curator) → Settings › Collection Data → `useImportItemsCsv` (`api/items/csv.ts`) → `import_items_csv` RPC, which rejects callers without `has_active_membership()`. Parsing/validation is pure in `lib/itemCsv.ts`; file pickers in `lib/csvFile.ts`. Barcodes/card ids link only if they already exist in the catalog caches, otherwise the row is saved as a manual item. `useExportItemsCsv` writes the same columns, so an export re-imports as-is.
 
-An item is "verified" (`is_verified = true`) when it has a `product_ean` (barcode path), `pokemon_tcg_card_id`, `magic_card_id`, or `riftbound_card_id` (TCG paths).
+An item is "verified" (`is_verified = true`) when it has a `product_ean` (barcode path), `pokemon_tcg_card_id`, `magic_card_id`, `riftbound_card_id`, or `tcg_card_id` (TCG paths). Use `lib/itemCards.ts` (`getItemGame`, `getItemCardId`, `isCardItem`) rather than checking each card column.
 
 ### Pokémon TCG pipeline
 
@@ -121,13 +124,14 @@ ML Kit (`@infinitered/react-native-mlkit-text-recognition`) is a native module �
 
 ### Supabase schema (key tables)
 
-- `items` — user-owned collectibles; links to `products` via `product_ean`, `pokemon_tcg_cards` via `pokemon_tcg_card_id`, `magic_cards` via `magic_card_id`, or `riftbound_cards` via `riftbound_card_id`. `category` is the top-level bucket (`tcg`, `books`, `video_games`, `board_games`, `figures`, `music`, `movies`, `general`; see `constants/itemCategory.ts`); `custom_category` is the free-text type label. The `items_set_category` trigger forces `tcg` for linked cards and infers the category when an insert omits it — keep its patterns in sync with `lib/itemCategory.ts`; read categories via `getItemCategory()`
+- `items` — user-owned collectibles; links to `products` via `product_ean`, `pokemon_tcg_cards` via `pokemon_tcg_card_id`, `magic_cards` via `magic_card_id`, `riftbound_cards` via `riftbound_card_id`, or `tcg_cards` via `tcg_card_id`. `category` is the top-level bucket (`tcg`, `books`, `video_games`, `board_games`, `figures`, `music`, `movies`, `general`; see `constants/itemCategory.ts`); `custom_category` is the free-text type label. The `items_set_category` trigger forces `tcg` for linked cards and infers the category when an insert omits it — keep its patterns in sync with `lib/itemCategory.ts`; read categories via `getItemCategory()`
 - `products` — shared product catalog (barcode path); `ean` is the PK
 - `pokemon_tcg_cards` — Pokémon card cache; `id` is the TCG provider ID (e.g. `xy1-1`)
 - `pokemon_tcg_set_rosters` — complete-set cache manifest; set completion reads this plus `pokemon_tcg_cards` before calling the external API
 - `pokemon_tcg_sets` — server-maintained set list (codes, printed totals) the scanner trusts; `catalog-proxy` refreshes it from `/v2/sets` when older than 7 days, and `usePokemonTcgSets()` merges it over the bundled `constants/pokemonTcgSets.ts` snapshot
 - `magic_cards` — Magic card cache (Scryfall); `id` is the Scryfall UUID
 - `riftbound_cards` — Riftbound card cache (Riftcodex, no API key); `id` is the Riftcodex ObjectId, `riftbound_id` the printed code (e.g. `ogn-011-298`, signatures use `*`). Written only by `catalog-proxy`; searched via the `search_riftbound_cards` RPC
+- `tcg_cards` — shared card cache for the PokéWallet games; `id` is the PokéWallet id (`pk_…` or bare hex), `game` the code from `constants/tcgGames.ts`, `image_url` a copy in the public `tcg-card-images` bucket. Written only by `catalog-proxy`; searched via the `search_tcg_cards` RPC. PokéWallet's plan limits are shared by all users, so always search this cache first
 - `price_history` — daily per-card market price snapshots, written by SECURITY DEFINER triggers on both card caches
 - `scan_usage` / `search_usage` — free-tier daily quota counters, written only via SECURITY DEFINER RPCs
 - `showcase_items` — join table linking items to showcases
