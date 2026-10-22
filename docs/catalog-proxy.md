@@ -84,6 +84,75 @@ before shipping the client with `RiftboundCreateScreen`.
 Riftcodex publishes no rate limits and returns 500 (not 404) for unknown
 ObjectIds, which the proxy reports as a generic provider error.
 
+## Other card games (PokéWallet)
+
+Provider `pokewallet` serves every card game without a dedicated pipeline
+through one shared pipeline: Yu-Gi-Oh! (`ygo`), One Piece (`op`), Disney
+Lorcana (`lor`), Flesh and Blood (`fab`), Digimon (`dgm`), Star Wars:
+Unlimited (`swu`), Dragon Ball Super (`dbs`), Cardfight!! Vanguard (`cfv`) and
+Cyberpunk (`cpk`). The list lives in `constants/tcgGames.ts` and the
+`tcg_cards.game` CHECK constraint; adding a game means updating both.
+Pokémon, Magic and Riftbound keep their own providers.
+
+- Request: `{ provider: "pokewallet", game, query, page }`; the proxy calls
+  `https://api.pokewallet.io/{game}/search` (10 results per page) with the
+  `X-API-Key` header from the `POKEWALLET_API_KEY` Edge Function secret.
+- Cards are validated (`lib/pokewalletCatalog.ts`), sealed products are
+  dropped, and rows are upserted into `tcg_cards` before they are returned.
+- PokéWallet images need the key, so the proxy copies each card image once
+  (`/{game}/images/{id}?size=high`) into the public `tcg-card-images` bucket
+  and stores that URL. Cards already stored skip the image request; a failed
+  copy saves the card without an image.
+- Requests use the per-user `pokewallet` limiter bucket.
+- One Piece answers in its own shape (`{ data, total, page, limit }` with flat
+  cards); `lib/pokewalletCatalog.ts` normalizes it to the `card_info` shape the
+  other games use. One Piece cards carry no set id, so the set code is taken
+  from the card number (`OP01-001` → `OP01`), and images come from
+  `/images/{card_number}` instead of `/{game}/images/{id}`. Card ids carry a
+  per-game prefix (`ygo_`, `op_` …); `20261027100000_pokewallet_id_formats.sql`
+  widens the table checks for both.
+- A response the proxy can't parse is logged as `[catalog-proxy] pokewallet.failed`
+  (error name and message only) and reported to the app as unreadable, not as
+  an unreachable provider.
+
+PokéWallet's plan limits are shared across all users (free: 100 requests an
+hour, 1,000 a day), and each new card costs one extra request for its image.
+The client searches the `tcg_cards` cache first (`search_tcg_cards` RPC) and
+only calls the proxy on a miss or when the user asks for the full catalog.
+
+Set completion sends `{ provider: "pokewallet", game, setId }` instead of a
+query: the proxy fetches `/{game}/sets/{setId}` (200 cards a page, at most 5
+pages, each extra page spending a limiter request), saves the cards without
+copying images (search copies them later), and records the set in
+`tcg_set_rosters` so later viewers read it from the cache. A set that fills
+all 5 pages is treated as truncated and is not marked complete. Apply
+`20261025100000_tcg_set_rosters.sql` before deploying this.
+
+Apply `20261024100000_tcg_cards.sql` (table, search RPC, image bucket,
+limiter bucket) before deploying the proxy update, then
+`20261024110000_tcg_card_items.sql` (`items.tcg_card_id`,
+`create_tcg_card_batch`, category trigger, CSV import column) before shipping
+the client with `TcgGameCreateScreen`.
+
+## Card price history (TCGTracking)
+
+Provider `price` (`{ provider: "price", game, cardId }`) returns today's
+TCGplayer market price for one cached card from TCGTracking
+(`https://openapi.tcgtracking.com/v1/products/{productId}`, no key). TCGTracking
+refreshes prices once a day and has no history endpoint, so the proxy stores
+one `price_history` row per card per day; later views that day (any user)
+read that row and make no upstream request.
+
+- The TCGplayer product id comes from server data only: Magic `raw_data.tcgplayer_id`
+  (Scryfall), Riftbound `tcgplayer_id`, PokéWallet `raw_data.tcgplayer.url`,
+  Pokémon `tcgtracking:<id>` ids, or the redirect behind pokemontcg.io's
+  `prices.pokemontcg.io/tcgplayer/{id}` link (resolved once and kept in
+  `card_tcgplayer_products`; "no product" is retried after 30 days).
+- The preferred finish is Normal, then Holofoil, Unlimited, 1st Edition,
+  Foil, Reverse Holofoil; otherwise the cheapest priced finish.
+- Requests use the per-user `price` limiter bucket. Apply
+  `20261026100000_tcgtracking_price_history.sql` before deploying.
+
 ## Request and response controls
 
 - Only POST (plus OPTIONS) is accepted; identity comes from a verified bearer

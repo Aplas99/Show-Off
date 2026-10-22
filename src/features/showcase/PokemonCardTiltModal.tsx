@@ -2,6 +2,8 @@ import { ItemWithProduct } from "@/api/items";
 import { useMembership } from "@/api/memberships";
 import { usePriceHistory } from "@/api/prices";
 import { describeRiftboundSet, formatRiftboundCollectorNumber, getRiftboundSetName } from "@/constants/riftboundSets";
+import { getTcgGameName } from "@/constants/tcgGames";
+import { getItemCardId, getItemGame } from "@/lib/itemCards";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import PriceHistoryChart from "@/src/components/charts/PriceHistoryChart";
 import { CuratorInlineGate } from "@/src/features/membership/CuratorGate";
@@ -57,7 +59,8 @@ type Props = {
 };
 
 type CardDetails = {
-  game: "Pokémon" | "Magic: The Gathering" | "Riftbound";
+  /** Full game name, e.g. "Magic: The Gathering" or a constants/tcgGames.ts name. */
+  game: string;
   /** Short label for the quick-stats row. */
   gameLabel: string;
   title: string;
@@ -133,6 +136,25 @@ function getCardDetails(item: ItemWithProduct): CardDetails {
     };
   }
 
+  if (item.tcg_card_id) {
+    // products.data is built by tcgCardItemProduct from the tcg_cards row.
+    const gameName = getTcgGameName(item.tcgGame);
+    return {
+      game: gameName,
+      gameLabel: gameName,
+      title: item.products?.searchableTitle || item.custom_title || "Unknown card",
+      typeLine: asText(raw.card_type),
+      description: null,
+      flavorText: null,
+      setName: item.tcgSetName || asText(raw.set_name) || item.tcgSetCode || "Unknown set",
+      setCode: item.tcgSetCode ?? asText(raw.set_code),
+      cardNumber: asText(raw.card_number),
+      rarity: item.tcgRarity ?? asText(raw.rarity),
+      artist: null,
+      setLogo: null,
+    };
+  }
+
   if (isMagic) {
     return {
       game: "Magic: The Gathering",
@@ -202,9 +224,9 @@ export default function PokemonCardTiltModal({ visible, item, onClose, accentCol
   const styles = getStyles(colors);
   const { data: membership } = useMembership();
   const isCurator = membership?.isCurator ?? false;
-  const priceGame = item?.magic_card_id ? ("magic" as const) : ("pokemon" as const);
-  // Riftcodex has no market prices, so Riftbound cards get no history panel.
-  const priceCardId = item?.riftbound_card_id ? null : item?.magic_card_id ?? item?.pokemon_tcg_card_id ?? null;
+  // Every card game gets history: TCGTracking prices, cached once a day.
+  const priceGame = item ? getItemGame(item) : null;
+  const priceCardId = item ? getItemCardId(item) : null;
   const { data: priceHistory } = usePriceHistory(
     priceGame,
     visible && isCurator ? priceCardId : null,
@@ -386,7 +408,10 @@ export default function PokemonCardTiltModal({ visible, item, onClose, accentCol
   const imageUrl = getPokemonCardImage(item);
   const currentMarketPrice =
     item.riftbound_card_id
-      ? item.price
+      // Riftcodex has no prices; use the latest TCGTracking snapshot.
+      ? priceHistory?.at(-1)?.price ?? item.price
+      : item.tcg_card_id
+        ? item.tcgMarketPrice ?? priceHistory?.at(-1)?.price ?? item.price
       : item.magic_card_id
         ? item.magicMarketPrice ?? item.price
         : item.pokemonMarketPrice ?? item.price;

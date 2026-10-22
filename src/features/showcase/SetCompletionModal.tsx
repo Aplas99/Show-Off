@@ -1,6 +1,10 @@
 import { type ItemWithProduct } from "@/api/items";
-import { useSetCards, type PokemonTcgCard } from "@/api/pokemon";
+import { useSetRoster, type RosterCard } from "@/api/sets";
+import { useTcgSetRosterCounts } from "@/api/tcg";
+import { getRiftboundSet } from "@/constants/riftboundSets";
+import { isTcgGameCode } from "@/constants/tcgGames";
 import { useColors, type ThemeColors } from "@/constants/theme";
+import { ITEM_GAMES, getItemCardId, getItemGame, type ItemGame } from "@/lib/itemCards";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "@/src/components/media/ProtectedImage";
 import React, { useMemo, useState } from "react";
@@ -8,6 +12,7 @@ import {
   ActivityIndicator,
   FlatList,
   Modal,
+  SectionList,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -22,17 +27,48 @@ const GRID_PADDING = 16;
 const CARD_ASPECT = 63 / 88;
 
 interface SetSummary {
-  id: string;
+  /** `${game}:${setId}`; set ids are only unique within a game. */
+  key: string;
+  game: ItemGame;
+  /** The id each game's roster loader takes (Pokémon set id, Magic/Riftbound set code, PokéWallet set id). */
+  setId: string;
   name: string;
+  /** Printed set size when known without loading the roster. */
   printedTotal: number | null;
   ownedCardIds: Set<string>;
 }
 
+/** Which set an item's card belongs to, in roster-loader terms. */
+function getItemSet(item: ItemWithProduct, game: ItemGame): { setId: string; name: string; printedTotal: number | null } | null {
+  if (game === "pokemon") {
+    if (!item.pokemonSetId) return null;
+    return {
+      setId: item.pokemonSetId,
+      name: item.products?.searchableDescription?.split(" • ")[0] || item.pokemonSetId,
+      printedTotal: item.pokemonSetPrintedTotal ?? null,
+    };
+  }
+  if (game === "magic") {
+    if (!item.magicSetCode) return null;
+    return { setId: item.magicSetCode, name: item.magicSetName || item.magicSetCode.toUpperCase(), printedTotal: null };
+  }
+  if (game === "riftbound") {
+    if (!item.riftboundSetCode) return null;
+    return {
+      setId: item.riftboundSetCode,
+      name: item.riftboundSetName || item.riftboundSetCode,
+      printedTotal: getRiftboundSet(item.riftboundSetCode)?.printedTotal ?? null,
+    };
+  }
+  if (!item.tcgSetId) return null;
+  return { setId: item.tcgSetId, name: item.tcgSetName || item.tcgSetCode || "Unknown set", printedTotal: null };
+}
+
 /**
- * Curator set-completion view: for each Pokémon set present in the showcase,
- * shows collected-vs-total progress; drilling in renders the full set roster
- * with missing cards dimmed. Entry point is gated on Curator membership by
- * the caller — this component assumes access is already allowed.
+ * Curator set-completion view: for each card set present in the showcase
+ * (every game), shows collected-vs-total progress; drilling in renders the
+ * full set roster with missing cards dimmed. Entry point is gated on Curator
+ * membership by the caller — this component assumes access is already allowed.
  */
 export default function SetCompletionModal({
   visible,
@@ -46,38 +82,46 @@ export default function SetCompletionModal({
   const colors = useColors();
   const insets = useSafeAreaInsets();
   const styles = useMemo(() => getStyles(colors), [colors]);
-  const [selectedSetId, setSelectedSetId] = useState<string | null>(null);
+  const [selectedKey, setSelectedKey] = useState<string | null>(null);
 
   const sets = useMemo(() => {
-    const bySet = new Map<string, SetSummary>();
+    const byKey = new Map<string, SetSummary>();
     for (const item of items) {
-      if (!item.pokemon_tcg_card_id || !item.pokemonSetId) continue;
-      let entry = bySet.get(item.pokemonSetId);
+      const game = getItemGame(item);
+      const cardId = getItemCardId(item);
+      if (!game || !cardId) continue;
+      const set = getItemSet(item, game);
+      if (!set) continue;
+      const key = `${game}:${set.setId}`;
+      let entry = byKey.get(key);
       if (!entry) {
-        entry = {
-          id: item.pokemonSetId,
-          name:
-            item.products?.searchableDescription?.split(" • ")[0] ||
-            item.pokemonSetId,
-          printedTotal: item.pokemonSetPrintedTotal ?? null,
-          ownedCardIds: new Set(),
-        };
-        bySet.set(item.pokemonSetId, entry);
+        entry = { key, game, ...set, ownedCardIds: new Set() };
+        byKey.set(key, entry);
       }
-      entry.ownedCardIds.add(item.pokemon_tcg_card_id);
-      if (entry.printedTotal == null && item.pokemonSetPrintedTotal != null) {
-        entry.printedTotal = item.pokemonSetPrintedTotal;
-      }
+      entry.ownedCardIds.add(cardId);
+      if (entry.printedTotal == null && set.printedTotal != null) entry.printedTotal = set.printedTotal;
     }
-    return Array.from(bySet.values()).sort(
-      (a, b) => b.ownedCardIds.size - a.ownedCardIds.size,
-    );
+    return Array.from(byKey.values());
   }, [items]);
 
-  const selectedSet = sets.find((set) => set.id === selectedSetId) ?? null;
+  // One section per game, in tab order; sets with the most cards first.
+  const sections = useMemo(
+    () =>
+      ITEM_GAMES.map((game) => ({
+        key: game.key,
+        title: game.label,
+        data: sets
+          .filter((set) => set.game === game.key)
+          .sort((a, b) => b.ownedCardIds.size - a.ownedCardIds.size),
+      })).filter((section) => section.data.length > 0),
+    [sets],
+  );
+  const showSectionHeaders = sections.length > 1;
+
+  const selectedSet = sets.find((set) => set.key === selectedKey) ?? null;
 
   const handleClose = () => {
-    setSelectedSetId(null);
+    setSelectedKey(null);
     onClose();
   };
 
@@ -93,7 +137,7 @@ export default function SetCompletionModal({
           {selectedSet ? (
             <TouchableOpacity
               style={styles.headerButton}
-              onPress={() => setSelectedSetId(null)}
+              onPress={() => setSelectedKey(null)}
             >
               <Ionicons name="arrow-back" size={22} color={colors.text} />
             </TouchableOpacity>
@@ -116,55 +160,23 @@ export default function SetCompletionModal({
         {selectedSet ? (
           <SetRosterGrid set={selectedSet} colors={colors} />
         ) : (
-          <FlatList
-            data={sets}
-            keyExtractor={(set) => set.id}
+          <SectionList
+            sections={sections}
+            keyExtractor={(set) => set.key}
             contentContainerStyle={styles.setList}
-            renderItem={({ item: set }) => {
-              const owned = set.ownedCardIds.size;
-              const total = set.printedTotal;
-              const ratio = total ? Math.min(owned / total, 1) : null;
-              return (
-                <TouchableOpacity
-                  style={styles.setRow}
-                  onPress={() => setSelectedSetId(set.id)}
-                >
-                  <View style={styles.flex}>
-                    <Text style={styles.setName} numberOfLines={1}>{set.name}</Text>
-                    <Text style={styles.setMeta}>
-                      {total
-                        ? `${owned} of ${total} cards collected`
-                        : `${owned} card${owned === 1 ? "" : "s"} collected`}
-                    </Text>
-                    {ratio != null && (
-                      <View style={styles.progressTrack}>
-                        <View
-                          style={[
-                            styles.progressFill,
-                            {
-                              backgroundColor:
-                                ratio >= 1 ? "#22c55e" : colors.primary,
-                              width: `${Math.round(ratio * 100)}%`,
-                            },
-                          ]}
-                        />
-                      </View>
-                    )}
-                  </View>
-                  {ratio != null && ratio >= 1 ? (
-                    <Ionicons name="trophy" size={22} color="#22c55e" />
-                  ) : (
-                    <Ionicons name="chevron-forward" size={20} color={colors.grey} />
-                  )}
-                </TouchableOpacity>
-              );
-            }}
+            stickySectionHeadersEnabled={false}
+            renderSectionHeader={({ section }) =>
+              showSectionHeaders ? <Text style={styles.sectionHeader}>{section.title}</Text> : null
+            }
+            renderItem={({ item: set }) => (
+              <SetRow set={set} onPress={() => setSelectedKey(set.key)} colors={colors} />
+            )}
             ListEmptyComponent={
               <View style={styles.emptyState}>
                 <Ionicons name="albums-outline" size={42} color={colors.grey} />
-                <Text style={styles.emptyTitle}>No Pokémon sets yet</Text>
+                <Text style={styles.emptyTitle}>No card sets yet</Text>
                 <Text style={styles.emptyDescription}>
-                  Scan some cards and their sets will show up here.
+                  Add some trading cards and their sets will show up here.
                 </Text>
               </View>
             }
@@ -172,6 +184,54 @@ export default function SetCompletionModal({
         )}
       </View>
     </Modal>
+  );
+}
+
+/**
+ * One set's progress row. The set size comes from the printed total when
+ * known, else from the roster: Magic loads it (Scryfall is free); PokéWallet
+ * games only use a roster someone already cached, so the list never spends
+ * their limited quota.
+ */
+function SetRow({ set, onPress, colors }: { set: SetSummary; onPress: () => void; colors: ThemeColors }) {
+  const styles = useMemo(() => getStyles(colors), [colors]);
+  const tcgGame = isTcgGameCode(set.game) ? set.game : null;
+  const { data: magicRoster } = useSetRoster(set.game, set.setId, set.game === "magic");
+  const { data: tcgCounts } = useTcgSetRosterCounts(tcgGame, tcgGame ? [set.setId] : []);
+
+  const owned = set.ownedCardIds.size;
+  const total = set.printedTotal ?? magicRoster?.length ?? tcgCounts?.get(set.setId) ?? null;
+  const ratio = total ? Math.min(owned / total, 1) : null;
+
+  return (
+    <TouchableOpacity style={styles.setRow} onPress={onPress}>
+      <View style={styles.flex}>
+        <Text style={styles.setName} numberOfLines={1}>{set.name}</Text>
+        <Text style={styles.setMeta}>
+          {total
+            ? `${owned} of ${total} cards collected`
+            : `${owned} card${owned === 1 ? "" : "s"} collected`}
+        </Text>
+        {ratio != null && (
+          <View style={styles.progressTrack}>
+            <View
+              style={[
+                styles.progressFill,
+                {
+                  backgroundColor: ratio >= 1 ? "#22c55e" : colors.primary,
+                  width: `${Math.round(ratio * 100)}%`,
+                },
+              ]}
+            />
+          </View>
+        )}
+      </View>
+      {ratio != null && ratio >= 1 ? (
+        <Ionicons name="trophy" size={22} color="#22c55e" />
+      ) : (
+        <Ionicons name="chevron-forward" size={20} color={colors.grey} />
+      )}
+    </TouchableOpacity>
   );
 }
 
@@ -185,7 +245,7 @@ function SetRosterGrid({
   const styles = useMemo(() => getStyles(colors), [colors]);
   const insets = useSafeAreaInsets();
   const { width } = useWindowDimensions();
-  const { data: roster, isLoading, error } = useSetCards(set.id);
+  const { data: roster, isLoading, error } = useSetRoster(set.game, set.setId);
   const cardWidth =
     (width - GRID_PADDING * 2 - GRID_GAP * (GRID_COLUMNS - 1)) / GRID_COLUMNS;
 
@@ -203,7 +263,9 @@ function SetRosterGrid({
       <View style={styles.centered}>
         <Ionicons name="cloud-offline-outline" size={40} color={colors.grey} />
         <Text style={styles.emptyTitle}>Couldn&apos;t load this set</Text>
-        <Text style={styles.emptyDescription}>Please try again later.</Text>
+        <Text style={styles.emptyDescription}>
+          {error instanceof Error && /busy|limit/i.test(error.message) ? error.message : "Please try again later."}
+        </Text>
       </View>
     );
   }
@@ -213,7 +275,7 @@ function SetRosterGrid({
   return (
     <FlatList
       data={roster}
-      keyExtractor={(card: PokemonTcgCard) => card.id}
+      keyExtractor={(card: RosterCard) => card.id}
       numColumns={GRID_COLUMNS}
       columnWrapperStyle={styles.gridRow}
       contentContainerStyle={[
@@ -232,9 +294,9 @@ function SetRosterGrid({
         const owned = set.ownedCardIds.has(card.id);
         return (
           <View style={[styles.gridCell, { width: cardWidth }]}>
-            {card.images.small ? (
+            {card.imageUrl ? (
               <Image
-                source={{ uri: card.images.small }}
+                source={{ uri: card.imageUrl }}
                 style={[
                   styles.gridCardImage,
                   { height: cardWidth / CARD_ASPECT },
@@ -252,7 +314,7 @@ function SetRosterGrid({
                   !owned && styles.missingCard,
                 ]}
               >
-                <Text style={styles.gridCardFallbackText} numberOfLines={2}>
+                <Text style={styles.gridCardFallbackText} numberOfLines={3}>
                   {card.name}
                 </Text>
               </View>
@@ -262,9 +324,11 @@ function SetRosterGrid({
                 <Ionicons name="lock-closed" size={10} color="#FFF" />
               </View>
             )}
-            <Text style={styles.gridCardNumber} numberOfLines={1}>
-              #{card.number}
-            </Text>
+            {card.number && (
+              <Text style={styles.gridCardNumber} numberOfLines={1}>
+                #{card.number}
+              </Text>
+            )}
           </View>
         );
       }}
@@ -302,6 +366,14 @@ function getStyles(colors: ThemeColors) {
     title: { color: colors.text, fontSize: 20, fontWeight: "800" },
     subtitle: { color: colors.onSurfaceVariant, fontSize: 12, marginTop: 2 },
     setList: { paddingHorizontal: 20, gap: 10, paddingBottom: 30 },
+    sectionHeader: {
+      color: colors.onSurfaceVariant,
+      fontSize: 12,
+      fontWeight: "800",
+      letterSpacing: 0.6,
+      textTransform: "uppercase",
+      marginTop: 8,
+    },
     setRow: {
       flexDirection: "row",
       alignItems: "center",

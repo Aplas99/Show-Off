@@ -23,6 +23,7 @@ export const ITEM_CSV_COLUMNS = [
   "pokemon_card_id",
   "magic_card_id",
   "riftbound_card_id",
+  "tcg_card_id",
   "showcases",
   "image_url",
   "created_at",
@@ -126,6 +127,7 @@ export interface ItemCsvExportSource {
   pokemonCardId?: string | null;
   magicCardId?: string | null;
   riftboundCardId?: string | null;
+  tcgCardId?: string | null;
   showcases: string[];
   imageUrl?: string | null;
   createdAt?: string | null;
@@ -146,6 +148,7 @@ export function itemsToCsv(items: readonly ItemCsvExportSource[]): string {
     item.pokemonCardId ?? "",
     item.magicCardId ?? "",
     item.riftboundCardId ?? "",
+    item.tcgCardId ?? "",
     item.showcases.join(`${SHOWCASE_SEPARATOR} `),
     item.imageUrl ?? "",
     item.createdAt ?? "",
@@ -211,6 +214,7 @@ export const itemCsvRowSchema = z
     pokemon_card_id: optionalText(100),
     magic_card_id: optionalText(100),
     riftbound_card_id: optionalText(100),
+    tcg_card_id: optionalText(200),
     showcases: z
       .string()
       .transform((value) => {
@@ -237,7 +241,8 @@ export const itemCsvRowSchema = z
       }),
   })
   .refine(
-    (row) => row.title || row.barcode || row.pokemon_card_id || row.magic_card_id || row.riftbound_card_id,
+    (row) => row.title || row.barcode || row.pokemon_card_id || row.magic_card_id || row.riftbound_card_id
+      || row.tcg_card_id,
     { message: "Row needs a title, barcode, or card id" },
   );
 

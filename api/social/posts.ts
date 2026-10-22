@@ -3,6 +3,7 @@ import { uploadImageToSupabase } from "@/api/storage";
 import { createActionLogger } from "@/lib/actionDebug";
 import { supabase } from "@/lib/supabase";
 import { getRiftboundSetName } from "@/constants/riftboundSets";
+import { getTcgGameName } from "@/constants/tcgGames";
 import {
     useInfiniteQuery,
     useMutation,
@@ -55,11 +56,13 @@ function mapItemReference(item: any): FeedPost["item"] {
     const pokemonCard = item.pokemon_tcg_cards;
     const magicCard = item.magic_cards;
     const riftboundCard = item.riftbound_cards;
+    const tcgCard = item.tcg_cards;
     const title =
         item.products?.searchableTitle ||
         pokemonCard?.name ||
         magicCard?.name ||
         riftboundCard?.name ||
+        tcgCard?.name ||
         item.custom_title ||
         "Collection item";
     const subtitle =
@@ -67,12 +70,15 @@ function mapItemReference(item: any): FeedPost["item"] {
         pokemonCard?.set_name ||
         magicCard?.set_name ||
         (riftboundCard ? getRiftboundSetName(riftboundCard.set_code, riftboundCard.set_name) : null) ||
+        tcgCard?.set_name ||
+        (tcgCard ? getTcgGameName(tcgCard.game) : null) ||
         null;
     const image =
         item.image_url ||
         pokemonCard?.image_small ||
         magicCard?.image_small ||
         riftboundCard?.image_url ||
+        tcgCard?.image_url ||
         item.products?.data?.images?.[0] ||
         null;
     return { id: item.id, image_url: image, title, subtitle };
@@ -86,7 +92,8 @@ const POST_SELECT = `
     products ( searchableTitle, searchableBrand, data ),
     pokemon_tcg_cards ( name, set_name, image_small ),
     magic_cards ( name, set_name, image_small ),
-    riftbound_cards ( name, set_code, set_name, image_url )
+    riftbound_cards ( name, set_code, set_name, image_url ),
+    tcg_cards ( name, game, set_name, image_url )
   )
 `;
 

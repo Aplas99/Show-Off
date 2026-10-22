@@ -38,6 +38,11 @@ export function createActionLogger(tag: string): ActionLogger {
     },
     error(event, error) {
       if (!enabled) return;
+      // A plain object is structured failure details; log it as-is.
+      if (error && typeof error === "object" && !(error instanceof Error)) {
+        console.error(`[${tag}] ${event}`, error);
+        return;
+      }
       console.error(`[${tag}] ${event}`, {
         message: error instanceof Error ? error.message : String(error),
       });

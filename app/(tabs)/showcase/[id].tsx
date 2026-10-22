@@ -10,7 +10,9 @@ import { useAuthStore } from "@/hooks/useAuthStore";
 import { ITEM_CATEGORIES, ITEM_CATEGORY_ICONS, ITEM_CATEGORY_LABELS, type ItemCategory } from "@/constants/itemCategory";
 import { TAB_BAR_HEIGHT } from "@/constants/layoutConfig";
 import { showMessage } from "@/lib/dialogs";
+import { shareShowcaseLink } from "@/lib/shareLinks";
 import { getItemCategory } from "@/lib/itemCategory";
+import { ITEM_GAMES, getItemCardId, getItemGame, isCardItem, type ItemGame } from "@/lib/itemCards";
 import { showcaseDisplayAccent, textOnAccent } from "@/lib/showcaseColor";
 import { CuratorGateModal } from "@/src/features/membership/CuratorGate";
 import ItemDetailModal from "@/src/features/showcase/ItemDetailModal";
@@ -37,7 +39,6 @@ import {
   Modal,
   Platform,
   RefreshControl,
-  Share,
   ScrollView,
   StyleSheet,
   Text,
@@ -90,9 +91,7 @@ export default function ShowcaseDetail() {
   const [categoryFilter, setCategoryFilter] = useState<"all" | ItemCategory>("all");
 
   // Game filter tabs, shown when a card showcase mixes multiple games
-  const [gameFilter, setGameFilter] = useState<"all" | "pokemon" | "magic" | "riftbound">(
-    "all",
-  );
+  const [gameFilter, setGameFilter] = useState<"all" | ItemGame>("all");
 
   // Sharable public links are available to every membership tier.
   const { data: membership } = useMembership();
@@ -130,14 +129,9 @@ export default function ShowcaseDetail() {
       showMessage("Private showcase", "Make this showcase public in settings before sharing it.");
       return;
     }
-    const origin = Platform.OS === "web" && typeof window !== "undefined" ? window.location.origin : process.env.EXPO_PUBLIC_SITE_URL;
-    const url = origin ? `${origin.replace(/\/$/, "")}/s/${showcase.id}` : `showoff:///s/${showcase.id}`;
     try {
-      if (Platform.OS === "web" && navigator.clipboard) {
-        await navigator.clipboard.writeText(url);
+      if (await shareShowcaseLink(showcase.id) === "copied") {
         showMessage("Link copied", "The public showcase link is ready to share.");
-      } else {
-        await Share.share({ message: `View my Show Off showcase: ${url}`, url });
       }
     } catch {
       showMessage("Could not share", "Please try again.");
@@ -187,7 +181,7 @@ export default function ShowcaseDetail() {
   }, [keyboardOffset]);
 
   const handleItemPress = useCallback((item: ItemWithProduct) => {
-    if (item.pokemon_tcg_card_id || item.magic_card_id || item.riftbound_card_id) {
+    if (isCardItem(item)) {
       setTiltItem(item);
       setTiltVisible(true);
       return;
@@ -266,51 +260,42 @@ export default function ShowcaseDetail() {
   const duplicateCounts = useMemo(() => {
     const counts = new Map<string, number>();
     for (const item of items ?? []) {
-      const cardId = item.pokemon_tcg_card_id || item.magic_card_id || item.riftbound_card_id;
+      const cardId = getItemCardId(item);
       if (!cardId) continue;
       counts.set(cardId, (counts.get(cardId) ?? 0) + 1);
     }
     return counts;
   }, [items]);
 
-  const hasPokemonCards = useMemo(
-    () => (items ?? []).some((item) => !!item.pokemon_tcg_card_id),
-    [items],
-  );
-  const hasMagicCards = useMemo(
-    () => (items ?? []).some((item) => !!item.magic_card_id),
-    [items],
-  );
-  const hasRiftboundCards = useMemo(
-    () => (items ?? []).some((item) => !!item.riftbound_card_id),
-    [items],
-  );
-  // A showcase made entirely of trading cards (Pokémon, Magic, Riftbound) renders as a
-  // TCG Pocket-style collection grid instead of the generic item grid.
+  // Card games present in this showcase, in tab order.
+  const presentGames = useMemo(() => {
+    const games = new Set<ItemGame>();
+    for (const item of items ?? []) {
+      const game = getItemGame(item);
+      if (game) games.add(game);
+    }
+    return ITEM_GAMES.filter((game) => games.has(game.key));
+  }, [items]);
+  // A showcase made entirely of trading cards renders as a TCG Pocket-style
+  // collection grid instead of the generic item grid.
   const isPokemonShowcase = useMemo(
-    () =>
-      (items?.length ?? 0) > 0 &&
-      (items ?? []).every(
-        (item) => !!item.pokemon_tcg_card_id || !!item.magic_card_id || !!item.riftbound_card_id,
-      ),
+    () => (items?.length ?? 0) > 0 && (items ?? []).every(isCardItem),
     [items],
   );
   // Card showcases and the TCG tab of a mixed showcase use the card grid.
   const isCardView = isPokemonShowcase || activeCategory === "tcg";
-  const gameCount = [hasPokemonCards, hasMagicCards, hasRiftboundCards].filter(Boolean).length;
+  const gameCount = presentGames.length;
   const showGameTabs = isCardView && gameCount > 1;
 
   // Which game's filters apply: the selected tab, or — in a single-game
   // showcase where tabs are hidden — that showcase's only game. A mixed
   // showcase on the "All" tab gets generic sort-only filtering.
-  const effectiveGame: "all" | "pokemon" | "magic" | "riftbound" = useMemo(() => {
+  const effectiveGame: "all" | ItemGame = useMemo(() => {
     if (!isCardView) return "all";
     if (gameFilter !== "all") return gameFilter;
     if (gameCount !== 1) return "all";
-    if (hasPokemonCards) return "pokemon";
-    if (hasMagicCards) return "magic";
-    return "riftbound";
-  }, [isCardView, gameFilter, gameCount, hasPokemonCards, hasMagicCards]);
+    return presentGames[0].key;
+  }, [isCardView, gameFilter, gameCount, presentGames]);
 
   // Distinct type/color/set options actually present in this showcase for the
   // active game — narrower than the full catalog so a filter never yields an
@@ -371,6 +356,11 @@ export default function ShowcaseDetail() {
           sets.set(item.riftboundSetCode, item.riftboundSetName || item.riftboundSetCode);
         }
       }
+    } else if (effectiveGame !== "all") {
+      for (const item of items ?? []) {
+        const setKey = item.tcgSetCode || item.tcgSetName;
+        if (item.tcgGame === effectiveGame && setKey) sets.set(setKey, item.tcgSetName || setKey);
+      }
     }
     return Array.from(sets.entries()).map(([id, name]) => ({ id, name }));
   }, [items, effectiveGame]);
@@ -380,10 +370,7 @@ export default function ShowcaseDetail() {
   const gameFilteredCount = useMemo(() => {
     return (items ?? []).filter((item) => {
       if (activeCategory !== "all" && itemCategories.get(item.id) !== activeCategory) return false;
-      if (gameFilter === "pokemon") return !!item.pokemon_tcg_card_id;
-      if (gameFilter === "magic") return !!item.magic_card_id;
-      if (gameFilter === "riftbound") return !!item.riftbound_card_id;
-      return true;
+      return gameFilter === "all" || getItemGame(item) === gameFilter;
     }).length;
   }, [items, gameFilter, activeCategory, itemCategories]);
 
@@ -393,9 +380,7 @@ export default function ShowcaseDetail() {
 
     let filtered = items.filter((item) => {
       if (activeCategory !== "all" && itemCategories.get(item.id) !== activeCategory) return false;
-      if (gameFilter === "pokemon" && !item.pokemon_tcg_card_id) return false;
-      if (gameFilter === "magic" && !item.magic_card_id) return false;
-      if (gameFilter === "riftbound" && !item.riftbound_card_id) return false;
+      if (gameFilter !== "all" && getItemGame(item) !== gameFilter) return false;
 
       if (searchQuery) {
         const searchLower = searchQuery.toLowerCase();
@@ -432,7 +417,8 @@ export default function ShowcaseDetail() {
         const itemSetId =
           effectiveGame === "magic" ? item.magicSetCode
             : effectiveGame === "riftbound" ? item.riftboundSetCode
-              : item.pokemonSetId;
+              : effectiveGame === "pokemon" ? item.pokemonSetId
+                : item.tcgSetCode || item.tcgSetName;
         if (!itemSetId || !selectedSetIds.includes(itemSetId)) {
           return false;
         }
@@ -580,7 +566,7 @@ export default function ShowcaseDetail() {
       accessibilityLabel={viewMode === "grid" ? "Show carousel" : "Show grid"}>
       <Ionicons name={viewMode === "grid" ? "albums" : "grid"} size={18} color="#9B5DE5" />
     </TouchableOpacity>
-    {hasPokemonCards && (
+    {presentGames.length > 0 && (
       <TouchableOpacity
         style={styles.viewToggleButton}
         onPress={() => {
@@ -643,20 +629,14 @@ export default function ShowcaseDetail() {
               accentColor={accentColor}
               headerAccessory={
                 <>{detailHeader}{inlineSearchBar}{showGameTabs ? (
-                  <View style={styles.gameTabs}>
-                    {(
-                      [
-                        { key: "all", label: "All" },
-                        { key: "pokemon", label: "Pokémon" },
-                        { key: "magic", label: "Magic" },
-                        { key: "riftbound", label: "Riftbound" },
-                      ] as const
-                    ).filter((tab) =>
-                      tab.key === "all" ||
-                      (tab.key === "pokemon" && hasPokemonCards) ||
-                      (tab.key === "magic" && hasMagicCards) ||
-                      (tab.key === "riftbound" && hasRiftboundCards),
-                    ).map((tab) => (
+                  // Scrolls sideways once a showcase mixes more games than fit.
+                  <ScrollView
+                    horizontal
+                    showsHorizontalScrollIndicator={false}
+                    style={styles.gameTabsScroll}
+                    contentContainerStyle={styles.gameTabs}
+                  >
+                    {[{ key: "all" as const, label: "All" }, ...presentGames].map((tab) => (
                       <TouchableOpacity
                         key={tab.key}
                         style={[
@@ -682,7 +662,7 @@ export default function ShowcaseDetail() {
                         </Text>
                       </TouchableOpacity>
                     ))}
-                  </View>
+                  </ScrollView>
                 ) : null}</>
               }
             />
@@ -1073,6 +1053,7 @@ const styles = StyleSheet.create({
   dropdownText: { flex: 1, color: "#E4E1EC", fontSize: 15, fontWeight: "600" },
   dropdownTextSelected: { color: "#FFF" },
   dropdownCount: { color: "#B5B1C2", fontSize: 14, fontWeight: "600", fontVariant: ["tabular-nums"] },
+  gameTabsScroll: { flexGrow: 0, alignSelf: "flex-start", maxWidth: "100%" },
   gameTabs: {
     flexDirection: "row",
     alignSelf: "flex-start",

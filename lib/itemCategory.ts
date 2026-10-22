@@ -25,6 +25,7 @@ export interface ItemCategorySignals {
     pokemonTcgCardId?: string | null;
     magicCardId?: string | null;
     riftboundCardId?: string | null;
+    tcgCardId?: string | null;
     productEan?: string | number | null;
     /** Free-text hints: the item's type label, the catalog product category, etc. */
     hints?: (string | null | undefined)[];
@@ -35,10 +36,11 @@ export function inferItemCategory({
     pokemonTcgCardId,
     magicCardId,
     riftboundCardId,
+    tcgCardId,
     productEan,
     hints = [],
 }: ItemCategorySignals): ItemCategory {
-    if (pokemonTcgCardId || magicCardId || riftboundCardId) return "tcg";
+    if (pokemonTcgCardId || magicCardId || riftboundCardId || tcgCardId) return "tcg";
     if (productEan != null && ISBN_EAN_PATTERN.test(String(productEan))) return "books";
 
     const text = hints.filter(Boolean).join(" ");
@@ -51,7 +53,7 @@ export function inferItemCategory({
  * stored category, falling back to inference for rows that predate it.
  */
 export function resolveItemCategory(signals: ItemCategorySignals): ItemCategory {
-    if (signals.pokemonTcgCardId || signals.magicCardId || signals.riftboundCardId) return "tcg";
+    if (signals.pokemonTcgCardId || signals.magicCardId || signals.riftboundCardId || signals.tcgCardId) return "tcg";
     if (isItemCategory(signals.category)) return signals.category;
     return inferItemCategory(signals);
 }
@@ -62,6 +64,7 @@ export interface CategorizableItem {
     pokemon_tcg_card_id?: string | null;
     magic_card_id?: string | null;
     riftbound_card_id?: string | null;
+    tcg_card_id?: string | null;
     product_ean?: string | number | null;
     custom_category?: string | null;
     products?: { data?: { category?: unknown } | null } | null;
@@ -74,6 +77,7 @@ export function getItemCategory(item: CategorizableItem): ItemCategory {
         pokemonTcgCardId: item.pokemon_tcg_card_id,
         magicCardId: item.magic_card_id,
         riftboundCardId: item.riftbound_card_id,
+        tcgCardId: item.tcg_card_id,
         productEan: item.product_ean,
         hints: [item.custom_category, typeof productCategory === "string" ? productCategory : null],
     });

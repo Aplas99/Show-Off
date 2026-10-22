@@ -15,6 +15,7 @@ import {
   type PokemonOcrResult,
   type RecognizedPokemonCard,
 } from "./recognition";
+import { recognizeTextWithMlKit } from "@/lib/mlKitOcr";
 
 /**
  * Experimental still-photo recognition pipeline.
@@ -72,23 +73,6 @@ function mergeOcrResults(
       ...(fullCard.blocks ?? []),
     ],
   };
-}
-
-async function recognizeTextWithMlKit(imageUri: string): Promise<PokemonOcrResult> {
-  try {
-    const { recognizeText } = await import(
-      "@infinitered/react-native-mlkit-text-recognition"
-    );
-    return await recognizeText(imageUri);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (message.includes("RNMLKitTextRecognition")) {
-      throw new Error(
-        "Still-photo OCR requires a development build; it is unavailable in Expo Go.",
-      );
-    }
-    throw error;
-  }
 }
 
 async function searchStillPhotoCandidates(

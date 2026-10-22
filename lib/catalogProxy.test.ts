@@ -13,6 +13,14 @@ function setup() {
     persistPokemonRoster: jest.fn().mockResolvedValue(undefined),
     persistPokemonSets: jest.fn().mockResolvedValue(undefined),
     persistProducts: jest.fn().mockResolvedValue(undefined),
+    persistTcgCards: jest.fn().mockResolvedValue(undefined),
+    findTcgCardImages: jest.fn().mockResolvedValue({}),
+    persistTcgSetRoster: jest.fn().mockResolvedValue(undefined),
+    findTodayPrice: jest.fn().mockResolvedValue(null),
+    findTcgplayerSource: jest.fn().mockResolvedValue({ productId: 557921, resolved: false, pokemonPriceUrl: null }),
+    saveTcgplayerProduct: jest.fn().mockResolvedValue(undefined),
+    persistPriceSnapshot: jest.fn().mockResolvedValue(undefined),
+    storeTcgCardImage: jest.fn().mockImplementation(async (path: string) => `https://project.invalid/storage/v1/object/public/tcg-card-images/${path}`),
     reserveUpcRequest: jest.fn().mockResolvedValue(true),
     deferUpcRequests: jest.fn().mockResolvedValue(undefined),
     getSecret: jest.fn().mockReturnValue("server-only-key"),
@@ -340,6 +348,282 @@ describe("authenticated catalog proxy", () => {
     dependencies.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ barcode: "036000291452", found: true, product: { name: "Tissue" } })));
     await handler(request({ provider: "barcodenest", code: "036000291452" }));
     expect(dependencies.fetch).toHaveBeenCalledTimes(3);
+  });
+
+  const pokewalletCard = (id: string, extra: Record<string, unknown> = {}) => ({
+    id,
+    card_info: { name: "Dark Magician", set_name: "Legend of Blue Eyes", set_code: "LOB", set_id: 1001, card_number: "LOB-005", rarity: "Ultra Rare", product_type: "card", ...extra },
+    images: { languages: ["en"] },
+    tcgplayer: { prices: [{ sub_type_name: "Unlimited", market_price: 12.5 }, { sub_type_name: "1st Edition", market_price: 80 }], url: "https://www.tcgplayer.com/product/1" },
+    cardmarket: null,
+  });
+  const pokewalletSearch = (results: unknown[]) => new Response(JSON.stringify({
+    query: "dark magician", results, pagination: { page: 1, limit: 10, total: results.length, total_pages: 1 },
+  }));
+
+  it("searches PokéWallet with a server key, copies images once, and returns saved cards only", async () => {
+    const { handler, dependencies } = setup();
+    dependencies.findTcgCardImages.mockResolvedValueOnce({ pk_bbbbbbbbbbbbbbbbbbbb: "https://project.invalid/old.jpg" });
+    dependencies.fetch
+      .mockResolvedValueOnce(pokewalletSearch([
+        pokewalletCard("pk_aaaaaaaaaaaaaaaaaaaa"),
+        pokewalletCard("pk_bbbbbbbbbbbbbbbbbbbb"),
+        pokewalletCard("pk_cccccccccccccccccccc", { product_type: "sealed" }),
+        { id: "../evil", card_info: { name: "x" } },
+      ]))
+      .mockResolvedValueOnce(new Response(new Uint8Array([1, 2, 3]), { headers: { "Content-Type": "image/jpeg" } }));
+    const response = await handler(request({ provider: "pokewallet", game: "ygo", query: "dark magician" }));
+    expect(response.status).toBe(200);
+    const [url, options] = dependencies.fetch.mock.calls[0];
+    expect(url.toString()).toBe("https://api.pokewallet.io/ygo/search?q=dark+magician&page=1&limit=10");
+    expect(options.headers["X-API-Key"]).toBe("server-only-key");
+    expect(dependencies.getSecret).toHaveBeenCalledWith("POKEWALLET_API_KEY");
+    expect(dependencies.consumeRequest).toHaveBeenCalledWith("user-1", "pokewallet");
+    // Only the card without a stored image costs an image request.
+    expect(dependencies.fetch).toHaveBeenCalledTimes(2);
+    expect(dependencies.fetch.mock.calls[1][0].toString()).toBe("https://api.pokewallet.io/ygo/images/pk_aaaaaaaaaaaaaaaaaaaa");
+    expect(dependencies.storeTcgCardImage).toHaveBeenCalledWith("ygo/pk_aaaaaaaaaaaaaaaaaaaa.jpg", expect.any(Uint8Array), "image/jpeg", expect.any(AbortSignal));
+    expect(dependencies.persistTcgCards).toHaveBeenCalledWith([
+      expect.objectContaining({ id: "pk_aaaaaaaaaaaaaaaaaaaa", game: "ygo", set_id: "1001", market_price: 12.5,
+        image_url: "https://project.invalid/storage/v1/object/public/tcg-card-images/ygo/pk_aaaaaaaaaaaaaaaaaaaa.jpg" }),
+      expect.objectContaining({ id: "pk_bbbbbbbbbbbbbbbbbbbb", image_url: "https://project.invalid/old.jpg" }),
+    ], expect.any(AbortSignal));
+    const body = await response.json();
+    expect(body.cards.map((card: { id: string }) => card.id)).toEqual(["pk_aaaaaaaaaaaaaaaaaaaa", "pk_bbbbbbbbbbbbbbbbbbbb"]);
+    expect(body.cards[0].raw_data).toBeUndefined();
+  });
+
+  it("saves PokéWallet cards without an image when the image copy fails", async () => {
+    const { handler, dependencies } = setup();
+    dependencies.fetch
+      .mockResolvedValueOnce(pokewalletSearch([pokewalletCard("pk_aaaaaaaaaaaaaaaaaaaa")]))
+      .mockResolvedValueOnce(new Response("nope", { status: 502 }));
+    expect((await handler(request({ provider: "pokewallet", game: "lor", query: "elsa" }))).status).toBe(200);
+    expect(dependencies.persistTcgCards).toHaveBeenCalledWith([expect.objectContaining({ image_url: null })], expect.any(AbortSignal));
+    expect(dependencies.storeTcgCardImage).not.toHaveBeenCalled();
+  });
+
+  it("does not return PokéWallet cards it could not save, and hides vendor errors", async () => {
+    const { handler, dependencies } = setup();
+    dependencies.findTcgCardImages.mockResolvedValueOnce({ pk_aaaaaaaaaaaaaaaaaaaa: "https://project.invalid/a.jpg" });
+    dependencies.fetch.mockResolvedValueOnce(pokewalletSearch([pokewalletCard("pk_aaaaaaaaaaaaaaaaaaaa")]));
+    dependencies.persistTcgCards.mockRejectedValueOnce(new Error("private"));
+    expect((await handler(request({ provider: "pokewallet", game: "ygo", query: "luffy" }))).status).toBe(503);
+    dependencies.fetch.mockResolvedValueOnce(new Response("key pk_live_secret", { status: 500 }));
+    const failed = await handler(request({ provider: "pokewallet", game: "ygo", query: "luffy" }));
+    expect(failed.status).toBe(502);
+    expect(await failed.text()).not.toContain("pk_live");
+  });
+
+  it("reads One Piece's own search shape and fetches its images by card number", async () => {
+    const { handler, dependencies } = setup();
+    dependencies.fetch
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        success: true,
+        data: [{
+          id: "op_3f8a12c4e9b7d02f3f8a12c4e9b7d02f", card_number: "OP15-092", name: "Nami", sub_type_name: "Normal",
+          rarity: "R", card_type: "Character", tcgplayer: { url: "https://www.tcgplayer.com/product/600001", prices: { market_price: 1.76 } },
+          cardmarket: null,
+        }],
+        total: 1, page: 1, limit: 10,
+      })))
+      .mockResolvedValueOnce(new Response(new Uint8Array([1]), { headers: { "Content-Type": "image/jpeg" } }));
+    const response = await handler(request({ provider: "pokewallet", game: "op", query: "OP15-092" }));
+    expect(response.status).toBe(200);
+    expect(dependencies.fetch.mock.calls[0][0].toString()).toBe("https://api.pokewallet.io/op/search?q=OP15-092&page=1&limit=10");
+    expect(dependencies.fetch.mock.calls[1][0].toString()).toBe("https://api.pokewallet.io/images/OP15-092");
+    expect(dependencies.persistTcgCards).toHaveBeenCalledWith([expect.objectContaining({
+      id: "op_3f8a12c4e9b7d02f3f8a12c4e9b7d02f", game: "op", set_code: "OP15", set_id: "OP15", market_price: 1.76,
+    })], expect.any(AbortSignal));
+    expect((await response.json()).cards[0]).toMatchObject({ name: "Nami", card_number: "OP15-092" });
+  });
+
+  it("logs PokéWallet steps and vendor errors without ever logging the key", async () => {
+    const { handler, dependencies } = setup();
+    (dependencies as { debug?: boolean }).debug = true;
+    const logs: unknown[][] = [];
+    const capture = (...args: unknown[]) => { logs.push(args); };
+    const spies = [
+      jest.spyOn(console, "log").mockImplementation(capture),
+      jest.spyOn(console, "warn").mockImplementation(capture),
+      jest.spyOn(console, "error").mockImplementation(capture),
+    ];
+    dependencies.getSecret.mockReturnValue("pk_live_supersecretkey123");
+    dependencies.fetch.mockResolvedValueOnce(new Response(
+      JSON.stringify({ error: "Invalid API key", message: "Key pk_live_supersecretkey123 is not valid" }),
+      { status: 401, headers: { "X-RateLimit-Remaining-Hour": "0" } },
+    ));
+    expect((await handler(request({ provider: "pokewallet", game: "ygo", query: "dark" }))).status).toBe(502);
+    spies.forEach((spy) => spy.mockRestore());
+
+    const text = JSON.stringify(logs);
+    expect(text).not.toContain("supersecretkey123");
+    expect(logs.map((entry) => entry[0])).toEqual(expect.arrayContaining([
+      "[catalog-proxy] request.received",
+      "[catalog-proxy] pokewallet.search.started",
+      "[catalog-proxy] pokewallet.search.upstream",
+      "[catalog-proxy] pokewallet.search.upstream-failed",
+    ]));
+    const failure = logs.find((entry) => entry[0] === "[catalog-proxy] pokewallet.search.upstream-failed")?.[1];
+    expect(failure).toMatchObject({ status: 401, vendorError: "Invalid API key: Key pk_*** is not valid", remainingHour: "0" });
+  });
+
+  it("logs which field an invalid request failed on, and a missing secret", async () => {
+    const { handler, dependencies } = setup();
+    const warn = jest.spyOn(console, "warn").mockImplementation(() => undefined);
+    const error = jest.spyOn(console, "error").mockImplementation(() => undefined);
+    await handler(request({ provider: "pokewallet", game: "chess", query: "dark" }));
+    expect(warn).toHaveBeenCalledWith("[catalog-proxy] request.invalid", expect.objectContaining({
+      issues: expect.arrayContaining([expect.stringContaining("game")]),
+    }));
+    dependencies.getSecret.mockReturnValue(undefined);
+    await handler(request({ provider: "pokewallet", game: "ygo", query: "dark" }));
+    expect(error).toHaveBeenCalledWith("[catalog-proxy] request.missing-secret", { provider: "pokewallet", secret: "POKEWALLET_API_KEY" });
+    warn.mockRestore();
+    error.mockRestore();
+  });
+
+  it("reports an unreadable PokéWallet response instead of an unreachable provider", async () => {
+    const { handler, dependencies } = setup();
+    const consoleError = jest.spyOn(console, "error").mockImplementation(() => undefined);
+    dependencies.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ unexpected: true })));
+    const response = await handler(request({ provider: "pokewallet", game: "ygo", query: "dark" }));
+    expect(response.status).toBe(502);
+    expect((await response.json()).error).toMatch(/couldn't read/);
+    expect(consoleError).toHaveBeenCalledWith("[catalog-proxy] pokewallet.failed", expect.objectContaining({ game: "ygo", name: "ZodError" }));
+    consoleError.mockRestore();
+  });
+
+  it("caches a full PokéWallet set roster without copying images", async () => {
+    const { handler, dependencies } = setup();
+    dependencies.findTcgCardImages.mockResolvedValueOnce({ pk_aaaaaaaaaaaaaaaaaaaa: "https://project.invalid/a.jpg" });
+    dependencies.fetch.mockResolvedValueOnce(new Response(JSON.stringify({
+      success: true,
+      set: { name: "Legend of Blue Eyes", set_code: "LOB", set_id: "1001", total_cards: 3 },
+      cards: [
+        pokewalletCard("pk_aaaaaaaaaaaaaaaaaaaa"),
+        pokewalletCard("pk_bbbbbbbbbbbbbbbbbbbb"),
+        pokewalletCard("pk_cccccccccccccccccccc", { product_type: "sealed" }),
+      ],
+    })));
+    const response = await handler(request({ provider: "pokewallet", game: "ygo", setId: "1001" }));
+    expect(response.status).toBe(200);
+    expect(dependencies.fetch).toHaveBeenCalledTimes(1);
+    expect(dependencies.fetch.mock.calls[0][0].toString()).toBe("https://api.pokewallet.io/ygo/sets/1001?page=1&limit=200");
+    expect(dependencies.storeTcgCardImage).not.toHaveBeenCalled();
+    expect(dependencies.persistTcgCards).toHaveBeenCalledWith([
+      expect.objectContaining({ id: "pk_aaaaaaaaaaaaaaaaaaaa", image_url: "https://project.invalid/a.jpg" }),
+      expect.objectContaining({ id: "pk_bbbbbbbbbbbbbbbbbbbb", image_url: null }),
+    ], expect.any(AbortSignal));
+    expect(dependencies.persistTcgSetRoster).toHaveBeenCalledWith(
+      expect.objectContaining({ game: "ygo", set_id: "1001", set_name: "Legend of Blue Eyes", card_count: 2 }),
+      expect.any(AbortSignal),
+    );
+    expect((await response.json()).cards).toHaveLength(2);
+  });
+
+  it("pages large PokéWallet sets against the limiter and never marks a truncated set complete", async () => {
+    const { handler, dependencies } = setup();
+    const fullPage = (offset: number) => new Response(JSON.stringify({
+      success: true,
+      set: { name: "Huge", set_id: "7" },
+      cards: Array.from({ length: 200 }, (_, index) =>
+        pokewalletCard(`pk_${(offset + index).toString(16).padStart(20, "0")}`)),
+    }));
+    dependencies.fetch.mockImplementation(async (url: URL) => fullPage(Number(url.searchParams.get("page")) * 1000));
+    expect((await handler(request({ provider: "pokewallet", game: "fab", setId: "7" }))).status).toBe(502);
+    expect(dependencies.fetch).toHaveBeenCalledTimes(5);
+    expect(dependencies.consumeRequest).toHaveBeenCalledTimes(5);
+    expect(dependencies.persistTcgSetRoster).not.toHaveBeenCalled();
+  });
+
+  const trackingProduct = (prices: { sub_type_name: string; market_price: string | null }[]) => new Response(JSON.stringify({
+    success: true,
+    product_id: 557921,
+    product: { product_id: 557921, name: "Llanowar Elves" },
+    prices: { tcgplayer: prices.map((price) => ({ product_id: 557921, low_price: "0.10", ...price })) },
+  }));
+
+  it("serves today's cached price without calling TCGTracking", async () => {
+    const { handler, dependencies } = setup();
+    dependencies.findTodayPrice.mockResolvedValueOnce(0.36);
+    const response = await handler(request({ provider: "price", game: "magic", cardId: "6a0b230b-d391-4998-a3f7-7b158a0ec2cd" }));
+    expect(await response.json()).toEqual({ price: 0.36, source: "cache" });
+    expect(dependencies.consumeRequest).toHaveBeenCalledWith("user-1", "price");
+    expect(dependencies.fetch).not.toHaveBeenCalled();
+  });
+
+  it("fetches TCGTracking once, prefers the Normal finish, and stores the daily snapshot", async () => {
+    const { handler, dependencies } = setup();
+    dependencies.fetch.mockResolvedValueOnce(trackingProduct([
+      { sub_type_name: "Foil", market_price: "0.81" },
+      { sub_type_name: "Normal", market_price: "0.36" },
+    ]));
+    const cardId = "6a0b230b-d391-4998-a3f7-7b158a0ec2cd";
+    const response = await handler(request({ provider: "price", game: "magic", cardId }));
+    expect(await response.json()).toEqual({ price: 0.36, source: "api" });
+    expect(dependencies.fetch.mock.calls[0][0].toString()).toBe("https://openapi.tcgtracking.com/v1/products/557921");
+    expect(dependencies.findTcgplayerSource).toHaveBeenCalledWith("magic", cardId, expect.any(AbortSignal));
+    expect(dependencies.persistPriceSnapshot).toHaveBeenCalledWith("magic", cardId, 0.36, expect.any(AbortSignal));
+  });
+
+  it("resolves Pokémon product ids through the pokemontcg.io price redirect once", async () => {
+    const { handler, dependencies } = setup();
+    dependencies.findTcgplayerSource.mockResolvedValueOnce({
+      productId: null, resolved: false, pokemonPriceUrl: "https://prices.pokemontcg.io/tcgplayer/base1-4",
+    });
+    dependencies.fetch
+      .mockResolvedValueOnce(new Response(null, { status: 302, headers: { Location: "https://tcgplayer.pxf.io/scrydex?u=https://tcgplayer.com/product/42382" } }))
+      .mockResolvedValueOnce(trackingProduct([{ sub_type_name: "Holofoil", market_price: "350.00" }]));
+    const response = await handler(request({ provider: "price", game: "pokemon", cardId: "base1-4" }));
+    expect((await response.json()).price).toBe(350);
+    expect(dependencies.fetch.mock.calls[0][1]).toMatchObject({ redirect: "manual" });
+    expect(dependencies.saveTcgplayerProduct).toHaveBeenCalledWith("pokemon", "base1-4", 42382, expect.any(AbortSignal));
+    expect(dependencies.fetch.mock.calls[1][0].toString()).toBe("https://openapi.tcgtracking.com/v1/products/42382");
+  });
+
+  it("returns no price for unmapped cards, 404 for uncached cards, and never follows other redirects", async () => {
+    const { handler, dependencies } = setup();
+    dependencies.findTcgplayerSource.mockResolvedValueOnce({ productId: null, resolved: false, pokemonPriceUrl: "https://evil.example/tcgplayer/x" });
+    expect(await (await handler(request({ provider: "price", game: "pokemon", cardId: "base1-4" }))).json()).toEqual({ price: null, source: "none" });
+    expect(dependencies.fetch).not.toHaveBeenCalled();
+
+    dependencies.findTcgplayerSource.mockResolvedValueOnce(null);
+    expect((await handler(request({ provider: "price", game: "ygo", cardId: "pk_aaaaaaaaaaaaaaaaaaaa" }))).status).toBe(404);
+    expect(dependencies.persistPriceSnapshot).not.toHaveBeenCalled();
+  });
+
+  it("rejects price requests with ids that don't fit the game", async () => {
+    const { handler, dependencies } = setup();
+    for (const body of [
+      { provider: "price", game: "magic", cardId: "base1-4" },
+      { provider: "price", game: "riftbound", cardId: "../x" },
+      { provider: "price", game: "chess", cardId: "x" },
+    ]) {
+      expect((await handler(request(body))).status).toBe(400);
+    }
+    expect(dependencies.findTcgplayerSource).not.toHaveBeenCalled();
+  });
+
+  it("rejects PokéWallet requests for unknown games, existing pipelines, or bad queries", async () => {
+    for (const extra of [
+      { provider: "pokewallet", game: "ygo", setId: "LOB" },
+      { provider: "pokewallet", game: "op", setId: "OP01/../x" },
+      { provider: "pokewallet", game: "ygo", query: "dark", setId: "1001" },
+      { provider: "pokewallet", game: "ygo" },
+    ]) {
+      expect((await setup().handler(request(extra))).status).toBe(400);
+    }
+    const { handler, dependencies } = setup();
+    for (const body of [
+      { provider: "pokewallet", game: "mtg", query: "bolt" },
+      { provider: "pokewallet", game: "rft", query: "jinx" },
+      { provider: "pokewallet", game: "ygo", query: "a" },
+      { provider: "pokewallet", game: "ygo", query: "dark", path: "/admin" },
+    ]) {
+      expect((await handler(request(body))).status).toBe(400);
+    }
+    expect(dependencies.fetch).not.toHaveBeenCalled();
   });
 
   it.each([404, 400])("returns a BarcodeNest not-found body for vendor %s without vendor details", async (status) => {

@@ -1,5 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { getRiftboundSetName } from "@/constants/riftboundSets";
+import { getTcgGameName } from "@/constants/tcgGames";
+import { TCG_CARD_ITEM_COLUMNS, tcgCardItemProduct } from "@/lib/pokewalletCatalog";
 import { useInfiniteQuery } from "@tanstack/react-query";
 
 export interface FeedItem {
@@ -74,7 +76,8 @@ export const useGetFeed = ({ limit = 20, enabled = true }: { limit?: number; ena
           ),
           riftbound_cards (
             id, name, set_code, set_name, collector_number, rarity, image_url
-          )
+          ),
+          tcg_cards ( ${TCG_CARD_ITEM_COLUMNS} )
         `
                 )
                 .eq("is_public", true)
@@ -127,6 +130,7 @@ export const useGetFeed = ({ limit = 20, enabled = true }: { limit?: number; ena
                 const pokemonCard = item.pokemon_tcg_cards;
                 const magicCard = item.magic_cards;
                 const riftboundCard = item.riftbound_cards;
+                const tcgCard = item.tcg_cards;
                 let products = item.products;
                 if (!products && pokemonCard) {
                     products = {
@@ -180,6 +184,8 @@ export const useGetFeed = ({ limit = 20, enabled = true }: { limit?: number; ena
                             images: [riftboundCard.image_url].filter(Boolean),
                         },
                     };
+                } else if (!products && tcgCard) {
+                    products = tcgCardItemProduct(tcgCard, getTcgGameName(tcgCard.game));
                 }
                 return {
                     ...item,

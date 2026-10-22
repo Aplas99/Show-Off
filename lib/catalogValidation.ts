@@ -1,5 +1,7 @@
 import { z } from "zod";
 
+import { isValidPriceCardId, priceGameSchema } from "@/lib/cardPricing";
+import { POKEWALLET_SET_ID_PATTERN, isValidPokewalletSetId, tcgGameSchema } from "@/lib/pokewalletCatalog";
 import { RIFTBOUND_ID_PATTERN, RIFTCODEX_ID_PATTERN } from "@/lib/riftboundCatalog";
 
 const filterSchema = z.string().trim().max(160);
@@ -22,6 +24,21 @@ export const catalogRequestSchema = z.discriminatedUnion("provider", [
   z.object({
     provider: z.literal("riftbound"),
     path: z.string().min(1).max(1000),
+  }).strict(),
+  z.object({
+    provider: z.literal("pokewallet"),
+    game: tcgGameSchema,
+    // Exactly one of: a search query, or a set id for a full set roster.
+    // PokéWallet rejects queries outside 2-100 characters.
+    query: z.string().trim().min(2).max(100).optional(),
+    setId: z.string().trim().regex(POKEWALLET_SET_ID_PATTERN).optional(),
+    page: z.number().int().min(1).max(50).default(1),
+  }).strict(),
+  z.object({
+    // Today's TCGplayer price for one cached card (TCGTracking), for price history.
+    provider: z.literal("price"),
+    game: priceGameSchema,
+    cardId: z.string().trim().min(1).max(100),
   }).strict(),
   z.object({
     provider: z.literal("magic"),
@@ -91,6 +108,15 @@ function canonicalRiftboundPath(path: string) {
 export function validateCatalogRequest(input: unknown) {
   const request = catalogRequestSchema.parse(input);
   if (request.provider === "barcode" || request.provider === "upc" || request.provider === "barcodenest") return request;
+  if (request.provider === "price") {
+    if (!isValidPriceCardId(request.game, request.cardId)) throw new Error("Invalid card id");
+    return request;
+  }
+  if (request.provider === "pokewallet") {
+    if (!request.query === !request.setId) throw new Error("Use exactly one of query or setId");
+    if (request.setId && !isValidPokewalletSetId(request.game, request.setId)) throw new Error("Invalid set id");
+    return request;
+  }
 
   if (request.provider === "tcgtracking") {
     if (/^\/3\/sets\/[1-9][0-9]{0,9}\/cards$/.test(request.path)) return request;

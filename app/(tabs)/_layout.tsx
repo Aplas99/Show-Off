@@ -66,6 +66,13 @@ export default function TabLayout() {
         }}
       />
       <Tabs.Screen
+        name="tcg-game-create"
+        options={{
+          href: null,
+          tabBarStyle: { display: "none" },
+        }}
+      />
+      <Tabs.Screen
         name="create-post"
         options={{
           href: null,

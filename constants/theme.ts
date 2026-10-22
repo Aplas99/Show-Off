@@ -133,3 +133,32 @@ export function useColors(): ThemeColors {
   const isDark = useThemeStore((s) => s.isDark);
   return isDark ? DARK_COLORS : LIGHT_COLORS;
 }
+
+/**
+ * Brand palette for each card game (Create screen game picker). These are
+ * the games' own colors, so they stay the same in light and dark mode.
+ * Keys match `ItemGame` in lib/itemCards.ts.
+ */
+export interface GameBrandColors {
+  /** Card background, top-left to bottom-right. */
+  gradient: readonly [string, string];
+  /** Icon, highlight and button color. */
+  accent: string;
+  /** Text drawn on the accent color. */
+  onAccent: string;
+}
+
+export const GAME_BRAND_COLORS: Record<string, GameBrandColors> = {
+  pokemon: { gradient: ["#2A75BB", "#16306E"], accent: "#FFCB05", onAccent: "#1A1A1A" },
+  magic: { gradient: ["#3B2A1C", "#100B07"], accent: "#E8B04B", onAccent: "#1A1A1A" },
+  riftbound: { gradient: ["#0A323C", "#0A1428"], accent: "#C8AA6E", onAccent: "#1A1A1A" },
+  ygo: { gradient: ["#5B2A86", "#1E0B33"], accent: "#D4AF37", onAccent: "#1A1A1A" },
+  op: { gradient: ["#C8102E", "#5E0716"], accent: "#F5C518", onAccent: "#1A1A1A" },
+  lor: { gradient: ["#25368A", "#0B1238"], accent: "#E7C873", onAccent: "#1A1A1A" },
+  fab: { gradient: ["#7A1F1F", "#2B0A0A"], accent: "#E0B15A", onAccent: "#1A1A1A" },
+  dgm: { gradient: ["#0077C8", "#003E73"], accent: "#FF8C1A", onAccent: "#1A1A1A" },
+  swu: { gradient: ["#2B2B2B", "#0A0A0A"], accent: "#FFE81F", onAccent: "#1A1A1A" },
+  dbs: { gradient: ["#F57C00", "#9E2A00"], accent: "#FFE082", onAccent: "#1A1A1A" },
+  cfv: { gradient: ["#1565C0", "#1A237E"], accent: "#4FC3F7", onAccent: "#1A1A1A" },
+  cpk: { gradient: ["#2A0F2E", "#0D0D0D"], accent: "#FCEE0A", onAccent: "#1A1A1A" },
+};
