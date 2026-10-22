@@ -8,6 +8,7 @@ import {
   searchMagicCardsCacheFirst,
   type MagicCard,
 } from "./index";
+import { recognizeTextWithMlKit } from "@/lib/mlKitOcr";
 
 // Magic scanning reads the name banner with ML Kit for the standard shutter,
 // or with shared server OCR when the Curator explicitly taps InstaScan. Both
@@ -77,35 +78,6 @@ async function prepareMagicNameImage(imageUri: string) {
   const rendered = await context.renderAsync();
   const saved = await rendered.saveAsync({ compress: 1, format: SaveFormat.JPEG });
   return saved.uri;
-}
-
-async function recognizeTextWithMlKit(imageUri: string) {
-  try {
-    const mlKit = await import(
-      "@infinitered/react-native-mlkit-text-recognition"
-    );
-    const { recognizeText } = mlKit;
-
-    if (typeof recognizeText !== "function") {
-      throw new Error(
-        "Card OCR requires a development build; it is unavailable in Expo Go.",
-      );
-    }
-
-    return await recognizeText(imageUri);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (
-      message.includes("RNMLKitTextRecognition") ||
-      message.includes("development build") ||
-      message.includes("native module")
-    ) {
-      throw new Error(
-        "Card OCR requires a development build; it is unavailable in Expo Go.",
-      );
-    }
-    throw error;
-  }
 }
 
 /**

@@ -2,13 +2,25 @@ import { z } from "zod";
 
 import { TCG_GAME_CODES, type TcgGameCode } from "@/constants/tcgGames";
 
-/** `pk_` + hex for TCGplayer-backed cards, bare hex for CardMarket-only ones. */
-export const POKEWALLET_ID_PATTERN = /^(pk_)?[a-f0-9]{16,160}$/;
+/**
+ * PokéWallet card ids: a game prefix (`ygo_`, `op_`, `mtg_`, `pk_` …) + hex
+ * for TCGplayer-backed cards, bare hex for CardMarket-only ones.
+ */
+export const POKEWALLET_ID_PATTERN = /^(?:[a-z]{2,4}_)?[a-f0-9]{16,200}$/;
 
 export const tcgGameSchema = z.enum(TCG_GAME_CODES);
 
-/** PokéWallet set ids are numeric group ids; CardMarket-only sets are negative. */
-export const POKEWALLET_SET_ID_PATTERN = /^-?\d{1,12}$/;
+/**
+ * Set ids for set rosters: numeric group ids (negative for CardMarket-only
+ * sets), or a One Piece set code (`OP01`, `EB-01`, `P`), since One Piece
+ * cards carry no set id and /op/sets accepts the code.
+ */
+export const POKEWALLET_SET_ID_PATTERN = /^(?:-?\d{1,12}|[A-Z]{1,4}(?:-?\d{2})?)$/;
+
+/** Set codes are One Piece only; every other game takes a numeric set id. */
+export function isValidPokewalletSetId(game: TcgGameCode, setId: string): boolean {
+  return game === "op" ? POKEWALLET_SET_ID_PATTERN.test(setId) : /^-?\d{1,12}$/.test(setId);
+}
 
 /** Cards per set-roster page (PokéWallet's maximum) and the most pages fetched. */
 export const POKEWALLET_SET_PAGE_SIZE = 200;
@@ -49,6 +61,64 @@ export const pokewalletCardSchema = z.object({
 
 export type PokewalletCard = z.infer<typeof pokewalletCardSchema>;
 
+/** One Piece's set code from a card number: `OP01-001` → `OP01`, `EB-01-012` → `EB-01`, `P-025` → `P`. */
+export function onePieceSetCode(cardNumber: string | null | undefined): string | null {
+  const match = cardNumber?.toUpperCase().match(/^([A-Z]{1,4}(?:-?\d{2})?)-\d{3}/);
+  return match ? match[1] : null;
+}
+
+// One Piece answers with flat cards (`name`, `card_number` at the top level,
+// `tcgplayer.prices` as one object) instead of the `card_info` shape the
+// other games share. Normalize it so everything downstream sees one shape.
+const onePieceCardSchema = z.object({
+  id: z.string(),
+  name: z.string(),
+  card_number: looseText,
+  sub_type_name: z.string().nullish(),
+  rarity: looseText,
+  card_type: looseText,
+  tcgplayer: z.object({
+    url: z.string().nullish(),
+    prices: z.object({ market_price: z.number().nullish(), low_price: z.number().nullish() }).passthrough().nullish(),
+  }).passthrough().nullish(),
+  cardmarket: z.object({}).passthrough().nullish(),
+}).passthrough();
+
+function normalizeOnePieceCard(raw: unknown, setName: string | null = null): unknown {
+  const parsed = onePieceCardSchema.safeParse(raw);
+  if (!parsed.success) return raw;
+  const card = parsed.data;
+  const setCode = onePieceSetCode(card.card_number);
+  return {
+    ...card,
+    card_info: {
+      name: card.name,
+      set_name: setName,
+      set_code: setCode,
+      set_id: setCode,
+      card_number: card.card_number,
+      rarity: card.rarity,
+      card_type: card.card_type,
+      product_type: "card",
+    },
+    tcgplayer: card.tcgplayer
+      ? {
+          url: card.tcgplayer.url ?? null,
+          prices: card.tcgplayer.prices
+            ? [{ sub_type_name: card.sub_type_name ?? null, ...card.tcgplayer.prices }]
+            : [],
+        }
+      : null,
+  };
+}
+
+function toCards(results: unknown[]) {
+  return results.flatMap((result) => {
+    const card = pokewalletCardSchema.safeParse(result);
+    return card.success && card.data.card_info.product_type !== "sealed" ? [card.data] : [];
+  });
+}
+
 const searchResponseSchema = z.object({
   results: z.array(z.unknown()).max(100),
   pagination: z.object({
@@ -58,14 +128,31 @@ const searchResponseSchema = z.object({
   }).passthrough(),
 });
 
+const onePieceSearchResponseSchema = z.object({
+  data: z.array(z.unknown()).max(100),
+  total: z.number().int().nonnegative(),
+  page: z.number().int().positive(),
+  limit: z.number().int().positive(),
+});
+
 /** Cards from a `/{game}/search` page; sealed products and malformed rows are dropped. */
-export function parsePokewalletSearch(raw: unknown) {
+export function parsePokewalletSearch(game: TcgGameCode, raw: unknown) {
+  if (game === "op") {
+    const parsed = onePieceSearchResponseSchema.parse(raw);
+    return {
+      cards: toCards(parsed.data.map((card) => normalizeOnePieceCard(card))),
+      page: parsed.page,
+      total: parsed.total,
+      totalPages: Math.ceil(parsed.total / parsed.limit),
+    };
+  }
   const parsed = searchResponseSchema.parse(raw);
-  const cards = parsed.results.flatMap((result) => {
-    const card = pokewalletCardSchema.safeParse(result);
-    return card.success && card.data.card_info.product_type !== "sealed" ? [card.data] : [];
-  });
-  return { cards, page: parsed.pagination.page, total: parsed.pagination.total, totalPages: parsed.pagination.total_pages };
+  return {
+    cards: toCards(parsed.results),
+    page: parsed.pagination.page,
+    total: parsed.pagination.total,
+    totalPages: parsed.pagination.total_pages,
+  };
 }
 
 const setRosterResponseSchema = z.object({
@@ -73,18 +160,39 @@ const setRosterResponseSchema = z.object({
   cards: z.array(z.unknown()).max(POKEWALLET_SET_PAGE_SIZE),
 });
 
+const onePieceSetResponseSchema = z.object({
+  set: z.object({ name: looseText }).passthrough(),
+  data: z.array(z.unknown()).max(POKEWALLET_SET_PAGE_SIZE),
+});
+
 /**
  * One page of `/{game}/sets/{setId}`. A disambiguation reply (several sets
  * share a code) has no `cards`; it can't happen for numeric set ids, so it
  * is treated as malformed.
  */
-export function parsePokewalletSetPage(raw: unknown) {
+export function parsePokewalletSetPage(game: TcgGameCode, raw: unknown) {
+  if (game === "op") {
+    const parsed = onePieceSetResponseSchema.parse(raw);
+    return {
+      setName: parsed.set.name,
+      rawCount: parsed.data.length,
+      cards: toCards(parsed.data.map((card) => normalizeOnePieceCard(card, parsed.set.name))),
+    };
+  }
   const parsed = setRosterResponseSchema.parse(raw);
-  const cards = parsed.cards.flatMap((result) => {
-    const card = pokewalletCardSchema.safeParse(result);
-    return card.success && card.data.card_info.product_type !== "sealed" ? [card.data] : [];
-  });
-  return { setName: parsed.set.name, rawCount: parsed.cards.length, cards };
+  return { setName: parsed.set.name, rawCount: parsed.cards.length, cards: toCards(parsed.cards) };
+}
+
+/**
+ * Where PokéWallet serves a card's image. The prefixed games use
+ * `/{game}/images/{id}` (one size); One Piece serves images by card number.
+ */
+export function pokewalletImagePath(game: TcgGameCode, card: PokewalletCard): string | null {
+  if (game === "op") {
+    const number = card.card_info.card_number;
+    return number && /^[A-Z0-9-]{3,20}$/i.test(number) ? `/images/${encodeURIComponent(number)}` : null;
+  }
+  return `/${game}/images/${card.id}`;
 }
 
 export const tcgSetRosterResponseSchema = z.object({

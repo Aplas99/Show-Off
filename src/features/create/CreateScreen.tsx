@@ -14,9 +14,8 @@ import {
   SkeletonSearchResults,
 } from "@/src/components/ui/SkeletonLoader";
 import { Ionicons } from "@expo/vector-icons";
-import { TCG_GAMES } from "@/constants/tcgGames";
+import { TcgGamePicker } from "@/src/features/create/TcgGamePicker";
 import { Image } from "@/src/components/media/ProtectedImage";
-import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useState } from "react";
 import {
   FlatList,
@@ -41,6 +40,10 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 type InputMode = "barcode" | "manual" | "search" | "tcg";
 
+// Product search is hidden for now: its tab and results are switched off,
+// not deleted. Set to true to bring the Search tab back.
+const PRODUCT_SEARCH_ENABLED = false;
+
 const CATEGORIES = [
   "TCG",
   "Books",
@@ -57,7 +60,6 @@ const CATEGORIES = [
 export default function Create() {
   const insets = useSafeAreaInsets();
   const haptics = useHaptics();
-  const router = useRouter();
   const colors = useColors();
   const isDark = useThemeStore((s) => s.isDark);
   const styles = getStyles(colors);
@@ -288,21 +290,6 @@ export default function Create() {
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.tab, inputMode === "manual" && styles.activeTab]}
-              onPress={() => handleModeSwitch("manual")}
-              activeOpacity={0.8}
-            >
-              <Text
-                style={[
-                  styles.tabText,
-                  inputMode === "manual" && styles.activeTabText,
-                ]}
-              >
-                Manual
-              </Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity
               style={[styles.tab, inputMode === "barcode" && styles.activeTab]}
               onPress={() => handleModeSwitch("barcode")}
               activeOpacity={0.8}
@@ -318,19 +305,36 @@ export default function Create() {
             </TouchableOpacity>
 
             <TouchableOpacity
-              style={[styles.tab, inputMode === "search" && styles.activeTab]}
-              onPress={() => handleModeSwitch("search")}
+              style={[styles.tab, inputMode === "manual" && styles.activeTab]}
+              onPress={() => handleModeSwitch("manual")}
               activeOpacity={0.8}
             >
               <Text
                 style={[
                   styles.tabText,
-                  inputMode === "search" && styles.activeTabText,
+                  inputMode === "manual" && styles.activeTabText,
                 ]}
               >
-                Search
+                Manual
               </Text>
             </TouchableOpacity>
+
+            {PRODUCT_SEARCH_ENABLED && (
+              <TouchableOpacity
+                style={[styles.tab, inputMode === "search" && styles.activeTab]}
+                onPress={() => handleModeSwitch("search")}
+                activeOpacity={0.8}
+              >
+                <Text
+                  style={[
+                    styles.tabText,
+                    inputMode === "search" && styles.activeTabText,
+                  ]}
+                >
+                  Search
+                </Text>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
 
@@ -346,89 +350,7 @@ export default function Create() {
               ]}
               showsVerticalScrollIndicator={false}
             >
-              <View style={styles.formSection}>
-                <Text style={styles.sectionTitle}>Add cards to your collection</Text>
-
-                <TouchableOpacity
-                  style={styles.gameOptionCard}
-                  activeOpacity={0.85}
-                  onPress={async () => {
-                    await haptics.medium();
-                    router.push("/(tabs)/tcg-create" as never);
-                  }}
-                >
-                  <View style={styles.gameOptionIcon}>
-                    <Ionicons name="flash" size={22} color="#000" />
-                  </View>
-                  <View style={styles.flexOne}>
-                    <Text style={styles.gameOptionTitle}>Pokémon</Text>
-                    <Text style={styles.gameOptionDescription}>
-                      Scan a card stack with your camera.
-                    </Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={20} color={colors.onSurfaceVariant} />
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.magicEntryCard}
-                  activeOpacity={0.85}
-                  onPress={async () => {
-                    await haptics.medium();
-                    router.push("/(tabs)/magic-create" as never);
-                  }}
-                >
-                  <View style={styles.magicEntryIcon}>
-                    <Ionicons name="sparkles" size={22} color="#FFF" />
-                  </View>
-                  <View style={styles.flexOne}>
-                    <Text style={styles.magicEntryTitle}>Magic: The Gathering</Text>
-                    <Text style={styles.magicEntryDescription}>
-                      Scan a card, or search by name.
-                    </Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={20} color="#FFF" />
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.riftboundEntryCard}
-                  activeOpacity={0.85}
-                  onPress={async () => {
-                    await haptics.medium();
-                    router.push("/(tabs)/riftbound-create" as never);
-                  }}
-                >
-                  <View style={styles.riftboundEntryIcon}>
-                    <Ionicons name="diamond" size={22} color={colors.tertiary} />
-                  </View>
-                  <View style={styles.flexOne}>
-                    <Text style={styles.riftboundEntryTitle}>Riftbound</Text>
-                    <Text style={styles.riftboundEntryDescription}>
-                      Scan a card, or search by name or code.
-                    </Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={20} color={colors.onSurfaceVariant} />
-                </TouchableOpacity>
-
-                <TouchableOpacity
-                  style={styles.moreGamesEntryCard}
-                  activeOpacity={0.85}
-                  onPress={async () => {
-                    await haptics.medium();
-                    router.push("/(tabs)/tcg-game-create" as never);
-                  }}
-                >
-                  <View style={styles.moreGamesEntryIcon}>
-                    <Ionicons name="layers" size={22} color={colors.primary} />
-                  </View>
-                  <View style={styles.flexOne}>
-                    <Text style={styles.riftboundEntryTitle}>More card games</Text>
-                    <Text style={styles.riftboundEntryDescription} numberOfLines={2}>
-                      {TCG_GAMES.map((game) => game.name).join(", ")}
-                    </Text>
-                  </View>
-                  <Ionicons name="chevron-forward" size={20} color={colors.onSurfaceVariant} />
-                </TouchableOpacity>
-              </View>
+              <TcgGamePicker colors={colors} />
             </ScrollView>
           )}
 
@@ -566,7 +488,7 @@ export default function Create() {
             </ScrollView>
           )}
 
-          {inputMode === "search" && (
+          {PRODUCT_SEARCH_ENABLED && inputMode === "search" && (
             <View style={styles.searchContainer}>
               <View style={styles.searchFormSection}>
                 <View style={styles.inputGroup}>
@@ -932,108 +854,6 @@ const getStyles = (colors: ThemeColors) =>
     flexOne: {
       flex: 1,
       gap: 2,
-    },
-    gameOptionCard: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 14,
-      padding: 16,
-      marginBottom: 12,
-      borderRadius: 20,
-      backgroundColor: colors.primary,
-    },
-    gameOptionIcon: {
-      width: 44,
-      height: 44,
-      borderRadius: 14,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: "rgba(255,255,255,0.35)",
-    },
-    gameOptionTitle: {
-      color: "#000",
-      fontSize: 16,
-      fontWeight: "800",
-    },
-    gameOptionDescription: {
-      color: "rgba(0,0,0,0.68)",
-      fontSize: 12,
-      marginTop: 1,
-    },
-    magicEntryCard: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 14,
-      padding: 16,
-      marginBottom: 12,
-      borderRadius: 20,
-      backgroundColor: colors.secondary,
-    },
-    magicEntryIcon: {
-      width: 44,
-      height: 44,
-      borderRadius: 14,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: "rgba(255,255,255,0.25)",
-    },
-    magicEntryTitle: {
-      color: "#FFF",
-      fontSize: 16,
-      fontWeight: "800",
-    },
-    magicEntryDescription: {
-      color: "rgba(255,255,255,0.82)",
-      fontSize: 12,
-      marginTop: 1,
-    },
-    riftboundEntryCard: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 14,
-      padding: 16,
-      marginBottom: 18,
-      borderRadius: 20,
-      backgroundColor: colors.surfaceContainerHighest,
-      borderWidth: 1.5,
-      borderColor: colors.tertiary,
-    },
-    riftboundEntryIcon: {
-      width: 44,
-      height: 44,
-      borderRadius: 14,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: `${colors.tertiary}22`,
-    },
-    moreGamesEntryCard: {
-      flexDirection: "row",
-      alignItems: "center",
-      gap: 14,
-      padding: 16,
-      marginBottom: 18,
-      borderRadius: 20,
-      backgroundColor: colors.surfaceContainerHighest,
-      borderWidth: 1.5,
-      borderColor: colors.outlineVariant,
-    },
-    moreGamesEntryIcon: {
-      width: 44,
-      height: 44,
-      borderRadius: 14,
-      alignItems: "center",
-      justifyContent: "center",
-      backgroundColor: `${colors.primary}22`,
-    },
-    riftboundEntryTitle: {
-      color: colors.text,
-      fontSize: 16,
-      fontWeight: "800",
-    },
-    riftboundEntryDescription: {
-      color: colors.onSurfaceVariant,
-      fontSize: 12,
-      marginTop: 1,
     },
     // Tab Styles — Pill segmented control
     tabContainer: {

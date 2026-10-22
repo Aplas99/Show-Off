@@ -25,6 +25,7 @@ import {
   repairCollectorNumberGaps,
   similarityRatio,
 } from "./ocrPostprocessing";
+import { recognizeTextWithMlKit } from "@/lib/mlKitOcr";
 
 export interface RecognizedPokemonCard {
   card: PokemonTcgCard;
@@ -740,37 +741,6 @@ async function searchCardsByIdentifiers(
 // ---------------------------------------------------------------------------
 // ML Kit integration
 // ---------------------------------------------------------------------------
-
-async function recognizeTextWithMlKit(imageUri: string) {
-  try {
-    const mlKit = await import(
-      "@infinitered/react-native-mlkit-text-recognition"
-    );
-    const { recognizeText } = mlKit;
-
-    // The module can load in Expo Go but the native module won't be
-    // registered, leaving recognizeText as undefined.
-    if (typeof recognizeText !== "function") {
-      throw new Error(
-        "Card OCR requires a development build; it is unavailable in Expo Go.",
-      );
-    }
-
-    return await recognizeText(imageUri);
-  } catch (error) {
-    const message = error instanceof Error ? error.message : String(error);
-    if (
-      message.includes("RNMLKitTextRecognition") ||
-      message.includes("development build") ||
-      message.includes("native module")
-    ) {
-      throw new Error(
-        "Card OCR requires a development build; it is unavailable in Expo Go.",
-      );
-    }
-    throw error;
-  }
-}
 
 // ---------------------------------------------------------------------------
 // Public API

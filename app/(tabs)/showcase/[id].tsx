@@ -10,6 +10,7 @@ import { useAuthStore } from "@/hooks/useAuthStore";
 import { ITEM_CATEGORIES, ITEM_CATEGORY_ICONS, ITEM_CATEGORY_LABELS, type ItemCategory } from "@/constants/itemCategory";
 import { TAB_BAR_HEIGHT } from "@/constants/layoutConfig";
 import { showMessage } from "@/lib/dialogs";
+import { shareShowcaseLink } from "@/lib/shareLinks";
 import { getItemCategory } from "@/lib/itemCategory";
 import { ITEM_GAMES, getItemCardId, getItemGame, isCardItem, type ItemGame } from "@/lib/itemCards";
 import { showcaseDisplayAccent, textOnAccent } from "@/lib/showcaseColor";
@@ -38,7 +39,6 @@ import {
   Modal,
   Platform,
   RefreshControl,
-  Share,
   ScrollView,
   StyleSheet,
   Text,
@@ -129,14 +129,9 @@ export default function ShowcaseDetail() {
       showMessage("Private showcase", "Make this showcase public in settings before sharing it.");
       return;
     }
-    const origin = Platform.OS === "web" && typeof window !== "undefined" ? window.location.origin : process.env.EXPO_PUBLIC_SITE_URL;
-    const url = origin ? `${origin.replace(/\/$/, "")}/s/${showcase.id}` : `showoff:///s/${showcase.id}`;
     try {
-      if (Platform.OS === "web" && navigator.clipboard) {
-        await navigator.clipboard.writeText(url);
+      if (await shareShowcaseLink(showcase.id) === "copied") {
         showMessage("Link copied", "The public showcase link is ready to share.");
-      } else {
-        await Share.share({ message: `View my Show Off showcase: ${url}`, url });
       }
     } catch {
       showMessage("Could not share", "Please try again.");

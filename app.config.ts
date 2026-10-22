@@ -41,15 +41,50 @@ function adMobPlugin(): [string, Record<string, unknown>] | null {
   }];
 }
 
+/**
+ * Host of the public site (EXPO_PUBLIC_SITE_URL). Shared showcase links use
+ * it, and https://<host>/s/... opens the app when installed (iOS universal
+ * links, Android verified app links). The site must serve the matching
+ * .well-known files; scripts/prepare-cloudflare.cjs writes them.
+ */
+function siteHost(): string | null {
+  const raw = process.env.EXPO_PUBLIC_SITE_URL;
+  if (!raw) {
+    if (process.env.EAS_BUILD_PROFILE === "production") {
+      throw new Error("Production builds need EXPO_PUBLIC_SITE_URL so shared showcase links open on the web and in the app.");
+    }
+    return null;
+  }
+  const url = new URL(raw);
+  if (url.protocol !== "https:") throw new Error("EXPO_PUBLIC_SITE_URL must be an https URL.");
+  return url.host;
+}
+
 export default function appConfig({ config }: ConfigContext): ExpoConfig {
   const adMob = adMobPlugin();
+  const host = siteHost();
   return {
     ...config,
     name: config.name ?? "Show Off",
     slug: config.slug ?? "show-off",
     plugins: [...(config.plugins ?? []), ...(adMob ? [adMob] : [])],
+    ios: {
+      ...config.ios,
+      ...(host ? { associatedDomains: [...new Set([...(config.ios?.associatedDomains ?? []), `applinks:${host}`])] } : {}),
+    },
     android: {
       ...config.android,
+      ...(host ? {
+        intentFilters: [
+          ...(config.android?.intentFilters ?? []),
+          {
+            action: "VIEW",
+            autoVerify: true,
+            data: [{ scheme: "https", host, pathPrefix: "/s/" }],
+            category: ["BROWSABLE", "DEFAULT"],
+          },
+        ],
+      } : {}),
       // No advertising identifier is needed for this release's ad requests.
       blockedPermissions: [...new Set([
         ...(config.android?.blockedPermissions ?? []),

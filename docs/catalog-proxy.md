@@ -104,6 +104,16 @@ Pokémon, Magic and Riftbound keep their own providers.
   and stores that URL. Cards already stored skip the image request; a failed
   copy saves the card without an image.
 - Requests use the per-user `pokewallet` limiter bucket.
+- One Piece answers in its own shape (`{ data, total, page, limit }` with flat
+  cards); `lib/pokewalletCatalog.ts` normalizes it to the `card_info` shape the
+  other games use. One Piece cards carry no set id, so the set code is taken
+  from the card number (`OP01-001` → `OP01`), and images come from
+  `/images/{card_number}` instead of `/{game}/images/{id}`. Card ids carry a
+  per-game prefix (`ygo_`, `op_` …); `20261027100000_pokewallet_id_formats.sql`
+  widens the table checks for both.
+- A response the proxy can't parse is logged as `[catalog-proxy] pokewallet.failed`
+  (error name and message only) and reported to the app as unreadable, not as
+  an unreachable provider.
 
 PokéWallet's plan limits are shared across all users (free: 100 requests an
 hour, 1,000 a day), and each new card costs one extra request for its image.
@@ -123,6 +133,25 @@ limiter bucket) before deploying the proxy update, then
 `20261024110000_tcg_card_items.sql` (`items.tcg_card_id`,
 `create_tcg_card_batch`, category trigger, CSV import column) before shipping
 the client with `TcgGameCreateScreen`.
+
+## Card price history (TCGTracking)
+
+Provider `price` (`{ provider: "price", game, cardId }`) returns today's
+TCGplayer market price for one cached card from TCGTracking
+(`https://openapi.tcgtracking.com/v1/products/{productId}`, no key). TCGTracking
+refreshes prices once a day and has no history endpoint, so the proxy stores
+one `price_history` row per card per day; later views that day (any user)
+read that row and make no upstream request.
+
+- The TCGplayer product id comes from server data only: Magic `raw_data.tcgplayer_id`
+  (Scryfall), Riftbound `tcgplayer_id`, PokéWallet `raw_data.tcgplayer.url`,
+  Pokémon `tcgtracking:<id>` ids, or the redirect behind pokemontcg.io's
+  `prices.pokemontcg.io/tcgplayer/{id}` link (resolved once and kept in
+  `card_tcgplayer_products`; "no product" is retried after 30 days).
+- The preferred finish is Normal, then Holofoil, Unlimited, 1st Edition,
+  Foil, Reverse Holofoil; otherwise the cheapest priced finish.
+- Requests use the per-user `price` limiter bucket. Apply
+  `20261026100000_tcgtracking_price_history.sql` before deploying.
 
 ## Request and response controls
 

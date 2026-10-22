@@ -2,6 +2,7 @@
   "imports": {
     "zod": "npm:zod@4.3.6",
     "@/lib/catalogValidation": "../../../lib/catalogValidation.ts",
+    "@/lib/cardPricing": "../../../lib/cardPricing.ts",
     "@/lib/magicCatalog": "../../../lib/magicCatalog.ts",
     "@/lib/productCatalog": "../../../lib/productCatalog.ts",
     "@/lib/pokemonCatalog": "../../../lib/pokemonCatalog.ts",

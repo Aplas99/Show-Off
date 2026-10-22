@@ -4,7 +4,7 @@ import { CatalogRequestError, fetchCatalog } from "@/api/catalog";
 import type { TcgGameCode } from "@/constants/tcgGames";
 import { createActionLogger } from "@/lib/actionDebug";
 import {
-  POKEWALLET_SET_ID_PATTERN,
+  isValidPokewalletSetId,
   tcgCardSchema,
   tcgSearchResponseSchema,
   tcgSetRosterResponseSchema,
@@ -137,7 +137,7 @@ export async function fetchTcgSetRoster(
   setId: string,
   dependencies: TcgSetRosterDependencies = defaultRosterDependencies,
 ): Promise<TcgCard[]> {
-  if (!POKEWALLET_SET_ID_PATTERN.test(setId)) return [];
+  if (!isValidPokewalletSetId(game, setId)) return [];
   const cached = await dependencies.findCachedRoster(game, setId);
   if (cached) {
     tcgDebug.log("set-roster.completed", { game, setId, source: "cache", cardCount: cached.length });
@@ -150,7 +150,7 @@ export async function fetchTcgSetRoster(
 
 /** Cached card counts per set id, read from tcg_set_rosters; sets never loaded are absent. */
 export function useTcgSetRosterCounts(game: TcgGameCode | null, setIds: string[]) {
-  const ids = [...new Set(setIds.filter((id) => POKEWALLET_SET_ID_PATTERN.test(id)))].sort();
+  const ids = [...new Set(setIds.filter((id) => !!game && isValidPokewalletSetId(game, id)))].sort();
   return useQuery({
     queryKey: ["tcg-cards", "set-roster-counts", game, ids],
     queryFn: async () => {

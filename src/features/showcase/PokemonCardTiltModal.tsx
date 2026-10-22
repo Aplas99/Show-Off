@@ -3,6 +3,7 @@ import { useMembership } from "@/api/memberships";
 import { usePriceHistory } from "@/api/prices";
 import { describeRiftboundSet, formatRiftboundCollectorNumber, getRiftboundSetName } from "@/constants/riftboundSets";
 import { getTcgGameName } from "@/constants/tcgGames";
+import { getItemCardId, getItemGame } from "@/lib/itemCards";
 import { useColors, type ThemeColors } from "@/constants/theme";
 import PriceHistoryChart from "@/src/components/charts/PriceHistoryChart";
 import { CuratorInlineGate } from "@/src/features/membership/CuratorGate";
@@ -223,12 +224,9 @@ export default function PokemonCardTiltModal({ visible, item, onClose, accentCol
   const styles = getStyles(colors);
   const { data: membership } = useMembership();
   const isCurator = membership?.isCurator ?? false;
-  const priceGame = item?.magic_card_id ? ("magic" as const) : ("pokemon" as const);
-  // Riftcodex has no market prices and shared-pipeline cards keep no daily
-  // snapshots yet, so neither gets a history panel.
-  const priceCardId = item?.riftbound_card_id || item?.tcg_card_id
-    ? null
-    : item?.magic_card_id ?? item?.pokemon_tcg_card_id ?? null;
+  // Every card game gets history: TCGTracking prices, cached once a day.
+  const priceGame = item ? getItemGame(item) : null;
+  const priceCardId = item ? getItemCardId(item) : null;
   const { data: priceHistory } = usePriceHistory(
     priceGame,
     visible && isCurator ? priceCardId : null,
@@ -410,9 +408,10 @@ export default function PokemonCardTiltModal({ visible, item, onClose, accentCol
   const imageUrl = getPokemonCardImage(item);
   const currentMarketPrice =
     item.riftbound_card_id
-      ? item.price
+      // Riftcodex has no prices; use the latest TCGTracking snapshot.
+      ? priceHistory?.at(-1)?.price ?? item.price
       : item.tcg_card_id
-        ? item.tcgMarketPrice ?? item.price
+        ? item.tcgMarketPrice ?? priceHistory?.at(-1)?.price ?? item.price
       : item.magic_card_id
         ? item.magicMarketPrice ?? item.price
         : item.pokemonMarketPrice ?? item.price;

@@ -18,6 +18,7 @@ import { useHaptics } from "@/hooks/useHaptics";
 import { createActionLogger } from "@/lib/actionDebug";
 import { Image } from "@/src/components/media/ProtectedImage";
 import SearchQuotaModal from "@/src/components/membership/SearchQuotaModal";
+import { TcgGameScanStep } from "@/src/features/create/tcgGames/TcgGameScanStep";
 import { Ionicons } from "@expo/vector-icons";
 import { Stack, useLocalSearchParams, useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
@@ -37,10 +38,11 @@ import {
 import Animated, { FadeInDown } from "react-native-reanimated";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
-// Shared create flow for every card game in constants/tcgGames.ts. Search
-// only for now: PokéWallet has no scanner support here, and its plan limits
-// make the shared cache the first stop for every search.
-type FlowStep = "game" | "destination" | "search";
+// Shared create flow for every card game in constants/tcgGames.ts. Like the
+// other TCG screens it is scanner-first: the camera reads the card's name and
+// printed code (api/tcg/scan.ts) and search is the backup. PokéWallet's plan
+// limits make the shared cache the first stop for every lookup.
+type FlowStep = "game" | "destination" | "scan" | "search";
 
 interface QueueEntry {
   id: string;
@@ -131,7 +133,7 @@ export default function TcgGameCreateScreen() {
   return (
     <View style={styles.container}>
       <Stack.Screen options={{ headerShown: false }} />
-      <StatusBar barStyle="default" />
+      <StatusBar barStyle={step === "scan" ? "light-content" : "default"} />
 
       {step === "game" && (
         <GameStep
@@ -157,7 +159,23 @@ export default function TcgGameCreateScreen() {
           onBack={() => (initialGame ? router.replace("/(tabs)/create") : setStep("game"))}
           onSelect={setShowcaseId}
           onCreate={handleCreateShowcase}
-          onContinue={() => setStep("search")}
+          onContinue={() => setStep("scan")}
+          colors={colors}
+        />
+      )}
+
+      {step === "scan" && game && selectedShowcase && (
+        <TcgGameScanStep
+          game={game}
+          showcase={selectedShowcase}
+          count={entries.length}
+          onBack={() => setStep("destination")}
+          onAddCard={handleAddCard}
+          onSearch={() => setStep("search")}
+          onOpenQueue={() => {
+            tcgUiDebug.log("queue.review-opened", { count: entries.length });
+            setQueueOpen(true);
+          }}
           colors={colors}
         />
       )}
@@ -167,7 +185,7 @@ export default function TcgGameCreateScreen() {
           game={game}
           showcase={selectedShowcase}
           count={entries.length}
-          onBack={() => setStep("destination")}
+          onBack={() => setStep("scan")}
           onAddCard={handleAddCard}
           onOpenQueue={() => {
             tcgUiDebug.log("queue.review-opened", { count: entries.length });
@@ -210,7 +228,7 @@ function GameStep({
     <View style={[styles.page, { paddingTop: insets.top + 8 }]}>
       <FlowHeader
         title="Choose a game"
-        subtitle="Search any of these games by card name or number."
+        subtitle="Scan or search cards from any of these games."
         onBack={onBack}
         colors={colors}
       />
@@ -391,7 +409,7 @@ function DestinationStep({
           onPress={onContinue}
           disabled={!selectedId}
         >
-          <Text style={styles.primaryButtonText}>Start searching</Text>
+          <Text style={styles.primaryButtonText}>Start scanning</Text>
           <Ionicons name="arrow-forward" size={20} color="#000" />
         </TouchableOpacity>
       </View>

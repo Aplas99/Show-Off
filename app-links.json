@@ -1,0 +1,5 @@
+{
+  "$comment": "Not secrets. Fill in, then rebuild the web site (npm run build:web). appleTeamId: Apple Developer > Membership. androidSha256Fingerprints: `npx eas-cli credentials -p android` (SHA-256), plus Play Console > App integrity > App signing key once the app is on Google Play.",
+  "appleTeamId": "",
+  "androidSha256Fingerprints": []
+}

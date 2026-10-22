@@ -1,7 +1,8 @@
 import { useDeleteShowcase, useSetShowcasePublic, type ShowcaseRow } from "@/api/showcase";
 import { useColors } from "@/constants/theme";
 import { useState } from "react";
-import { ActivityIndicator, Modal, Platform, ScrollView, Share, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
+import { shareShowcaseLink } from "@/lib/shareLinks";
+import { ActivityIndicator, Modal, ScrollView, StyleSheet, Switch, Text, TextInput, TouchableOpacity, View } from "react-native";
 
 export default function ShowcaseSettingsModal({ showcase, onClose, onDeleted }: { showcase: ShowcaseRow; onClose: () => void; onDeleted: () => void }) {
   const colors = useColors();
@@ -19,9 +20,7 @@ export default function ShowcaseSettingsModal({ showcase, onClose, onDeleted }: 
     try {
       await update.mutateAsync({ showcaseId: showcase.id, name, description, isPublic, audienceRating: rating ?? undefined });
       if (share && isPublic) {
-        const origin = Platform.OS === "web" && typeof window !== "undefined" ? window.location.origin : process.env.EXPO_PUBLIC_SITE_URL;
-        const url = origin ? `${origin.replace(/\/$/, "")}/s/${showcase.id}` : `showoff:///s/${showcase.id}`;
-        await Share.share({ message: `View my Show Off showcase: ${url}`, url });
+        await shareShowcaseLink(showcase.id);
       }
       onClose();
     } catch (failure: unknown) { setError(failure instanceof Error ? failure.message : "Could not save. Please retry."); }
