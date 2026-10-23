@@ -63,6 +63,15 @@ persisted to `products`, and the client reads that cache first, so a repeat
 scan does not spend BarcodeNest credits. Requests count against the per-user
 `barcode` limiter bucket (no migration needed).
 
+Backups (best-effort, in order): when BarcodeNest has not indexed a code
+(404), UPCItemDB's `lookup` supplies the product. When the product has no
+image, an Open Library cover is tried for ISBNs, then UPCItemDB's images.
+UPCItemDB backups use the shared trial budget (`reserve_upc_catalog_request(false)`).
+The response carries `image_source` (`barcodenest` / `openlibrary` /
+`upcitemdb`), saved as `imageSource` in `products.data`. When every backup
+misses, `image_checked_at` is saved instead; the client re-runs the lookup for
+an imageless cached product at most once a week.
+
 ## Riftbound (Riftcodex)
 
 Provider `riftbound` proxies the public Riftcodex API (`https://api.riftcodex.com`,

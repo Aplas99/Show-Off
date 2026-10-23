@@ -94,8 +94,15 @@ const PostFeedCard = ({
   const insets = useSafeAreaInsets();
   const [expanded, setExpanded] = useState(false);
 
-  const { data: isLiked } = useIsPostLiked(post.id);
-  const { data: isBookmarked } = useIsPostBookmarked(post.id);
+  // Mock posts (api/social/mockPosts) have no rows to like or bookmark, so
+  // their interactions stay local. A 0 id disables the remote lookups.
+  const isMock = !!post.is_mock;
+  const [mockLiked, setMockLiked] = useState(false);
+  const [mockBookmarked, setMockBookmarked] = useState(false);
+  const { data: remoteLiked } = useIsPostLiked(isMock ? 0 : post.id);
+  const { data: remoteBookmarked } = useIsPostBookmarked(isMock ? 0 : post.id);
+  const isLiked = isMock ? mockLiked : remoteLiked;
+  const isBookmarked = isMock ? mockBookmarked : remoteBookmarked;
   const likePost = useLikePost();
   const unlikePost = useUnlikePost();
   const bookmarkPost = useBookmarkPost();
@@ -144,7 +151,9 @@ const PostFeedCard = ({
   const handleLike = () => {
     if (likePost.isPending || unlikePost.isPending) return;
     haptics.medium();
-    if (isLiked) {
+    if (isMock) {
+      setMockLiked((liked) => !liked);
+    } else if (isLiked) {
       unlikePost.mutate(post.id);
     } else {
       likePost.mutate(post.id);
@@ -155,7 +164,9 @@ const PostFeedCard = ({
   const handleBookmark = () => {
     if (bookmarkPost.isPending || unbookmarkPost.isPending) return;
     haptics.light();
-    if (isBookmarked) {
+    if (isMock) {
+      setMockBookmarked((bookmarked) => !bookmarked);
+    } else if (isBookmarked) {
       unbookmarkPost.mutate(post.id);
     } else {
       bookmarkPost.mutate(post.id);
@@ -184,7 +195,7 @@ const PostFeedCard = ({
         </View>
       </View>
 
-      <ContentSafetyMenu type="post" id={post.id} ownerId={post.user_id} />
+      {!isMock && <ContentSafetyMenu type="post" id={post.id} ownerId={post.user_id} />}
       {/* Media */}
       <View style={[styles.mediaSection, { height: mediaHeight }]}>
         <View style={styles.mediaCard}>
@@ -252,14 +263,14 @@ const PostFeedCard = ({
             <Animated.View style={{ transform: [{ scale: likeScale }] }}>
               <Ionicons name="heart" size={28} color={isLiked ? "#ff6e84" : "#FFF"} />
             </Animated.View>
-            <Text style={styles.sidebarCount}>{formatCount(post.like_count)}</Text>
+            <Text style={styles.sidebarCount}>{formatCount(post.like_count + (mockLiked ? 1 : 0))}</Text>
           </TouchableOpacity>
 
           <TouchableOpacity
             style={styles.sidebarAction}
             onPress={() => {
               haptics.light();
-              onCommentPress?.(post.id);
+              if (!isMock) onCommentPress?.(post.id);
             }}
           >
             <Ionicons name="chatbubble" size={24} color="#FFF" />

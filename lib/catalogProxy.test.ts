@@ -339,15 +339,55 @@ describe("authenticated catalog proxy", () => {
     })], expect.any(AbortSignal));
   });
 
-  it("keeps the product imageless when no cover exists or the code is not an ISBN", async () => {
+  const upcLookup = (items: unknown[]) => new Response(JSON.stringify({ code: "OK", items }));
+
+  it("keeps the product imageless and stamps the check when every backup misses", async () => {
     const { handler, dependencies } = setup();
     dependencies.fetch
       .mockResolvedValueOnce(new Response(JSON.stringify({ barcode: "9781684058419", found: true, product: { name: "Book" } })))
-      .mockResolvedValueOnce(new Response(null, { status: 404 }));
-    expect((await (await handler(request({ provider: "barcodenest", code: "9781684058419" }))).json()).product.image_url).toBeUndefined();
-    dependencies.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ barcode: "036000291452", found: true, product: { name: "Tissue" } })));
-    await handler(request({ provider: "barcodenest", code: "036000291452" }));
+      .mockResolvedValueOnce(new Response(null, { status: 404 }))
+      .mockResolvedValueOnce(upcLookup([]));
+    const body = await (await handler(request({ provider: "barcodenest", code: "9781684058419" }))).json();
+    expect(body.product.image_url).toBeUndefined();
+    expect(body.image_checked_at).toEqual(expect.any(String));
     expect(dependencies.fetch).toHaveBeenCalledTimes(3);
+    expect(dependencies.persistProducts).toHaveBeenCalledWith([expect.objectContaining({
+      data: expect.objectContaining({ imageCheckedAt: body.image_checked_at }),
+    })], expect.any(AbortSignal));
+  });
+
+  it("uses a UPCItemDB image for imageless non-ISBN matches on the shared trial budget", async () => {
+    const { handler, dependencies } = setup();
+    dependencies.fetch
+      .mockResolvedValueOnce(new Response(JSON.stringify({ barcode: "036000291452", found: true, product: { name: "Tissue" } })))
+      .mockResolvedValueOnce(upcLookup([{ title: "Kleenex Tissue", upc: "036000291452", images: ["http://img.example/t.jpg"] }]));
+    const body = await (await handler(request({ provider: "barcodenest", code: "036000291452" }))).json();
+    expect(body).toMatchObject({ product: { name: "Tissue", image_url: "https://img.example/t.jpg" }, image_source: "upcitemdb" });
+    const [url, options] = dependencies.fetch.mock.calls[1];
+    expect(url.toString()).toBe("https://api.upcitemdb.com/prod/trial/lookup");
+    expect(JSON.parse(options.body)).toEqual({ upc: "036000291452" });
+    expect(dependencies.reserveUpcRequest).toHaveBeenCalledWith(false);
+    expect(dependencies.persistProducts).toHaveBeenCalledWith([expect.objectContaining({
+      data: expect.objectContaining({ images: ["https://img.example/t.jpg"], imageSource: "upcitemdb" }),
+    })], expect.any(AbortSignal));
+  });
+
+  it("falls back to a UPCItemDB product when BarcodeNest has not indexed the code", async () => {
+    const { handler, dependencies } = setup();
+    dependencies.fetch
+      .mockResolvedValueOnce(new Response("not found", { status: 404 }))
+      .mockResolvedValueOnce(upcLookup([{ title: "Mug", brand: "Acme", ean: "0012345678905", images: ["https://img.example/m.jpg"] }]));
+    const body = await (await handler(request({ provider: "barcodenest", code: "012345678905" }))).json();
+    expect(body).toEqual({ barcode: "012345678905", found: true, product: { name: "Mug", brand: "Acme", image_url: "https://img.example/m.jpg" }, image_source: "upcitemdb" });
+    expect(dependencies.persistProducts).toHaveBeenCalledTimes(1);
+  });
+
+  it("skips the UPCItemDB backup when its trial budget is exhausted", async () => {
+    const { handler, dependencies } = setup();
+    dependencies.reserveUpcRequest.mockResolvedValueOnce(false);
+    dependencies.fetch.mockResolvedValueOnce(new Response(JSON.stringify({ barcode: "036000291452", found: true, product: { name: "Tissue" } })));
+    expect((await handler(request({ provider: "barcodenest", code: "036000291452" }))).status).toBe(200);
+    expect(dependencies.fetch).toHaveBeenCalledTimes(1);
   });
 
   const pokewalletCard = (id: string, extra: Record<string, unknown> = {}) => ({

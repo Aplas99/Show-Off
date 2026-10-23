@@ -45,8 +45,12 @@ describe("trusted product normalization", () => {
   });
 
   it("parses BarcodeNest products and drops unsafe images or nameless records", () => {
-    expect(parseBarcodeNestProducts({ barcode: "036000291452", found: true, product: { name: " Tissue ", brand: "Kleenex", image_url: "http://insecure/x.png" } }))
+    expect(parseBarcodeNestProducts({ barcode: "036000291452", found: true, product: { name: " Tissue ", brand: "Kleenex", image_url: "https://user:pw@images.example/x.png" } }))
       .toEqual([{ title: "Tissue", ean: "036000291452", upc: "036000291452", brand: "Kleenex", images: undefined }]);
+    expect(parseBarcodeNestProducts({ barcode: "12345678", found: true, product: { name: "Cup", image_url: "http://images.example/c.png" }, image_source: "upcitemdb" }))
+      .toEqual([expect.objectContaining({ images: ["https://images.example/c.png"], imageSource: "upcitemdb" })]);
+    expect(parseBarcodeNestProducts({ barcode: "12345678", found: true, product: { name: "Cup" }, image_checked_at: "2026-10-01T00:00:00.000Z" }))
+      .toEqual([expect.objectContaining({ images: undefined, imageCheckedAt: "2026-10-01T00:00:00.000Z" })]);
     expect(parseBarcodeNestProducts({ barcode: "12345678", found: true, product: { name: null } })).toEqual([]);
     expect(parseBarcodeNestProducts({ found: false })).toEqual([]);
     expect(() => parseBarcodeNestProducts({ barcode: "x", found: true })).toThrow();

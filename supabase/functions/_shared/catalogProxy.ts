@@ -1,6 +1,6 @@
 import { validateCatalogRequest } from "@/lib/catalogValidation";
 import { magicCardSchema, magicCardToCacheRow, scryfallSearchResponseSchema } from "@/lib/magicCatalog";
-import { barcodeNestNeedsImage, openLibraryCoverUrl, parseBarcodeNestProducts, parseBarcodeProducts, parseUpcProducts, productsToCacheRows, upcRetryDelay, withBarcodeNestImage } from "@/lib/productCatalog";
+import { barcodeNestMissing, barcodeNestNeedsImage, openLibraryCoverUrl, parseBarcodeNestProducts, parseBarcodeProducts, parseUpcProducts, productMatchesCode, productsToCacheRows, safeImageUrl, upcRetryDelay, withBarcodeNestImage, withBarcodeNestImageChecked, withBarcodeNestProduct, type CatalogProduct } from "@/lib/productCatalog";
 
 import {
   POKEWALLET_PAGE_SIZE,
@@ -453,6 +453,79 @@ async function handlePokewallet(request: PokewalletRequest, key: string, depende
   }
 }
 
+/** UPCItemDB code lookup on the shared trial budget; any failure means no backup. */
+async function lookupUpcBackup(code: string, dependencies: CatalogProxyDependencies, signal: AbortSignal): Promise<CatalogProduct | undefined> {
+  if (!await dependencies.reserveUpcRequest(false)) {
+    debugLog(dependencies, "barcode-backup.upc-budget-exhausted", { code });
+    return undefined;
+  }
+  const response = await dependencies.fetch(new URL("https://api.upcitemdb.com/prod/trial/lookup"), {
+    method: "POST", body: JSON.stringify({ upc: code }),
+    headers: { Accept: "application/json", "Content-Type": "application/json" }, signal, redirect: "error",
+  });
+  if (!response.ok) {
+    await response.body?.cancel().catch(() => undefined);
+    if (response.status === 429) await dependencies.deferUpcRequests(upcRetryDelay(response.headers));
+    debugLog(dependencies, "barcode-backup.upc-unavailable", { code, status: response.status });
+    return undefined;
+  }
+  return parseUpcProducts(await readBoundedJson(response.body, RESPONSE_LIMIT_BYTES))
+    .find((product) => productMatchesCode(product, code));
+}
+
+/**
+ * Backups for a BarcodeNest result, best-effort in order: a UPCItemDB product
+ * when BarcodeNest has none, then for a missing image an Open Library cover
+ * (ISBNs) and UPCItemDB's images. Exhausted backups are stamped so the
+ * client doesn't re-spend lookups on every scan of an imageless product.
+ */
+async function withBarcodeBackups(code: string, raw: unknown, dependencies: CatalogProxyDependencies, signal: AbortSignal) {
+  let data = raw;
+  let upc: CatalogProduct | undefined;
+  let upcTried = false;
+  const tryUpc = async () => {
+    if (upcTried) return upc;
+    upcTried = true;
+    try {
+      upc = await lookupUpcBackup(code, dependencies, signal);
+    } catch (error) {
+      debugLog(dependencies, "barcode-backup.upc-failed", { code, ...errorSummary(error) });
+    }
+    return upc;
+  };
+
+  if (barcodeNestMissing(data)) {
+    const backup = await tryUpc();
+    if (!backup) return data;
+    data = withBarcodeNestProduct(code, backup, "upcitemdb");
+    debugLog(dependencies, "barcode-backup.product-found", { code, source: "upcitemdb" });
+  }
+  if (!barcodeNestNeedsImage(data)) return data;
+
+  const cover = openLibraryCoverUrl(code);
+  if (cover) {
+    try {
+      const coverResponse = await dependencies.fetch(cover, { method: "HEAD", signal, redirect: "manual" });
+      await coverResponse.body?.cancel().catch(() => undefined);
+      // Open Library answers an existing cover with a redirect to its CDN.
+      if (coverResponse.ok || (coverResponse.status >= 300 && coverResponse.status < 400)) {
+        debugLog(dependencies, "barcode-backup.image-found", { code, source: "openlibrary" });
+        return withBarcodeNestImage(data, cover, "openlibrary");
+      }
+    } catch {
+      // Cover lookup is best-effort.
+    }
+  }
+
+  const image = (await tryUpc())?.images?.map(safeImageUrl).find(Boolean);
+  if (image) {
+    debugLog(dependencies, "barcode-backup.image-found", { code, source: "upcitemdb" });
+    return withBarcodeNestImage(data, image, "upcitemdb");
+  }
+  debugLog(dependencies, "barcode-backup.image-missing", { code });
+  return withBarcodeNestImageChecked(data, new Date().toISOString());
+}
+
 export function createCatalogProxyHandler(dependencies: CatalogProxyDependencies) {
   return async (req: Request): Promise<Response> => {
     if (req.method === "OPTIONS") return new Response(null, { status: 204, headers: corsHeaders });
@@ -580,15 +653,17 @@ export function createCatalogProxyHandler(dependencies: CatalogProxyDependencies
         signal: controller.signal,
         redirect: "error",
       });
-      if (!response.ok) {
+      // BarcodeNest 404 is an unindexed code: the backups below may know it.
+      const barcodeNestUnindexed = request.provider === "barcodenest" && response.status === 404;
+      if (!response.ok && !barcodeNestUnindexed) {
         await response.body?.cancel().catch(() => undefined);
         if (response.status === 429) {
           if (request.provider === "upc") await dependencies.deferUpcRequests(upcRetryDelay(response.headers));
           return json({ error: "The catalog provider is busy. Please try again later." }, 429);
         }
-        // BarcodeNest: 404 is an unindexed code and 400 a failed check digit.
-        // Both mean "no product" so item creation can continue without one.
-        if (request.provider === "barcodenest" && (response.status === 404 || response.status === 400)) {
+        // BarcodeNest 400 is a failed check digit: "no product", so item
+        // creation can continue without one.
+        if (request.provider === "barcodenest" && response.status === 400) {
           return json({ barcode: request.code, found: false, product: null });
         }
         if (response.status === 404) {
@@ -599,7 +674,13 @@ export function createCatalogProxyHandler(dependencies: CatalogProxyDependencies
         // Vendor responses and URLs can contain credentials. Never forward them.
         return json({ error: "The catalog provider is temporarily unavailable. Please try again." }, 502);
       }
-      let data = await readBoundedJson(response.body, RESPONSE_LIMIT_BYTES);
+      let data: unknown;
+      if (request.provider === "barcodenest" && barcodeNestUnindexed) {
+        await response.body?.cancel().catch(() => undefined);
+        data = { barcode: request.code, found: false, product: null };
+      } else {
+        data = await readBoundedJson(response.body, RESPONSE_LIMIT_BYTES);
+      }
       if (isSetList) {
         const sets = parsePokemonSetList(data);
         if (sets.length === 0) throw new Error("Empty set list");
@@ -656,23 +737,9 @@ export function createCatalogProxyHandler(dependencies: CatalogProxyDependencies
           return json({ error: "Could not save catalog results. Please try again." }, 503);
         }
       }
-      // BarcodeNest rarely has images for books; use the Open Library cover
-      // when one exists. A failed check just leaves the product imageless.
-      if (request.provider === "barcodenest" && barcodeNestNeedsImage(data)) {
-        const cover = openLibraryCoverUrl(request.code);
-        if (cover) {
-          try {
-            const coverResponse = await dependencies.fetch(cover, { method: "HEAD", signal: controller.signal, redirect: "manual" });
-            await coverResponse.body?.cancel().catch(() => undefined);
-            // Open Library answers an existing cover with a redirect to its CDN.
-            if (coverResponse.ok || (coverResponse.status >= 300 && coverResponse.status < 400)) {
-              data = withBarcodeNestImage(data, cover);
-            }
-          } catch {
-            // Cover lookup is best-effort.
-          }
-        }
-      }
+      // BarcodeNest rarely has images for books or store brands, and misses
+      // some codes entirely; fill both from backups before persisting.
+      if (request.provider === "barcodenest") data = await withBarcodeBackups(request.code, data, dependencies, controller.signal);
       if (request.provider === "barcode" || request.provider === "upc" || request.provider === "barcodenest") {
         const products = request.provider === "barcode" ? parseBarcodeProducts(data)
           : request.provider === "barcodenest" ? parseBarcodeNestProducts(data) : parseUpcProducts(data);
