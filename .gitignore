@@ -46,3 +46,6 @@ app-example
 
 # git worktrees checked out under .claude (each is its own repo)
 /.claude/worktrees/
+
+test_import.csv
+/assets/videos

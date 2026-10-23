@@ -2,6 +2,7 @@ import { getHasActiveMembership } from "@/api/memberships";
 import { uploadImageToSupabase } from "@/api/storage";
 import { createActionLogger } from "@/lib/actionDebug";
 import { supabase } from "@/lib/supabase";
+import { buildMockPosts, DISCOVER_MOCK_POSTS_ENABLED } from "@/api/social/mockPosts";
 import { getRiftboundSetName } from "@/constants/riftboundSets";
 import { getTcgGameName } from "@/constants/tcgGames";
 import {
@@ -18,6 +19,10 @@ const postDebug = createActionLogger("Posts");
  * api/storage. */
 export const FREE_MAX_MEDIA_PER_POST = 3;
 export const PAID_MAX_MEDIA_PER_POST = 10;
+
+/** Real posts older than this are left out of the Discover feed (hides the
+ * early test post without deleting it from the database). */
+export const DISCOVER_FEED_START = "2026-10-01T00:00:00Z";
 
 export interface PostMedia {
     id: number;
@@ -49,6 +54,8 @@ export interface FeedPost {
         title: string;
         subtitle: string | null;
     } | null;
+    /** Client-side sample post (api/social/mockPosts) — not in Supabase. */
+    is_mock?: boolean;
 }
 
 function mapItemReference(item: any): FeedPost["item"] {
@@ -108,6 +115,7 @@ export const useGetPostsFeed = ({
             let query = supabase
                 .from("posts")
                 .select(POST_SELECT)
+                .gte("created_at", DISCOVER_FEED_START)
                 .order("created_at", { ascending: false })
                 .limit(limit + 1);
 
@@ -153,13 +161,19 @@ export const useGetPostsFeed = ({
 
             const hasMore = posts.length > limit;
             const pagePosts = hasMore ? posts.slice(0, limit) : posts;
-            return {
-                items: pagePosts,
-                nextCursor:
-                    hasMore && pagePosts.length > 0
-                        ? pagePosts[pagePosts.length - 1].created_at
-                        : null,
-            };
+            // The cursor comes from real posts only; mock posts ride along
+            // on the first page, interleaved by time.
+            const nextCursor =
+                hasMore && pagePosts.length > 0
+                    ? pagePosts[pagePosts.length - 1].created_at
+                    : null;
+            const items =
+                !pageParam && DISCOVER_MOCK_POSTS_ENABLED
+                    ? [...pagePosts, ...buildMockPosts()].sort(
+                          (a, b) => Date.parse(b.created_at) - Date.parse(a.created_at),
+                      )
+                    : pagePosts;
+            return { items, nextCursor };
         },
         initialPageParam: undefined,
         getNextPageParam: (lastPage) => lastPage.nextCursor,

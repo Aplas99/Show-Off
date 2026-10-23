@@ -31,6 +31,7 @@ npx jest --watch                                    # watch mode
 | `EXPO_PUBLIC_SUPABASE_URL` | Supabase project URL |
 | `EXPO_PUBLIC_ANON_KEY` | Supabase public anon key |
 | `EXPO_PUBLIC_CARD_SCAN_DEBUG` | Set to `false` to silence `[CardScan]` OCR logs |
+| `EXPO_PUBLIC_DISCOVER_MOCK_POSTS` | Set to `false` to hide the client-side sample posts (`api/social/mockPosts.ts`) mixed into the Discover feed |
 | `EXPO_PUBLIC_ACTION_DEBUG` | Set to `false` to silence `lib/actionDebug.ts` logs (barcode scanning, product/API search, manual item creation, Magic: The Gathering search) |
 | `EXPO_PUBLIC_MEMBERSHIP_DEBUG` | Set to `false` to silence development-only `[Membership]` checkout diagnostics; logs never include tokens, checkout URLs, or payment details |
 | `CATALOG_PROXY_DEBUG` | Supabase Edge Function secret: set to `false` to keep only warnings/errors in `catalog-proxy` logs (step-by-step `[catalog-proxy]` logs are on by default) |
