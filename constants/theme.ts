@@ -159,6 +159,7 @@ export const GAME_BRAND_COLORS: Record<string, GameBrandColors> = {
   dgm: { gradient: ["#0077C8", "#003E73"], accent: "#FF8C1A", onAccent: "#1A1A1A" },
   swu: { gradient: ["#2B2B2B", "#0A0A0A"], accent: "#FFE81F", onAccent: "#1A1A1A" },
   dbs: { gradient: ["#F57C00", "#9E2A00"], accent: "#FFE082", onAccent: "#1A1A1A" },
+  dbm: { gradient: ["#1E5BB8", "#0B2557"], accent: "#FFB300", onAccent: "#1A1A1A" },
   cfv: { gradient: ["#1565C0", "#1A237E"], accent: "#4FC3F7", onAccent: "#1A1A1A" },
   cpk: { gradient: ["#2A0F2E", "#0D0D0D"], accent: "#FCEE0A", onAccent: "#1A1A1A" },
 };

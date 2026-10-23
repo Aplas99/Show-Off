@@ -10,7 +10,7 @@ jest.mock("@/api/catalog", () => {
 });
 
 const card: TcgCard = {
-  id: "pk_aaaaaaaaaaaaaaaaaaaa", game: "ygo", name: "Dark Magician", set_name: "Legend of Blue Eyes",
+  id: "512345", game: "ygo", name: "Dark Magician", set_name: "Legend of Blue Eyes",
   set_code: "LOB", set_id: "1001", card_number: "LOB-005", rarity: "Ultra Rare", card_type: null,
   image_url: "https://project.invalid/a.jpg", market_price: 12.5,
 };
@@ -41,6 +41,13 @@ describe("shared TCG search", () => {
     await searchTcgCardsCacheFirst({ game: "ygo", query: "dark", bypassCache: true }, bypass);
     expect(bypass.findCachedCards).not.toHaveBeenCalled();
     expect(bypass.searchProvider).toHaveBeenCalled();
+  });
+
+  it("reads only the cache when asked, without spending provider quota", async () => {
+    const d = deps();
+    expect(await searchTcgCardsCacheFirst({ game: "op", query: "OP15-092", cacheOnly: true }, d)).toMatchObject({ source: "cache", cards: [] });
+    expect(d.findCachedCards).toHaveBeenCalled();
+    expect(d.searchProvider).not.toHaveBeenCalled();
   });
 
   it("skips queries shorter than the provider minimum", async () => {

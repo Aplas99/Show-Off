@@ -88,7 +88,7 @@ export async function fetchSetRoster(game: ItemGame, setId: string): Promise<Ros
 
 /**
  * Every card in one set. Rosters change rarely; keep them for a day so
- * reopening the view doesn't spend provider quota (PokéWallet's especially).
+ * reopening the view doesn't spend provider quota (TCG API's especially).
  */
 export function useSetRoster(game: ItemGame | null, setId: string | null, enabled = true) {
   return useQuery({

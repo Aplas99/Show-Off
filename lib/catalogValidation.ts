@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { isValidPriceCardId, priceGameSchema } from "@/lib/cardPricing";
-import { POKEWALLET_SET_ID_PATTERN, isValidPokewalletSetId, tcgGameSchema } from "@/lib/pokewalletCatalog";
+import { TCG_SET_ID_PATTERN, tcgGameSchema } from "@/lib/tcgApiCatalog";
 import { RIFTBOUND_ID_PATTERN, RIFTCODEX_ID_PATTERN } from "@/lib/riftboundCatalog";
 
 const filterSchema = z.string().trim().max(160);
@@ -26,12 +26,12 @@ export const catalogRequestSchema = z.discriminatedUnion("provider", [
     path: z.string().min(1).max(1000),
   }).strict(),
   z.object({
-    provider: z.literal("pokewallet"),
+    provider: z.literal("tcgapi"),
     game: tcgGameSchema,
     // Exactly one of: a search query, or a set id for a full set roster.
-    // PokéWallet rejects queries outside 2-100 characters.
+    // TCG API rejects queries under 2 characters.
     query: z.string().trim().min(2).max(100).optional(),
-    setId: z.string().trim().regex(POKEWALLET_SET_ID_PATTERN).optional(),
+    setId: z.string().trim().regex(TCG_SET_ID_PATTERN).optional(),
     page: z.number().int().min(1).max(50).default(1),
   }).strict(),
   z.object({
@@ -112,9 +112,8 @@ export function validateCatalogRequest(input: unknown) {
     if (!isValidPriceCardId(request.game, request.cardId)) throw new Error("Invalid card id");
     return request;
   }
-  if (request.provider === "pokewallet") {
+  if (request.provider === "tcgapi") {
     if (!request.query === !request.setId) throw new Error("Use exactly one of query or setId");
-    if (request.setId && !isValidPokewalletSetId(request.game, request.setId)) throw new Error("Invalid set id");
     return request;
   }
 

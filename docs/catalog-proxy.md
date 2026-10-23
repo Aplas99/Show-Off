@@ -93,55 +93,64 @@ before shipping the client with `RiftboundCreateScreen`.
 Riftcodex publishes no rate limits and returns 500 (not 404) for unknown
 ObjectIds, which the proxy reports as a generic provider error.
 
-## Other card games (PokéWallet)
+## Other card games (TCG API)
 
-Provider `pokewallet` serves every card game without a dedicated pipeline
-through one shared pipeline: Yu-Gi-Oh! (`ygo`), One Piece (`op`), Disney
-Lorcana (`lor`), Flesh and Blood (`fab`), Digimon (`dgm`), Star Wars:
-Unlimited (`swu`), Dragon Ball Super (`dbs`), Cardfight!! Vanguard (`cfv`) and
-Cyberpunk (`cpk`). The list lives in `constants/tcgGames.ts` and the
-`tcg_cards.game` CHECK constraint; adding a game means updating both.
-Pokémon, Magic and Riftbound keep their own providers.
+Provider `tcgapi` serves every card game without a dedicated pipeline
+through one shared pipeline, using TCG API (https://tcgapi.dev, TCGplayer's
+catalog): Yu-Gi-Oh! (`ygo`), One Piece (`op`), Disney Lorcana (`lor`), Flesh
+and Blood (`fab`), Digimon (`dgm`), Star Wars: Unlimited (`swu`), Dragon Ball
+Super Fusion World (`dbs`) and Masters (`dbm`), Cardfight!! Vanguard (`cfv`)
+and Cyberpunk (`cpk`). The list (with each game's TCG API slug) lives in
+`constants/tcgGames.ts` and the `tcg_cards.game` CHECK constraint; adding a
+game means updating both. Pokémon, Magic and Riftbound keep their own
+providers.
 
-- Request: `{ provider: "pokewallet", game, query, page }`; the proxy calls
-  `https://api.pokewallet.io/{game}/search` (10 results per page) with the
-  `X-API-Key` header from the `POKEWALLET_API_KEY` Edge Function secret.
-- Cards are validated (`lib/pokewalletCatalog.ts`), sealed products are
-  dropped, and rows are upserted into `tcg_cards` before they are returned.
-- PokéWallet images need the key, so the proxy copies each card image once
-  (`/{game}/images/{id}?size=high`) into the public `tcg-card-images` bucket
-  and stores that URL. Cards already stored skip the image request; a failed
-  copy saves the card without an image.
-- Requests use the per-user `pokewallet` limiter bucket.
-- One Piece answers in its own shape (`{ data, total, page, limit }` with flat
-  cards); `lib/pokewalletCatalog.ts` normalizes it to the `card_info` shape the
-  other games use. One Piece cards carry no set id, so the set code is taken
-  from the card number (`OP01-001` → `OP01`), and images come from
-  `/images/{card_number}` instead of `/{game}/images/{id}`. Card ids carry a
-  per-game prefix (`ygo_`, `op_` …); `20261027100000_pokewallet_id_formats.sql`
-  widens the table checks for both.
-- A response the proxy can't parse is logged as `[catalog-proxy] pokewallet.failed`
-  (error name and message only) and reported to the app as unreadable, not as
-  an unreachable provider.
+- Request: `{ provider: "tcgapi", game, query, page }`; the proxy calls
+  `https://api.tcgapi.dev/v1/search?q=…&game={slug}` (100 results per page)
+  with the `X-API-Key` header from the `TCG_API_KEY` Edge Function secret.
+- TCG API searches card names only. It has no card-number search, so the
+  scanner looks printed codes (`OP15-092`) up in the `tcg_cards` cache alone
+  and otherwise searches the OCR'd name, ranking the printing whose number
+  carries the code first (`api/tcg/scan.ts`).
+- Cards are validated (`lib/tcgApiCatalog.ts`): sealed products and other
+  games' rows are dropped, and TCG API's one-row-per-printing results are
+  merged into one card per id (`raw_data.printings`; `market_price` prefers
+  Normal). Rows are upserted into `tcg_cards` before they are returned.
+- Card ids are TCG API's numeric ids. Images are TCG API's public TCGplayer CDN
+  URLs (or `tcgplayer-cdn.tcgplayer.com/product/{tcgplayer_id}_in_1000x1000.jpg`
+  when missing), stored as-is: nothing is copied.
+- Search results name a card's set but not its id. The proxy maps names to
+  ids through `tcg_sets`, refreshed from TCG API's public
+  `/v1/games/{slug}/sets` list (no key, no quota) when a name is unknown and
+  the list is over a day old. If that fails, the card is saved without a set id.
+- Requests use the per-user `tcgapi` limiter bucket.
+- Vendor errors are logged as `[catalog-proxy] tcgapi.*` with the status,
+  TCG API's error code/message and `X-RateLimit-*` headers; `tcg_live_…`
+  keys are redacted. A response the proxy can't parse is logged as
+  `[catalog-proxy] tcgapi.failed` and reported to the app as unreadable.
 
-PokéWallet's plan limits are shared across all users (free: 100 requests an
-hour, 1,000 a day), and each new card costs one extra request for its image.
-The client searches the `tcg_cards` cache first (`search_tcg_cards` RPC) and
-only calls the proxy on a miss or when the user asks for the full catalog.
+TCG API's daily request budget is shared across all users (free: 100 a day;
+its licensing requires a Pro plan for apps with ads or subscriptions). The
+client searches the `tcg_cards` cache first (`search_tcg_cards` RPC) and only
+calls the proxy on a miss or when the user asks for the full catalog.
 
-Set completion sends `{ provider: "pokewallet", game, setId }` instead of a
-query: the proxy fetches `/{game}/sets/{setId}` (200 cards a page, at most 5
-pages, each extra page spending a limiter request), saves the cards without
-copying images (search copies them later), and records the set in
-`tcg_set_rosters` so later viewers read it from the cache. A set that fills
-all 5 pages is treated as truncated and is not marked complete. Apply
-`20261025100000_tcg_set_rosters.sql` before deploying this.
+Set completion sends `{ provider: "tcgapi", game, setId }` (a numeric TCG API
+set id) instead of a query: the proxy fetches `/v1/sets/{setId}/cards` (100
+cards a page, at most 10 pages, each extra page spending a limiter request),
+saves the cards, and records the set in `tcg_set_rosters` so later viewers
+read it from the cache. A set that fills all 10 pages is treated as
+truncated and is not marked complete.
 
-Apply `20261024100000_tcg_cards.sql` (table, search RPC, image bucket,
-limiter bucket) before deploying the proxy update, then
-`20261024110000_tcg_card_items.sql` (`items.tcg_card_id`,
-`create_tcg_card_batch`, category trigger, CSV import column) before shipping
-the client with `TcgGameCreateScreen`.
+Apply `20261028110000_tcgapi_catalog.sql` before deploying this proxy. It
+deletes everything PokéWallet wrote (cached cards, rosters, prices, product
+mappings and every item linked to a `tcg_cards` card), switches the id and
+game checks to TCG API, adds `tcg_sets`, and renames the limiter bucket. Then
+empty the old `tcg-card-images` bucket in the dashboard (Storage cannot be
+cleared from SQL) and set the secret:
+
+```bash
+npx supabase secrets set TCG_API_KEY=tcg_live_...
+```
 
 ## Card price history (TCGTracking)
 
@@ -153,7 +162,7 @@ one `price_history` row per card per day; later views that day (any user)
 read that row and make no upstream request.
 
 - The TCGplayer product id comes from server data only: Magic `raw_data.tcgplayer_id`
-  (Scryfall), Riftbound `tcgplayer_id`, PokéWallet `raw_data.tcgplayer.url`,
+  (Scryfall), Riftbound `tcgplayer_id`, TCG API `raw_data.tcgplayer_id`,
   Pokémon `tcgtracking:<id>` ids, or the redirect behind pokemontcg.io's
   `prices.pokemontcg.io/tcgplayer/{id}` link (resolved once and kept in
   `card_tcgplayer_products`; "no product" is retried after 30 days).

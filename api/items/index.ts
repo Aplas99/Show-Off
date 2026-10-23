@@ -8,7 +8,7 @@ import {
 import { extractMarketPrice } from "@/api/pokemon/ocrPostprocessing";
 import { getRiftboundSetName } from "@/constants/riftboundSets";
 import { getTcgGameName } from "@/constants/tcgGames";
-import { TCG_CARD_ITEM_COLUMNS, tcgCardItemProduct } from "@/lib/pokewalletCatalog";
+import { TCG_CARD_ITEM_COLUMNS, tcgCardItemProduct } from "@/lib/tcgApiCatalog";
 import type { ItemCategory } from "@/constants/itemCategory";
 import { createActionLogger } from "@/lib/actionDebug";
 import { inferItemCategory } from "@/lib/itemCategory";
@@ -107,7 +107,7 @@ export interface ItemWithProduct {
   /** Populated only for shared-pipeline cards, from the tcg_cards cache. */
   tcgGame?: string | null;
   tcgSetCode?: string | null;
-  /** PokéWallet set id (numeric), used to load the full set roster. */
+  /** TCG API set id (numeric), used to load the full set roster. */
   tcgSetId?: string | null;
   tcgSetName?: string | null;
   tcgRarity?: string | null;

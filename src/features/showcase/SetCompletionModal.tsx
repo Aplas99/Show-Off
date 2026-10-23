@@ -30,7 +30,7 @@ interface SetSummary {
   /** `${game}:${setId}`; set ids are only unique within a game. */
   key: string;
   game: ItemGame;
-  /** The id each game's roster loader takes (Pokémon set id, Magic/Riftbound set code, PokéWallet set id). */
+  /** The id each game's roster loader takes (Pokémon set id, Magic/Riftbound set code, TCG API set id). */
   setId: string;
   name: string;
   /** Printed set size when known without loading the roster. */
@@ -189,7 +189,7 @@ export default function SetCompletionModal({
 
 /**
  * One set's progress row. The set size comes from the printed total when
- * known, else from the roster: Magic loads it (Scryfall is free); PokéWallet
+ * known, else from the roster: Magic loads it (Scryfall is free); TCG API
  * games only use a roster someone already cached, so the list never spends
  * their limited quota.
  */

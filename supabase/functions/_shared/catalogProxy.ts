@@ -2,18 +2,20 @@ import { validateCatalogRequest } from "@/lib/catalogValidation";
 import { magicCardSchema, magicCardToCacheRow, scryfallSearchResponseSchema } from "@/lib/magicCatalog";
 import { barcodeNestMissing, barcodeNestNeedsImage, openLibraryCoverUrl, parseBarcodeNestProducts, parseBarcodeProducts, parseUpcProducts, productMatchesCode, productsToCacheRows, safeImageUrl, upcRetryDelay, withBarcodeNestImage, withBarcodeNestImageChecked, withBarcodeNestProduct, type CatalogProduct } from "@/lib/productCatalog";
 
+import { getTcgGameSlug, type TcgGameCode } from "@/constants/tcgGames";
 import {
-  POKEWALLET_PAGE_SIZE,
-  POKEWALLET_SET_MAX_PAGES,
-  POKEWALLET_SET_PAGE_SIZE,
+  TCG_API_PAGE_SIZE,
+  TCG_API_SET_LIST_MAX_PAGES,
+  TCG_API_SET_MAX_PAGES,
+  TCG_API_SET_PAGE_SIZE,
   cacheRowToTcgCard,
-  parsePokewalletSearch,
-  parsePokewalletSetPage,
-  pokewalletImagePath,
-  tcgCardImagePath,
+  parseTcgApiSearch,
+  parseTcgApiSetList,
+  parseTcgApiSetPage,
   tcgCardToCacheRow,
-  type PokewalletCard,
-} from "@/lib/pokewalletCatalog";
+  type TcgApiCardPrintings,
+  type TcgSetRow,
+} from "@/lib/tcgApiCatalog";
 import { isPokemonPriceRedirect, pickTcgTrackingMarketPrice, tcgplayerIdFromUrl } from "@/lib/cardPricing";
 import { parseRiftboundCards, riftboundCardToCacheRow } from "@/lib/riftboundCatalog";
 import { parsePokemonSetList, pokemonCardResponseSchema, pokemonSearchResponseSchema, pokemonCardToCacheRow, pokemonSetToCacheRow, type PokemonTcgCard } from "@/lib/pokemonCatalog";
@@ -22,8 +24,10 @@ import { parseTrackingCards, setSearchSchema } from "@/lib/tcgTrackingCatalog";
 const REQUEST_LIMIT_BYTES = 8 * 1024;
 const RESPONSE_LIMIT_BYTES = 8 * 1024 * 1024;
 const UPSTREAM_TIMEOUT_MS = 15_000;
-const POKEWALLET_TIMEOUT_MS = 30_000;
-const CARD_IMAGE_LIMIT_BYTES = 5 * 1024 * 1024;
+const TCG_API_BASE = "https://api.tcgapi.dev/v1";
+const TCG_API_TIMEOUT_MS = 30_000;
+/** How long a game's cached set list is trusted before an unknown set name refreshes it. */
+const TCG_SET_LIST_REFRESH_MS = 24 * 60 * 60 * 1000;
 
 const corsHeaders = {
   "Access-Control-Allow-Origin": "*",
@@ -34,7 +38,7 @@ const corsHeaders = {
 
 export interface CatalogProxyDependencies {
   authenticate: (token: string) => Promise<string | null>;
-  consumeRequest: (userId: string, provider: "pokemon" | "barcode" | "magic" | "upc" | "riftbound" | "pokewallet" | "price") => Promise<boolean>;
+  consumeRequest: (userId: string, provider: "pokemon" | "barcode" | "magic" | "upc" | "riftbound" | "tcgapi" | "price") => Promise<boolean>;
   reserveMagicRequest: () => Promise<boolean>;
   persistMagicCards: (rows: ReturnType<typeof magicCardToCacheRow>[]) => Promise<void>;
   persistRiftboundCards: (rows: ReturnType<typeof riftboundCardToCacheRow>[], signal: AbortSignal) => Promise<void>;
@@ -43,8 +47,9 @@ export interface CatalogProxyDependencies {
   persistPokemonSets: (rows: ReturnType<typeof pokemonSetToCacheRow>[], signal: AbortSignal) => Promise<void>;
   persistProducts: (rows: ReturnType<typeof productsToCacheRows>, signal: AbortSignal) => Promise<void>;
   persistTcgCards: (rows: ReturnType<typeof tcgCardToCacheRow>[], signal: AbortSignal) => Promise<void>;
-  /** Already-copied image URLs for cached cards, keyed by card id. */
-  findTcgCardImages: (ids: string[], signal: AbortSignal) => Promise<Record<string, string | null>>;
+  /** The game's cached TCG API set list (tcg_sets). */
+  findTcgSets: (game: TcgGameCode, signal: AbortSignal) => Promise<TcgSetRow[]>;
+  persistTcgSets: (rows: TcgSetRow[], signal: AbortSignal) => Promise<void>;
   /** Today's cached price_history price for a card, or null if none yet. */
   findTodayPrice: (game: string, cardId: string, signal: AbortSignal) => Promise<number | null>;
   /**
@@ -60,13 +65,11 @@ export interface CatalogProxyDependencies {
   } | null>;
   saveTcgplayerProduct: (game: string, cardId: string, productId: number | null, signal: AbortSignal) => Promise<void>;
   persistPriceSnapshot: (game: string, cardId: string, price: number, signal: AbortSignal) => Promise<void>;
-  /** Marks a PokéWallet set as fully cached in tcg_cards (tcg_set_rosters). */
+  /** Marks a TCG API set as fully cached in tcg_cards (tcg_set_rosters). */
   persistTcgSetRoster: (row: { game: string; set_id: string; set_name: string | null; card_count: number; cached_at: string }, signal: AbortSignal) => Promise<void>;
-  /** Uploads a card image to the public tcg-card-images bucket; returns its public URL. */
-  storeTcgCardImage: (path: string, bytes: Uint8Array, contentType: string, signal: AbortSignal) => Promise<string>;
   reserveUpcRequest: (isSearch: boolean) => Promise<boolean>;
   deferUpcRequests: (seconds: number) => Promise<void>;
-  getSecret: (name: "POKEMON_TCG_API_KEY" | "BARCODE_LOOKUP_API_KEY" | "BARCODENEST_KEY" | "POKEWALLET_API_KEY") => string | undefined;
+  getSecret: (name: "POKEMON_TCG_API_KEY" | "BARCODE_LOOKUP_API_KEY" | "BARCODENEST_KEY" | "TCG_API_KEY") => string | undefined;
   /** Step-by-step `[catalog-proxy]` logs (CATALOG_PROXY_DEBUG); warnings and errors always log. */
   debug?: boolean;
   fetch: typeof fetch;
@@ -145,29 +148,33 @@ function errorSummary(error: unknown) {
     : { name: "UnknownError", message: redact(String(error)).slice(0, 300) };
 }
 
-/** Strips anything shaped like a PokéWallet key from vendor text. */
+/** Strips anything shaped like a TCG API key from vendor text. */
 function redact(text: string) {
-  return text.replace(/pk_(?:live|test)_[A-Za-z0-9]+/g, "pk_***");
+  return text.replace(/tcg_(?:live|test)_[A-Za-z0-9]+/g, "tcg_***");
 }
 
-/** PokéWallet's quota headers, so logs show how close the shared plan is to its limit. */
+/** TCG API's daily quota headers, so logs show how close the shared plan is to its limit. */
 function rateLimitDetails(response: Response) {
   return {
-    remainingHour: response.headers.get("X-RateLimit-Remaining-Hour"),
-    remainingDay: response.headers.get("X-RateLimit-Remaining-Day"),
+    limit: response.headers.get("X-RateLimit-Limit"),
+    remaining: response.headers.get("X-RateLimit-Remaining"),
+    reset: response.headers.get("X-RateLimit-Reset"),
   };
 }
 
 /**
- * Status and the vendor's short `error`/`message` text for a failed
- * response. Reads at most 4 KB and consumes the body.
+ * Status and the vendor's short error text for a failed response. TCG API
+ * errors are `{ error: { message, code } }`; other vendors send
+ * `{ error, message }` strings. Reads at most 4 KB and consumes the body.
  */
 async function vendorFailureDetails(response: Response) {
   let vendorError: string | null = null;
   try {
     const text = new TextDecoder().decode(await readBoundedBytes(response.body, 4096));
     const body = JSON.parse(text) as { error?: unknown; message?: unknown };
-    const parts = [body.error, body.message].filter((part): part is string => typeof part === "string");
+    const nested = body.error && typeof body.error === "object" ? body.error as { code?: unknown; message?: unknown } : null;
+    const parts = (nested ? [nested.code, nested.message] : [body.error, body.message])
+      .filter((part): part is string => typeof part === "string");
     vendorError = parts.length > 0 ? redact(parts.join(": ")).slice(0, 200) : null;
   } catch {
     await response.body?.cancel().catch(() => undefined);
@@ -176,73 +183,116 @@ async function vendorFailureDetails(response: Response) {
 }
 
 /**
- * A PokéWallet call failed after it was sent. Logs the cause to the function
+ * A TCG API call failed after it was sent. Logs the cause to the function
  * logs (error name and message only; never the key or a vendor body) and
  * tells the user whether the provider was unreachable or answered with data
  * we couldn't read.
  */
-function pokewalletFailure(game: string, error: unknown, timedOut: boolean) {
+function tcgApiFailure(game: string, error: unknown, timedOut: boolean) {
   if (timedOut) return json({ error: "Catalog search timed out. Please try again." }, 504);
   const { name, message } = errorSummary(error);
-  console.error("[catalog-proxy] pokewallet.failed", { game, name, message });
+  console.error("[catalog-proxy] tcgapi.failed", { game, name, message });
   const unreadable = name === "ZodError" || name === "SyntaxError";
   return json({ error: unreadable
     ? "The card catalog sent a response the app couldn't read. Please try again later."
     : "The catalog provider could not be reached. Please try again." }, 502);
 }
 
+/** Logs a failed TCG API response and turns it into the error the app shows. */
+async function tcgApiUpstreamFailure(event: string, details: Record<string, unknown>, response: Response, notFound: Response) {
+  warnLog(event, { ...details, ...await vendorFailureDetails(response) });
+  if (response.status === 404) return notFound;
+  if (response.status === 429) return json({ error: "The card catalog is busy. Please try again later." }, 429);
+  // Vendor responses can echo the key in examples. Never forward them.
+  return json({ error: "The catalog provider is temporarily unavailable. Please try again." }, 502);
+}
+
 /**
- * Full roster of one PokéWallet set for set completion. Up to five pages of
- * 200 cards; each page after the first spends another limiter request.
- * Images are not copied here (that would cost one request per card): cards
- * keep any image already stored, and search copies the rest later.
+ * The game's sets from tcg_sets, refreshed from TCG API's public set list
+ * (no key, no quota) when `wanted` names a set we don't know and the list is
+ * over a day old. Search results carry only a set name, so this is how cards
+ * get the set id that set completion needs. Failures leave cards without one.
  */
-async function handlePokewalletSet(request: PokewalletRequest, setId: string, key: string, dependencies: CatalogProxyDependencies, userId: string) {
-  const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), POKEWALLET_TIMEOUT_MS);
-  const headers = { Accept: "application/json", "X-API-Key": key };
-  const startedAt = Date.now();
-  debugLog(dependencies, "pokewallet.set.started", { game: request.game, setId });
+async function loadTcgSets(game: TcgGameCode, wanted: string[], dependencies: CatalogProxyDependencies, signal: AbortSignal) {
+  let sets: TcgSetRow[] = [];
   try {
-    const cards: PokewalletCard[] = [];
-    let setName: string | null = null;
-    for (let page = 1; page <= POKEWALLET_SET_MAX_PAGES; page += 1) {
-      if (page > 1 && !await dependencies.consumeRequest(userId, "pokewallet")) {
+    sets = await dependencies.findTcgSets(game, signal);
+  } catch (error) {
+    warnLog("tcgapi.sets.lookup-failed", { game, ...errorSummary(error) });
+    return sets;
+  }
+  const known = new Set(sets.map((set) => set.name));
+  const newest = Math.max(0, ...sets.map((set) => new Date(set.cached_at).getTime()));
+  if (wanted.every((name) => known.has(name)) || Date.now() - newest < TCG_SET_LIST_REFRESH_MS) return sets;
+
+  try {
+    const refreshed: TcgSetRow[] = [];
+    for (let page = 1; page <= TCG_API_SET_LIST_MAX_PAGES; page += 1) {
+      const url = new URL(`${TCG_API_BASE}/games/${getTcgGameSlug(game)}/sets`);
+      url.search = new URLSearchParams({ page: String(page), per_page: "100" }).toString();
+      const response = await dependencies.fetch(url, { headers: { Accept: "application/json" }, signal, redirect: "error" });
+      if (!response.ok) {
+        warnLog("tcgapi.sets.upstream-failed", { game, page, ...await vendorFailureDetails(response) });
+        return sets;
+      }
+      const parsed = parseTcgApiSetList(game, await readBoundedJson(response.body, RESPONSE_LIMIT_BYTES));
+      refreshed.push(...parsed.sets);
+      if (!parsed.hasMore) break;
+    }
+    if (refreshed.length === 0) return sets;
+    await dependencies.persistTcgSets(refreshed, signal);
+    debugLog(dependencies, "tcgapi.sets.refreshed", { game, setCount: refreshed.length });
+    return refreshed;
+  } catch (error) {
+    warnLog("tcgapi.sets.refresh-failed", { game, ...errorSummary(error) });
+    return sets;
+  }
+}
+
+/**
+ * Full roster of one TCG API set for set completion, 100 cards a page; each
+ * page after the first spends another limiter request. A set that fills
+ * every page may be truncated and is not marked complete.
+ */
+async function handleTcgApiSet(request: TcgApiRequest, setId: string, key: string, dependencies: CatalogProxyDependencies, userId: string) {
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), TCG_API_TIMEOUT_MS);
+  const headers = { Accept: "application/json", "X-API-Key": key };
+  const slug = getTcgGameSlug(request.game);
+  const startedAt = Date.now();
+  debugLog(dependencies, "tcgapi.set.started", { game: request.game, setId });
+  try {
+    const cards: TcgApiCardPrintings[] = [];
+    for (let page = 1; ; page += 1) {
+      if (page > TCG_API_SET_MAX_PAGES) throw new Error("Set roster too large");
+      if (page > 1 && !await dependencies.consumeRequest(userId, "tcgapi")) {
         return json({ error: "Catalog request limit reached. Please try again later." }, 429);
       }
-      const url = new URL(`https://api.pokewallet.io/${request.game}/sets/${setId}`);
-      url.search = new URLSearchParams({ page: String(page), limit: String(POKEWALLET_SET_PAGE_SIZE) }).toString();
+      const url = new URL(`${TCG_API_BASE}/sets/${setId}/cards`);
+      url.search = new URLSearchParams({ page: String(page), per_page: String(TCG_API_SET_PAGE_SIZE) }).toString();
       const pageStartedAt = Date.now();
       const response = await dependencies.fetch(url, { headers, signal: controller.signal, redirect: "error" });
-      debugLog(dependencies, "pokewallet.set.upstream", {
+      debugLog(dependencies, "tcgapi.set.upstream", {
         game: request.game, setId, page, status: response.status, durationMs: Date.now() - pageStartedAt, ...rateLimitDetails(response),
       });
       if (!response.ok) {
-        warnLog("pokewallet.set.upstream-failed", { game: request.game, setId, page, ...await vendorFailureDetails(response) });
-        if (response.status === 404) return json({ error: "That set was not found." }, 404);
-        if (response.status === 429) return json({ error: "The card catalog is busy. Please try again later." }, 429);
-        return json({ error: "The catalog provider is temporarily unavailable. Please try again." }, 502);
+        return tcgApiUpstreamFailure("tcgapi.set.upstream-failed", { game: request.game, setId, page }, response,
+          json({ error: "That set was not found." }, 404));
       }
-      const parsed = parsePokewalletSetPage(request.game, await readBoundedJson(response.body, RESPONSE_LIMIT_BYTES));
-      setName ??= parsed.setName;
-      cards.push(...parsed.cards);
-      debugLog(dependencies, "pokewallet.set.page-parsed", {
+      const parsed = parseTcgApiSetPage(slug, await readBoundedJson(response.body, RESPONSE_LIMIT_BYTES));
+      // Rows that name another set are not part of this roster.
+      cards.push(...parsed.cards.filter(({ card }) => !card.set_id || card.set_id === setId));
+      debugLog(dependencies, "tcgapi.set.page-parsed", {
         game: request.game, setId, page, rawCount: parsed.rawCount, cardCount: parsed.cards.length,
       });
-      if (parsed.rawCount < POKEWALLET_SET_PAGE_SIZE) break;
-      // A set that fills every page may be truncated; don't mark it complete.
-      if (page === POKEWALLET_SET_MAX_PAGES) throw new Error("Set roster too large");
+      if (!parsed.hasMore) break;
     }
 
-    const unique = [...new Map(cards.map((card) => [card.id, card])).values()];
-    let stored: Record<string, string | null> = {};
-    try {
-      stored = await dependencies.findTcgCardImages(unique.map((card) => card.id), controller.signal);
-    } catch (error) {
-      // Without the lookup, rows are written without images; search re-copies them.
-      warnLog("pokewallet.set.image-lookup-failed", { game: request.game, setId, ...errorSummary(error) });
-    }
-    const rows = unique.map((card) => tcgCardToCacheRow(request.game, card, stored[card.id] ?? null));
+    const known = (await loadTcgSets(request.game, [], dependencies, controller.signal)).find((set) => set.id === setId);
+    const setName = known?.name ?? cards.find(({ card }) => card.set_name)?.card.set_name ?? null;
+    const set = { id: setId, name: setName, abbreviation: known?.abbreviation ?? null };
+    const unique = [...new Map(cards.map((entry) => [entry.card.id, entry])).values()];
+    const rows = unique.map((entry) => tcgCardToCacheRow(request.game, entry, set));
     try {
       if (rows.length > 0) await dependencies.persistTcgCards(rows, controller.signal);
       await dependencies.persistTcgSetRoster({
@@ -253,15 +303,15 @@ async function handlePokewalletSet(request: PokewalletRequest, setId: string, ke
         cached_at: new Date().toISOString(),
       }, controller.signal);
     } catch (error) {
-      console.error("[catalog-proxy] pokewallet.set.save-failed", { game: request.game, setId, rows: rows.length, ...errorSummary(error) });
+      console.error("[catalog-proxy] tcgapi.set.save-failed", { game: request.game, setId, rows: rows.length, ...errorSummary(error) });
       return json({ error: "Could not save catalog results. Please try again." }, 503);
     }
-    debugLog(dependencies, "pokewallet.set.completed", {
+    debugLog(dependencies, "tcgapi.set.completed", {
       game: request.game, setId, setName, cardCount: rows.length, durationMs: Date.now() - startedAt,
     });
     return json({ setName, cards: rows.map(cacheRowToTcgCard) });
   } catch (error) {
-    return pokewalletFailure(request.game, error, controller.signal.aborted);
+    return tcgApiFailure(request.game, error, controller.signal.aborted);
   } finally {
     clearTimeout(timeout);
   }
@@ -345,109 +395,63 @@ async function handlePrice(request: PriceRequest, dependencies: CatalogProxyDepe
   }
 }
 
-type PokewalletRequest = Extract<ReturnType<typeof validateCatalogRequest>, { provider: "pokewallet" }>;
+type TcgApiRequest = Extract<ReturnType<typeof validateCatalogRequest>, { provider: "tcgapi" }>;
 
 /**
- * PokéWallet search for the shared TCG pipeline. Cards are saved before they
- * are returned, and each card image is copied once into Storage, because
- * PokéWallet images need the API key and can't be loaded by the app.
+ * TCG API search for the shared TCG pipeline. Cards are saved before they
+ * are returned; their images are public TCGplayer CDN URLs, so nothing is
+ * copied. TCG API matches card names only, never printed card numbers.
  */
-async function handlePokewallet(request: PokewalletRequest, key: string, dependencies: CatalogProxyDependencies, userId: string) {
-  if (request.setId) return handlePokewalletSet(request, request.setId, key, dependencies, userId);
+async function handleTcgApi(request: TcgApiRequest, key: string, dependencies: CatalogProxyDependencies, userId: string) {
+  if (request.setId) return handleTcgApiSet(request, request.setId, key, dependencies, userId);
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), POKEWALLET_TIMEOUT_MS);
+  const timeout = setTimeout(() => controller.abort(), TCG_API_TIMEOUT_MS);
   const headers = { Accept: "application/json", "X-API-Key": key };
+  const slug = getTcgGameSlug(request.game);
   try {
-    const url = new URL(`https://api.pokewallet.io/${request.game}/search`);
+    const url = new URL(`${TCG_API_BASE}/search`);
     url.search = new URLSearchParams({
       // validateCatalogRequest guarantees a query when there is no setId.
       q: request.query ?? "",
+      game: slug,
       page: String(request.page),
-      limit: String(POKEWALLET_PAGE_SIZE),
+      per_page: String(TCG_API_PAGE_SIZE),
     }).toString();
     const startedAt = Date.now();
-    debugLog(dependencies, "pokewallet.search.started", { game: request.game, query: request.query, page: request.page });
+    debugLog(dependencies, "tcgapi.search.started", { game: request.game, query: request.query, page: request.page });
     const response = await dependencies.fetch(url, { headers, signal: controller.signal, redirect: "error" });
-    debugLog(dependencies, "pokewallet.search.upstream", {
+    debugLog(dependencies, "tcgapi.search.upstream", {
       game: request.game, status: response.status, durationMs: Date.now() - startedAt, ...rateLimitDetails(response),
     });
     if (!response.ok) {
-      warnLog("pokewallet.search.upstream-failed", { game: request.game, query: request.query, ...await vendorFailureDetails(response) });
-      if (response.status === 404) return json({ cards: [], page: request.page, total: 0, totalPages: 0 });
-      if (response.status === 429) return json({ error: "The card catalog is busy. Please try again later." }, 429);
-      // Vendor responses can echo the key in examples. Never forward them.
-      return json({ error: "The catalog provider is temporarily unavailable. Please try again." }, 502);
+      return tcgApiUpstreamFailure("tcgapi.search.upstream-failed", { game: request.game, query: request.query }, response,
+        json({ cards: [], page: request.page, total: 0, totalPages: 0 }));
     }
-    const search = parsePokewalletSearch(request.game, await readBoundedJson(response.body, RESPONSE_LIMIT_BYTES));
-    debugLog(dependencies, "pokewallet.search.parsed", {
+    const search = parseTcgApiSearch(slug, await readBoundedJson(response.body, RESPONSE_LIMIT_BYTES));
+    debugLog(dependencies, "tcgapi.search.parsed", {
       game: request.game, cardCount: search.cards.length, total: search.total, page: search.page, totalPages: search.totalPages,
     });
 
-    let stored: Record<string, string | null> = {};
-    try {
-      stored = await dependencies.findTcgCardImages(search.cards.map((card) => card.id), controller.signal);
-    } catch (error) {
-      // Without the lookup, images are copied again; the upload overwrites.
-      warnLog("pokewallet.search.image-lookup-failed", { game: request.game, ...errorSummary(error) });
-    }
-    const imageStats = { reused: 0, copied: 0, skipped: 0, failed: 0 };
-    const images = await Promise.all(search.cards.map(async (card) => {
-      const existing = stored[card.id];
-      if (existing) {
-        imageStats.reused += 1;
-        return existing;
-      }
-      const imagePath = pokewalletImagePath(request.game, card);
-      if (!imagePath) {
-        imageStats.skipped += 1;
-        return null;
-      }
-      try {
-        const imageResponse = await dependencies.fetch(
-          new URL(`https://api.pokewallet.io${imagePath}`),
-          { headers: { "X-API-Key": key }, signal: controller.signal, redirect: "error" },
-        );
-        const contentType = imageResponse.headers.get("Content-Type")?.split(";")[0].trim() ?? "";
-        if (!imageResponse.ok || !["image/jpeg", "image/png", "image/webp"].includes(contentType)) {
-          imageStats.failed += 1;
-          let failure: Record<string, unknown> = { status: imageResponse.status };
-          if (imageResponse.ok) {
-            await imageResponse.body?.cancel().catch(() => undefined);
-          } else {
-            failure = await vendorFailureDetails(imageResponse);
-          }
-          warnLog("pokewallet.image.upstream-failed", {
-            game: request.game, cardId: card.id, path: imagePath, contentType, ...failure,
-          });
-          return null;
-        }
-        const bytes = await readBoundedBytes(imageResponse.body, CARD_IMAGE_LIMIT_BYTES);
-        const publicUrl = await dependencies.storeTcgCardImage(tcgCardImagePath(request.game, card.id), bytes, contentType, controller.signal);
-        imageStats.copied += 1;
-        return publicUrl;
-      } catch (error) {
-        // A card without an image is still saved; the app shows a placeholder.
-        imageStats.failed += 1;
-        warnLog("pokewallet.image.copy-failed", { game: request.game, cardId: card.id, path: imagePath, ...errorSummary(error) });
-        return null;
-      }
-    }));
-
-    const rows = search.cards.map((card, index) => tcgCardToCacheRow(request.game, card, images[index]));
+    const unmatched = [...new Set(search.cards.flatMap(({ card }) => (!card.set_id && card.set_name ? [card.set_name] : [])))];
+    const sets = unmatched.length > 0 ? await loadTcgSets(request.game, unmatched, dependencies, controller.signal) : [];
+    const setsByName = new Map(sets.map((set) => [set.name, set]));
+    const rows = search.cards.map((entry) =>
+      tcgCardToCacheRow(request.game, entry, entry.card.set_name ? setsByName.get(entry.card.set_name) ?? null : null));
     if (rows.length > 0) {
       try {
         await dependencies.persistTcgCards(rows, controller.signal);
       } catch (error) {
-        console.error("[catalog-proxy] pokewallet.search.save-failed", { game: request.game, rows: rows.length, ...errorSummary(error) });
+        console.error("[catalog-proxy] tcgapi.search.save-failed", { game: request.game, rows: rows.length, ...errorSummary(error) });
         return json({ error: "Could not save catalog results. Please try again." }, 503);
       }
     }
-    debugLog(dependencies, "pokewallet.search.completed", {
-      game: request.game, saved: rows.length, images: imageStats, durationMs: Date.now() - startedAt,
+    debugLog(dependencies, "tcgapi.search.completed", {
+      game: request.game, saved: rows.length, withImage: rows.filter((row) => row.image_url).length,
+      withSet: rows.filter((row) => row.set_id).length, durationMs: Date.now() - startedAt,
     });
     return json({ cards: rows.map(cacheRowToTcgCard), page: search.page, total: search.total, totalPages: search.totalPages });
   } catch (error) {
-    return pokewalletFailure(request.game, error, controller.signal.aborted);
+    return tcgApiFailure(request.game, error, controller.signal.aborted);
   } finally {
     clearTimeout(timeout);
   }
@@ -558,9 +562,9 @@ export function createCatalogProxyHandler(dependencies: CatalogProxyDependencies
     const secretName = request.provider === "pokemon"
       ? "POKEMON_TCG_API_KEY"
       : request.provider === "barcodenest" ? "BARCODENEST_KEY"
-      : request.provider === "pokewallet" ? "POKEWALLET_API_KEY" : "BARCODE_LOOKUP_API_KEY";
+      : request.provider === "tcgapi" ? "TCG_API_KEY" : "BARCODE_LOOKUP_API_KEY";
     const needsKey = request.provider === "pokemon" || request.provider === "barcode" || request.provider === "barcodenest"
-      || request.provider === "pokewallet";
+      || request.provider === "tcgapi";
     const key = needsKey ? dependencies.getSecret(secretName) : undefined;
     if (needsKey && !key) {
       console.error("[catalog-proxy] request.missing-secret", { provider: request.provider, secret: secretName });
@@ -596,7 +600,7 @@ export function createCatalogProxyHandler(dependencies: CatalogProxyDependencies
       return json({ error: "Catalog search is temporarily unavailable. Please try again." }, 503);
     }
 
-    if (request.provider === "pokewallet") return handlePokewallet(request, key!, dependencies, userId);
+    if (request.provider === "tcgapi") return handleTcgApi(request, key!, dependencies, userId);
     if (request.provider === "price") return handlePrice(request, dependencies);
 
     let url: URL;
