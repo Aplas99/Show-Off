@@ -22,6 +22,7 @@ const GAME_ICONS: Record<ItemGame, IoniconName> = {
   dgm: "hardware-chip",
   swu: "planet",
   dbs: "flame",
+  dbm: "bonfire",
   cfv: "infinite",
   cpk: "pulse",
 };

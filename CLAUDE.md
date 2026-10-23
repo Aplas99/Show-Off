@@ -45,7 +45,7 @@ npx jest --watch                                    # watch mode
 
 Stripe server secrets (`STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, `STRIPE_PRICE_ID_FOUNDING_CURATOR`, `STRIPE_PRICE_ID_CURATOR_MONTHLY`, `STRIPE_PRICE_ID_CURATOR_ANNUAL`) live in Supabase Edge Function secrets, not app env — see `docs/stripe-memberships.md`.
 
-Catalog secrets (`POKEMON_TCG_API_KEY`, `BARCODE_LOOKUP_API_KEY`, `BARCODENEST_KEY`, `POKEWALLET_API_KEY`) also live only
+Catalog secrets (`POKEMON_TCG_API_KEY`, `BARCODE_LOOKUP_API_KEY`, `BARCODENEST_KEY`, `TCG_API_KEY`) also live only
 in Edge Function secrets. Barcode-code lookups (scan/typed code in the barcode
 wizard) go cache-first, then BarcodeNest; text product search still uses
 UPCItemDB + Barcode Lookup. Deploy `catalog-proxy` and all catalog migrations
@@ -68,7 +68,7 @@ api/              All Supabase + external API calls, exported as TanStack Query 
   pokemon/        TCG card cache, OCR recognition pipeline, search, scan debug logging
   magic/          Magic: The Gathering via Scryfall (name search, OCR scan, card cache)
   riftbound/      Riftbound TCG via Riftcodex (cache-first name search, printed-code lookup, set listing, batch save)
-  tcg/            Shared pipeline for every other card game (constants/tcgGames.ts) via PokéWallet: cache-first search, batch save
+  tcg/            Shared pipeline for every other card game (constants/tcgGames.ts) via TCG API (tcgapi.dev): cache-first search, batch save
   prices/         Per-card market price history for every game (Curator graph): TCGTracking prices via catalog-proxy, one cached snapshot per card per day
   scanning/       Free-tier daily quotas: card/barcode scans (10/day) and searches (15/day)
   showcase/       Showcase CRUD
@@ -133,8 +133,9 @@ ML Kit (`@infinitered/react-native-mlkit-text-recognition`) is a native module �
 - `pokemon_tcg_sets` — server-maintained set list (codes, printed totals) the scanner trusts; `catalog-proxy` refreshes it from `/v2/sets` when older than 7 days, and `usePokemonTcgSets()` merges it over the bundled `constants/pokemonTcgSets.ts` snapshot
 - `magic_cards` — Magic card cache (Scryfall); `id` is the Scryfall UUID
 - `riftbound_cards` — Riftbound card cache (Riftcodex, no API key); `id` is the Riftcodex ObjectId, `riftbound_id` the printed code (e.g. `ogn-011-298`, signatures use `*`). Written only by `catalog-proxy`; searched via the `search_riftbound_cards` RPC
-- `tcg_cards` — shared card cache for the PokéWallet games; `id` is the PokéWallet id (game prefix like `ygo_`/`op_` + hex, or bare hex), `game` the code from `constants/tcgGames.ts`, `image_url` a copy in the public `tcg-card-images` bucket. Written only by `catalog-proxy`; searched via the `search_tcg_cards` RPC. PokéWallet's plan limits are shared by all users, so always search this cache first
-- `tcg_set_rosters` — complete-set manifest for the PokéWallet games (like `pokemon_tcg_set_rosters`); set completion (`api/sets`, `useSetRoster`) reads `tcg_cards` for a set only when this says it is whole
+- `tcg_cards` — shared card cache for the TCG API games; `id` is the numeric TCG API id, `game` the code from `constants/tcgGames.ts`, `image_url` a public TCGplayer CDN URL. Written only by `catalog-proxy`; searched via the `search_tcg_cards` RPC. TCG API's daily budget is shared by all users and it can't search card numbers, so always search this cache first
+- `tcg_sets` — each TCG API game's set list (numeric ids, names); `catalog-proxy` maps search results' set names to ids here
+- `tcg_set_rosters` — complete-set manifest for the TCG API games (like `pokemon_tcg_set_rosters`); set completion (`api/sets`, `useSetRoster`) reads `tcg_cards` for a set only when this says it is whole
 - `price_history` — daily per-card market price snapshots for every game. `catalog-proxy` (`provider: "price"`) fetches today's TCGplayer price from TCGTracking (free, no key, refreshed daily, no history endpoint) the first time a card's price is viewed each day and stores it; the Pokémon/Magic cache triggers also write rows. `card_tcgplayer_products` (server-only) caches each card's TCGplayer product id
 - `scan_usage` / `search_usage` — free-tier daily quota counters, written only via SECURITY DEFINER RPCs
 - `showcase_items` — join table linking items to showcases
@@ -168,4 +169,4 @@ Scanner logs emit with the `[CardScan]` prefix and cover: image crop dimensions,
 
 `lib/actionDebug.ts` exports `createActionLogger(tag)`, used to build namespaced structured loggers (`[Barcode]`, `[Search]`, `[CreateItem]`, `[MagicTCG]`, `[MagicScan]`, `[Riftbound]`, `[RiftboundScan]`, `[TcgCards]`, `[TcgScan]`, `[Catalog]` (every catalog-proxy call: request summary, status, timing), `[Prices]`, `[CardOcr]`) across the non-Pokémon item flows — barcode scan detection/quota checks, product/UPC search requests, manual + barcode item creation lifecycle, and Magic: The Gathering search/queue/batch-save. All share one toggle: set `EXPO_PUBLIC_ACTION_DEBUG=false` to silence them.
 
-Server side, `catalog-proxy` logs `[catalog-proxy] <event>` lines to the Supabase function logs (Dashboard → Edge Functions → catalog-proxy → Logs): rejected requests (which field failed validation), missing secrets, per-user limits, PokéWallet/TCGTracking upstream status, timing and remaining-quota headers, the vendor's own error text, image copy results and save failures. Keys are never logged (`pk_live_…` / `pk_test_…` text is redacted). Set `CATALOG_PROXY_DEBUG=false` to keep only warnings and errors. Pokémon scanning keeps its own `[CardScan]` logger (see above) rather than using this one.
+Server side, `catalog-proxy` logs `[catalog-proxy] <event>` lines to the Supabase function logs (Dashboard → Edge Functions → catalog-proxy → Logs): rejected requests (which field failed validation), missing secrets, per-user limits, TCG API/TCGTracking upstream status, timing and remaining-quota headers, the vendor's own error text, set-list refreshes and save failures. Keys are never logged (`tcg_live_…` / `tcg_test_…` text is redacted). Set `CATALOG_PROXY_DEBUG=false` to keep only warnings and errors. Pokémon scanning keeps its own `[CardScan]` logger (see above) rather than using this one.

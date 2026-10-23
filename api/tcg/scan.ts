@@ -9,16 +9,16 @@ import { recognizeTextWithMlKit } from "@/lib/mlKitOcr";
 // Camera scanning for the shared-pipeline games (constants/tcgGames.ts).
 // Card layouts differ by game (Yu-Gi-Oh! names sit on top, One Piece names
 // at the bottom), so the whole card is OCR'd. The printed card code
-// (OP01-003, LOB-EN005, WTR001, ...) is tried first because it names one
-// printing; name lines are the fallback. Each lookup reads the shared cache
-// before PokéWallet, so a scan rarely spends PokéWallet quota.
+// (OP01-003, LOB-EN005, WTR001, ...) names one printing, but TCG API only
+// searches names: codes are looked up in the shared cache alone, and name
+// searches (cache first, then TCG API) prefer cards carrying the code.
 
 const tcgScanDebug = createActionLogger("TcgScan");
 
 const CARD_ASPECT_RATIO = 63 / 88;
 const OCR_IMAGE_WIDTH = 1400;
 const MAX_MATCHES = 5;
-/** Searches per scan, to bound PokéWallet use on a miss. */
+/** Searches per scan, to bound TCG API use on a miss. */
 const MAX_CODE_SEARCHES = 2;
 const MAX_NAME_SEARCHES = 3;
 /** Minimum similarity between an OCR'd line and a candidate card name. */
@@ -32,7 +32,8 @@ export interface TcgOcrText {
 export interface TcgScanDependencies {
   prepareImage: (imageUri: string) => Promise<string>;
   recognizeText: (imageUri: string) => Promise<TcgOcrText>;
-  searchCards: (game: TcgGameCode, query: string) => Promise<TcgCard[]>;
+  /** `cacheOnly` reads the shared cache without falling back to TCG API. */
+  searchCards: (game: TcgGameCode, query: string, options?: { cacheOnly?: boolean }) => Promise<TcgCard[]>;
 }
 
 export interface TcgScanIdentifiers {
@@ -56,8 +57,10 @@ const CODE_PATTERNS: Record<TcgGameCode, RegExp[]> = {
   dgm: [/\b((?:BT|EX|ST|RB|LM|AD)\d{1,2}-\d{2,3}|P-\d{3})\b/g],
   // 012/252 (set code printed beside it)
   swu: [/\b(\d{3}\s*\/\s*\d{3})\b/g],
-  // BT1-001, FB01-001, SD1-01, EX01-01, P-001
-  dbs: [/\b((?:BT|FB|SD|EX|TB|FS|EB|DB)\d{1,2}-\d{2,3}|P-\d{3})\b/g],
+  // Fusion World: FB01-001, FS01-01, SB01-001, P-001
+  dbs: [/\b((?:FB|FS|SB|EB)\d{2}-\d{2,3}|P-\d{3})\b/g],
+  // Masters: BT1-001, SD1-01, EX01-01, TB1-001, DB1-001, P-001
+  dbm: [/\b((?:BT|SD|EX|TB|DB|XD)\d{1,2}-\d{2,3}|P-\d{3})\b/g],
   // D-BT01/001, V-EB02/012, BT01/001
   cfv: [/\b((?:[A-Z]-)?[A-Z]{2,3}\d{2}\/\d{3}[A-Z]{0,3})\b/g],
   // Unknown layout; a number over a total is the safest guess.
@@ -113,7 +116,7 @@ function ocrLines(ocr: TcgOcrText) {
 }
 
 // Rules-text and frame words that are never a card name.
-const NOT_A_NAME = /\b(when|until|your|opponent|each|turn|draw|attack|damage|ability|effect|cost|counter|trigger|illus|illustration|artist|©|konami|bandai|disney|wizards|ravensburger|fantasy flight|legend story|bushiroad|cd projekt)\b/i;
+const NOT_A_NAME = /\b(when|until|your|opponent|each|turn|draw|attack|damage|ability|effect|cost|counter|trigger|character|illus|illustration|artist|©|konami|bandai|disney|wizards|ravensburger|fantasy flight|legend story|bushiroad|cd projekt)\b/i;
 
 /** Pull printed card codes and name guesses out of whole-card OCR text. */
 export function extractTcgIdentifiers(game: TcgGameCode, ocr: TcgOcrText): TcgScanIdentifiers {
@@ -134,16 +137,27 @@ export function extractTcgIdentifiers(game: TcgGameCode, ocr: TcgOcrText): TcgSc
 
   // Name lines: short, mostly letters, not rules text or credits. Reading
   // order keeps top-of-card names (most games) ahead of body text.
-  const names: string[] = [];
-  for (const line of lines) {
+  const isNameLine = (line: string) => {
     const compact = line.replace(/\s/g, "");
     const letters = line.replace(/[^\p{L}]/gu, "");
-    if (line.length < 3 || line.length > 40) continue;
-    if (letters.length < Math.ceil(compact.length * 0.7)) continue;
-    if (NOT_A_NAME.test(line) || line.split(" ").length > 6) continue;
+    if (line.length < 3 || line.length > 40) return false;
+    if (letters.length < Math.ceil(compact.length * 0.7)) return false;
+    // A sentence ("...base power becomes 7000.") is rules text.
+    if (/\s/.test(line) && line.endsWith(".")) return false;
+    return !NOT_A_NAME.test(line) && line.split(" ").length <= 6;
+  };
+  const names: string[] = [];
+  const addName = (line: string) => {
     const name = line.replace(/[^\p{L}\p{N}' ,.:!&-]/gu, "").trim();
     if (name.length >= 3 && !names.includes(name)) names.push(name);
-  }
+  };
+  lines.forEach((line, index) => {
+    if (!isNameLine(line)) return;
+    // A name wrapped over two lines ("Monkey.D." / "Luffy") is tried whole first.
+    const next = lines[index + 1];
+    if (/[.-]$/.test(line) && next && isNameLine(next)) addName(`${line} ${next}`);
+    addName(line);
+  });
 
   return { codes: [...codes].slice(0, MAX_CODE_SEARCHES), names: names.slice(0, MAX_NAME_SEARCHES) };
 }
@@ -152,7 +166,7 @@ const compactCode = (value: string | null | undefined) => (value ?? "").toUpperC
 
 function nameSimilarity(candidate: string, card: TcgCard) {
   const wanted = normalizeName(candidate);
-  // PokéWallet names can carry a printing suffix in parentheses.
+  // TCGplayer names can carry a printing suffix in parentheses.
   const full = normalizeName(card.name);
   const base = normalizeName(card.name.replace(/\s*\(.*\)\s*$/, ""));
   return Math.max(similarityRatio(wanted, full), similarityRatio(wanted, base));
@@ -161,7 +175,7 @@ function nameSimilarity(candidate: string, card: TcgCard) {
 const defaultDependencies: TcgScanDependencies = {
   prepareImage: prepareTcgImage,
   recognizeText: recognizeTextWithMlKit,
-  searchCards: async (game, query) => (await searchTcgCardsCacheFirst({ game, query })).cards,
+  searchCards: async (game, query, options) => (await searchTcgCardsCacheFirst({ game, query, ...options })).cards,
 };
 
 /**
@@ -187,15 +201,19 @@ export async function identifyTcgCardImage(
   const byName = (cards: TcgCard[]) => [...cards].sort((a, b) => bestNameScore(b) - bestNameScore(a));
   const matches = new Map<string, TcgCard>();
 
-  // 1. Printed code. Keep cards whose number carries the code; if the
-  //    provider's numbering differs, accept results that also match a name.
+  const wantedCodes = identifiers.codes.map(compactCode);
+  const carriesCode = (card: TcgCard) => {
+    const number = compactCode(card.card_number);
+    return number.length > 0
+      && wantedCodes.some((wanted) => number === wanted || number.endsWith(wanted) || wanted.endsWith(number));
+  };
+
+  // 1. Printed code, in the shared cache only (TCG API can't search numbers).
+  //    Keep cards whose number carries the code; if the numbering differs,
+  //    accept results that also match a name.
   for (const code of identifiers.codes) {
-    const cards = await dependencies.searchCards(game, code);
-    const wanted = compactCode(code);
-    const exact = cards.filter((card) => {
-      const number = compactCode(card.card_number);
-      return number.length > 0 && (number === wanted || number.endsWith(wanted) || wanted.endsWith(number));
-    });
+    const cards = await dependencies.searchCards(game, code, { cacheOnly: true });
+    const exact = cards.filter(carriesCode);
     const named = cards.filter((card) => bestNameScore(card) >= NAME_MATCH_THRESHOLD);
     tcgScanDebug.log("scan.code-attempt", { game, code, resultCount: cards.length, exactCount: exact.length });
     for (const card of [...byName(exact), ...byName(named)]) {
@@ -205,13 +223,15 @@ export async function identifyTcgCardImage(
     if (matches.size > 0) break;
   }
 
-  // 2. Name lines. Fuzzy search is loose, so keep only close names.
+  // 2. Name lines. Fuzzy search is loose, so keep cards carrying the printed
+  //    code (the right printing, even from a partial name), then close names.
   if (matches.size === 0) {
     for (const name of identifiers.names) {
-      const cards = (await dependencies.searchCards(game, name))
-        .filter((card) => nameSimilarity(name, card) >= NAME_MATCH_THRESHOLD);
-      tcgScanDebug.log("scan.name-attempt", { game, name, resultCount: cards.length });
-      for (const card of byName(cards)) {
+      const results = await dependencies.searchCards(game, name);
+      const exact = results.filter(carriesCode);
+      const named = results.filter((card) => !carriesCode(card) && nameSimilarity(name, card) >= NAME_MATCH_THRESHOLD);
+      tcgScanDebug.log("scan.name-attempt", { game, name, resultCount: results.length, exactCount: exact.length });
+      for (const card of [...byName(exact), ...byName(named)]) {
         if (matches.size >= MAX_MATCHES) break;
         matches.set(card.id, card);
       }

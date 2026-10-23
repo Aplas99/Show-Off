@@ -4,20 +4,20 @@ import { CatalogRequestError, fetchCatalog } from "@/api/catalog";
 import type { TcgGameCode } from "@/constants/tcgGames";
 import { createActionLogger } from "@/lib/actionDebug";
 import {
-  isValidPokewalletSetId,
+  TCG_SET_ID_PATTERN,
   tcgCardSchema,
   tcgSearchResponseSchema,
   tcgSetRosterResponseSchema,
   type TcgCard,
-} from "@/lib/pokewalletCatalog";
+} from "@/lib/tcgApiCatalog";
 import { supabase } from "@/lib/supabase";
 
-export { type TcgCard } from "@/lib/pokewalletCatalog";
+export { type TcgCard } from "@/lib/tcgApiCatalog";
 
 // Shared pipeline for every card game without its own (see constants/tcgGames.ts).
-// PokéWallet is reached only through the authenticated catalog-proxy, which
-// saves cards (and copies their images) before returning them. Its plan
-// limits are tight, so searches read the shared cache first.
+// TCG API (tcgapi.dev) is reached only through the authenticated
+// catalog-proxy, which saves cards before returning them. Its daily request
+// budget is shared by every user, so searches read the shared cache first.
 
 const tcgDebug = createActionLogger("TcgCards");
 
@@ -35,6 +35,8 @@ export interface SearchTcgCardsInput {
   page?: number;
   /** Skip the cache, e.g. when the cached matches aren't the right printing. */
   bypassCache?: boolean;
+  /** Read only the cache, e.g. for printed codes TCG API can't search. */
+  cacheOnly?: boolean;
 }
 
 export interface TcgDependencies {
@@ -61,10 +63,10 @@ const defaultDependencies: TcgDependencies = {
       return parsed.success ? [parsed.data] : [];
     });
   },
-  searchProvider: (game, query, page) => fetchCatalog({ provider: "pokewallet", game, query, page }),
+  searchProvider: (game, query, page) => fetchCatalog({ provider: "tcgapi", game, query, page }),
 };
 
-/** Cache-first name/number search; falls back to PokéWallet `/{game}/search`. */
+/** Cache-first name/number search; falls back to TCG API `/v1/search` (names only). */
 export async function searchTcgCardsCacheFirst(
   input: SearchTcgCardsInput,
   dependencies: TcgDependencies = defaultDependencies,
@@ -79,6 +81,10 @@ export async function searchTcgCardsCacheFirst(
     if (cached.length > 0) {
       tcgDebug.log("search.completed", { game: input.game, query, source: "cache", resultCount: cached.length });
       return { cards: cached, page, totalPages: null, source: "cache" };
+    }
+    if (input.cacheOnly) {
+      tcgDebug.log("search.completed", { game: input.game, query, source: "cache", resultCount: 0 });
+      return { cards: [], page, totalPages: null, source: "cache" };
     }
   }
 
@@ -124,12 +130,12 @@ const defaultRosterDependencies: TcgSetRosterDependencies = {
     // Search also adds cards to tcg_cards; only the manifest's count proves the set is whole.
     return cards.length >= (manifest as { card_count: number }).card_count ? cards : null;
   },
-  fetchRoster: (game, setId) => fetchCatalog({ provider: "pokewallet", game, setId }),
+  fetchRoster: (game, setId) => fetchCatalog({ provider: "tcgapi", game, setId }),
 };
 
 /**
- * Every card in a PokéWallet set, for set completion. Reads the shared cache
- * first; a miss costs one PokéWallet request per 200 cards, after which the
+ * Every card in a TCG API set, for set completion. Reads the shared cache
+ * first; a miss costs one TCG API request per 100 cards, after which the
  * set is cached for every user.
  */
 export async function fetchTcgSetRoster(
@@ -137,7 +143,7 @@ export async function fetchTcgSetRoster(
   setId: string,
   dependencies: TcgSetRosterDependencies = defaultRosterDependencies,
 ): Promise<TcgCard[]> {
-  if (!isValidPokewalletSetId(game, setId)) return [];
+  if (!TCG_SET_ID_PATTERN.test(setId)) return [];
   const cached = await dependencies.findCachedRoster(game, setId);
   if (cached) {
     tcgDebug.log("set-roster.completed", { game, setId, source: "cache", cardCount: cached.length });
@@ -150,7 +156,7 @@ export async function fetchTcgSetRoster(
 
 /** Cached card counts per set id, read from tcg_set_rosters; sets never loaded are absent. */
 export function useTcgSetRosterCounts(game: TcgGameCode | null, setIds: string[]) {
-  const ids = [...new Set(setIds.filter((id) => !!game && isValidPokewalletSetId(game, id)))].sort();
+  const ids = [...new Set(setIds.filter((id) => !!game && TCG_SET_ID_PATTERN.test(id)))].sort();
   return useQuery({
     queryKey: ["tcg-cards", "set-roster-counts", game, ids],
     queryFn: async () => {
@@ -175,7 +181,7 @@ export function useTcgCardSearch(input: SearchTcgCardsInput) {
     enabled: query.length >= 2,
     placeholderData: keepPreviousData,
     staleTime: 10 * 60_000,
-    // Every miss spends PokéWallet quota; let the user retry instead.
+    // Every miss spends shared TCG API quota; let the user retry instead.
     retry: false,
   });
 }

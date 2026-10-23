@@ -45,7 +45,7 @@ describe("card pricing helpers", () => {
     expect(isValidPriceCardId("magic", "6a0b230b-d391-4998-a3f7-7b158a0ec2cd")).toBe(true);
     expect(isValidPriceCardId("magic", "base1-4")).toBe(false);
     expect(isValidPriceCardId("riftbound", "69bc5bc7d308c64675ca86c1")).toBe(true);
-    expect(isValidPriceCardId("ygo", "pk_0123456789abcdef0123")).toBe(true);
+    expect(isValidPriceCardId("ygo", "512345")).toBe(true);
     expect(isValidPriceCardId("ygo", "../x")).toBe(false);
   });
 });

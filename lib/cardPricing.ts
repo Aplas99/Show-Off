@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 import { TCG_GAME_CODES } from "@/constants/tcgGames";
-import { POKEWALLET_ID_PATTERN } from "@/lib/pokewalletCatalog";
+import { TCG_CARD_ID_PATTERN } from "@/lib/tcgApiCatalog";
 import { RIFTCODEX_ID_PATTERN } from "@/lib/riftboundCatalog";
 
 // Daily TCGplayer prices from TCGTracking (openapi.tcgtracking.com) for the
@@ -17,7 +17,7 @@ export function isValidPriceCardId(game: PriceGame, cardId: string): boolean {
   if (game === "pokemon") return /^[a-zA-Z0-9_.:-]{1,100}$/.test(cardId);
   if (game === "magic") return /^[0-9a-f-]{36}$/.test(cardId);
   if (game === "riftbound") return RIFTCODEX_ID_PATTERN.test(cardId);
-  return POKEWALLET_ID_PATTERN.test(cardId);
+  return TCG_CARD_ID_PATTERN.test(cardId);
 }
 
 /**

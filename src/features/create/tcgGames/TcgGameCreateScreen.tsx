@@ -40,7 +40,7 @@ import { useSafeAreaInsets } from "react-native-safe-area-context";
 
 // Shared create flow for every card game in constants/tcgGames.ts. Like the
 // other TCG screens it is scanner-first: the camera reads the card's name and
-// printed code (api/tcg/scan.ts) and search is the backup. PokéWallet's plan
+// printed code (api/tcg/scan.ts) and search is the backup. TCG API's plan
 // limits make the shared cache the first stop for every lookup.
 type FlowStep = "game" | "destination" | "scan" | "search";
 
@@ -456,7 +456,7 @@ function SearchStep({
     const trimmed = text.trim();
     if (trimmed.length < 2 || isSearching) return;
 
-    // Free-tier search quota also protects the shared PokéWallet budget.
+    // Free-tier search quota also protects the shared TCG API budget.
     if (!isCurator) {
       try {
         const quota = await recordSearchAttempt.mutateAsync();

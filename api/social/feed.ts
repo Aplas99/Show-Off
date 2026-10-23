@@ -1,7 +1,7 @@
 import { supabase } from "@/lib/supabase";
 import { getRiftboundSetName } from "@/constants/riftboundSets";
 import { getTcgGameName } from "@/constants/tcgGames";
-import { TCG_CARD_ITEM_COLUMNS, tcgCardItemProduct } from "@/lib/pokewalletCatalog";
+import { TCG_CARD_ITEM_COLUMNS, tcgCardItemProduct } from "@/lib/tcgApiCatalog";
 import { useInfiniteQuery } from "@tanstack/react-query";
 
 export interface FeedItem {

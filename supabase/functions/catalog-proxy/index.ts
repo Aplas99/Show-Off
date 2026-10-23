@@ -60,11 +60,15 @@ Deno.serve(createCatalogProxyHandler({
     const { error } = await admin.from("tcg_cards").upsert(rows, { onConflict: "id" }).abortSignal(signal);
     if (error) throw error;
   },
-  findTcgCardImages: async (ids, signal) => {
-    if (ids.length === 0) return {};
-    const { data, error } = await admin.from("tcg_cards").select("id, image_url").in("id", ids).abortSignal(signal);
+  findTcgSets: async (game, signal) => {
+    const { data, error } = await admin.from("tcg_sets")
+      .select("game, id, name, abbreviation, card_count, release_date, cached_at").eq("game", game).abortSignal(signal);
     if (error) throw error;
-    return Object.fromEntries((data ?? []).map((row) => [row.id as string, (row.image_url as string | null) ?? null]));
+    return data ?? [];
+  },
+  persistTcgSets: async (rows, signal) => {
+    const { error } = await admin.from("tcg_sets").upsert(rows, { onConflict: "game,id" }).abortSignal(signal);
+    if (error) throw error;
   },
   findTodayPrice: async (game, cardId, signal) => {
     const today = new Date().toISOString().slice(0, 10);
@@ -108,8 +112,8 @@ Deno.serve(createCatalogProxyHandler({
     }
     const card = await lookup("tcg_cards", "id, game, raw_data");
     if (!card || card.game !== game) return null;
-    const url = (card.raw_data as { tcgplayer?: { url?: string } | null } | null)?.tcgplayer?.url;
-    return { productId: tcgplayerIdFromUrl(url), resolved: false, pokemonPriceUrl: null };
+    const id = Number((card.raw_data as { tcgplayer_id?: unknown } | null)?.tcgplayer_id);
+    return { productId: Number.isSafeInteger(id) && id > 0 ? id : null, resolved: false, pokemonPriceUrl: null };
   },
   saveTcgplayerProduct: async (game, cardId, productId, signal) => {
     const { error } = await admin.from("card_tcgplayer_products")
@@ -126,12 +130,6 @@ Deno.serve(createCatalogProxyHandler({
   persistTcgSetRoster: async (row, signal) => {
     const { error } = await admin.from("tcg_set_rosters").upsert(row, { onConflict: "game,set_id" }).abortSignal(signal);
     if (error) throw error;
-  },
-  storeTcgCardImage: async (path, bytes, contentType) => {
-    const bucket = admin.storage.from("tcg-card-images");
-    const { error } = await bucket.upload(path, bytes, { contentType, upsert: true, cacheControl: "31536000" });
-    if (error) throw error;
-    return bucket.getPublicUrl(path).data.publicUrl;
   },
   reserveUpcRequest: async (isSearch) => {
     const { data, error } = await admin.rpc("reserve_upc_catalog_request", { p_is_search: isSearch });

@@ -6,7 +6,7 @@
     "@/lib/magicCatalog": "../../../lib/magicCatalog.ts",
     "@/lib/productCatalog": "../../../lib/productCatalog.ts",
     "@/lib/pokemonCatalog": "../../../lib/pokemonCatalog.ts",
-    "@/lib/pokewalletCatalog": "../../../lib/pokewalletCatalog.ts",
+    "@/lib/tcgApiCatalog": "../../../lib/tcgApiCatalog.ts",
     "@/constants/tcgGames": "../../../constants/tcgGames.ts",
     "@/lib/riftboundCatalog": "../../../lib/riftboundCatalog.ts",
     "@/lib/tcgTrackingCatalog": "../../../lib/tcgTrackingCatalog.ts"
