@@ -42,9 +42,25 @@ describe("read-only product linking", () => {
   });
 
   it("reads cached product data before spending a BarcodeNest lookup", async () => {
-    maybeSingle.mockResolvedValueOnce({ data: { data: { title: "Cached", ean: "12345678" } }, error: null });
-    expect(await lookupProductByBarcode("1234-5678")).toEqual({ title: "Cached", ean: "12345678" });
+    const cached = { title: "Cached", ean: "12345678", images: ["https://img.example/c.jpg"] };
+    maybeSingle.mockResolvedValueOnce({ data: { data: cached }, error: null });
+    expect(await lookupProductByBarcode("1234-5678")).toEqual(cached);
+    maybeSingle.mockResolvedValueOnce({ data: { data: { title: "No image", ean: "12345678", imageCheckedAt: new Date().toISOString() } }, error: null });
+    expect(await lookupProductByBarcode("12345678")).toMatchObject({ title: "No image" });
     expect(fetchCatalog).not.toHaveBeenCalled();
+  });
+
+  it("re-runs image backups for cached products without an image", async () => {
+    maybeSingle.mockResolvedValueOnce({ data: { data: { title: "Cached", ean: "12345678", description: "Kept" } }, error: null });
+    jest.mocked(fetchCatalog).mockResolvedValueOnce({
+      barcode: "12345678", found: true, product: { name: "Cached", image_url: "https://img.example/c.jpg" }, image_source: "upcitemdb",
+    });
+    expect(await lookupProductByBarcode("12345678")).toMatchObject({
+      title: "Cached", description: "Kept", images: ["https://img.example/c.jpg"], imageSource: "upcitemdb",
+    });
+    maybeSingle.mockResolvedValueOnce({ data: { data: { title: "Cached", ean: "12345678" } }, error: null });
+    jest.mocked(fetchCatalog).mockRejectedValueOnce(new Error("busy"));
+    expect(await lookupProductByBarcode("12345678")).toEqual({ title: "Cached", ean: "12345678" });
   });
 
   it("does not link an unrelated or missing BarcodeNest result", async () => {

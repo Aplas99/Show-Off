@@ -2,6 +2,7 @@ import { ITEM_CONDITIONS, ITEM_CONDITION_LABELS, ItemCondition } from "@/constan
 import { useColors, type ThemeColors } from "@/constants/theme";
 import { useHaptics } from "@/hooks/useHaptics";
 import { validateCreateItem } from "@/lib/createItemValidation";
+import { normalizeImageUrl } from "@/lib/itemImages";
 import { Ionicons } from "@expo/vector-icons";
 import { Image } from "@/src/components/media/ProtectedImage";
 import { askYesNo, showMessage } from "@/lib/dialogs";
@@ -9,6 +10,7 @@ import { pickImages } from "@/lib/imagePicker";
 import { useRouter } from "expo-router";
 import React, { useCallback, useEffect, useMemo, useState } from "react";
 import {
+    ActivityIndicator,
     FlatList,
     Modal,
     StyleSheet,
@@ -114,11 +116,13 @@ export default function CreateItemWizard({
         contentOpacity.value = 1;
     }, [currentStep, slideAnim, contentOpacity]);
 
-    // BarcodeNest lookup runs once the user leaves the scan step, so typing
-    // a code doesn't spend lookup credits on every keystroke.
+    // A scanned code is final, so its lookup starts right away and the image
+    // is usually ready on the Details step. Typed codes wait until the user
+    // leaves the scan step, so lookups aren't spent on every keystroke.
+    const [scannedBarcode, setScannedBarcode] = useState("");
     const barcodeLookup = useBarcodeProductLookup(
         itemData.barcode,
-        visible && currentStep >= 2 && !itemData.productData,
+        visible && !itemData.productData && (currentStep >= 2 || itemData.barcode === scannedBarcode),
     );
 
     useEffect(() => {
@@ -208,6 +212,7 @@ export default function CreateItemWizard({
     const handleBarcodeScanned = async (barcode: string) => {
         await haptics.success();
         const sanitizedBarcode = barcode.replace(/[\s-]/g, "").trim();
+        setScannedBarcode(sanitizedBarcode);
         setItemData((prev) => ({ ...prev, barcode: sanitizedBarcode, productData: null }));
     };
 
@@ -282,6 +287,7 @@ export default function CreateItemWizard({
     const resetWizard = () => {
         setCurrentStep(1);
         setPhotoPromptedFor(null);
+        setScannedBarcode("");
         setItemData({
             barcode: "",
             productData: null,
@@ -624,7 +630,24 @@ function Step2Details({
         }
     };
 
-    const displayImage = imageUri || (productData?.images && productData.images.length > 0 ? productData.images[0] : null);
+    // Try each catalog image in turn; a dead link falls through to the next.
+    const catalogImages = useMemo(
+        () => (productData?.images ?? []).map(normalizeImageUrl).filter((url): url is string => !!url),
+        [productData?.images],
+    );
+    const [failedImages, setFailedImages] = useState<string[]>([]);
+    const catalogImage = catalogImages.find((url) => !failedImages.includes(url)) ?? null;
+    const displayImage = imageUri || catalogImage;
+    const imageSourceLabel = imageUri
+        ? "Your photo"
+        : !catalogImage
+            ? null
+            : productData?.imageSource === "openlibrary"
+                ? "Backup image · Open Library"
+                : productData?.imageSource === "upcitemdb"
+                    ? "Backup image · UPCitemdb"
+                    : "Catalog image";
+    const allCatalogImagesFailed = !imageUri && catalogImages.length > 0 && !catalogImage;
 
     return (
         <View style={styles.stepContent}>
@@ -648,7 +671,20 @@ function Step2Details({
             <View style={styles.imageSection}>
                 <TouchableOpacity style={styles.imagePreview} onPress={handlePickImage} activeOpacity={0.8}>
                     {displayImage ? (
-                        <Image source={{ uri: displayImage }} style={styles.image} contentFit="cover" transition={200} />
+                        <Image
+                            source={{ uri: displayImage }}
+                            style={styles.image}
+                            contentFit="contain"
+                            transition={200}
+                            onError={() => {
+                                if (displayImage === catalogImage) setFailedImages((prev) => [...prev, displayImage]);
+                            }}
+                        />
+                    ) : isLookingUp ? (
+                        <View style={styles.imagePlaceholder}>
+                            <ActivityIndicator color={colors.primary} />
+                            <Text style={styles.placeholderText}>Finding image…</Text>
+                        </View>
                     ) : (
                         <View style={styles.imagePlaceholder}>
                             <Ionicons name="camera-outline" size={32} color={colors.grey} />
@@ -659,8 +695,22 @@ function Step2Details({
                         <Ionicons name="pencil" size={12} color="#FFF" />
                     </View>
                 </TouchableOpacity>
+                {imageSourceLabel ? (
+                    <View style={styles.imageSourceBadge}>
+                        <Ionicons
+                            name={imageUri ? "person-circle-outline" : "image-outline"}
+                            size={14}
+                            color={colors.primary}
+                        />
+                        <Text style={styles.imageSourceText}>{imageSourceLabel}</Text>
+                    </View>
+                ) : null}
                 <Text style={styles.imageHint}>
-                    {displayImage ? "Tap to change image" : "Tap to add a photo"}
+                    {displayImage
+                        ? "Tap to change image"
+                        : allCatalogImagesFailed
+                            ? "The catalog image couldn't load. Tap to add a photo"
+                            : isLookingUp ? "Looking for a catalog image" : "Tap to add a photo"}
                 </Text>
             </View>
 
@@ -949,7 +999,7 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
     emptySubtext: { color: colors.grey, textAlign: "center", marginTop: 4, fontSize: 14 },
     imageSection: { marginBottom: 24, alignItems: "center" },
     imagePreview: {
-        width: 120, height: 120, borderRadius: 16, backgroundColor: colors.surface,
+        width: 200, height: 200, borderRadius: 16, backgroundColor: colors.surface,
         borderWidth: 1, borderColor: colors.border, overflow: "hidden",
         justifyContent: "center", alignItems: "center", marginBottom: 12,
         shadowColor: "#000", shadowOffset: { width: 0, height: 4 },
@@ -963,5 +1013,11 @@ const getStyles = (colors: ThemeColors) => StyleSheet.create({
         width: 24, height: 24, borderRadius: 12, justifyContent: "center", alignItems: "center",
         shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.2, shadowRadius: 4,
     },
+    imageSourceBadge: {
+        flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 8,
+        paddingHorizontal: 10, paddingVertical: 4, borderRadius: 999,
+        backgroundColor: colors.surface, borderWidth: 1, borderColor: colors.border,
+    },
+    imageSourceText: { color: colors.text, fontSize: 12, fontWeight: "600" },
     imageHint: { color: colors.grey, fontSize: 13, textAlign: "center", alignSelf: "stretch" },
 });

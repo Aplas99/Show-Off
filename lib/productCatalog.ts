@@ -13,6 +13,10 @@ export const catalogProductSchema = z.object({
   color: z.string().optional(),
   manufacturer: z.string().optional(),
   price: z.number().finite().nonnegative().optional(),
+  /** Where `images[0]` came from, for barcode lookups (BarcodeNest or a backup). */
+  imageSource: z.enum(["barcodenest", "openlibrary", "upcitemdb"]).optional(),
+  /** Set when every image backup came up empty, so repeat scans skip re-checking. */
+  imageCheckedAt: z.string().optional(),
 });
 export type CatalogProduct = z.infer<typeof catalogProductSchema>;
 
@@ -46,6 +50,8 @@ const barcodeNestResponseSchema = z.object({
     brand: z.string().nullish(),
     image_url: z.string().nullish(),
   }).nullish(),
+  image_source: z.enum(["barcodenest", "openlibrary", "upcitemdb"]).nullish(),
+  image_checked_at: z.string().nullish(),
 });
 
 function price(value: string | number | null | undefined) {
@@ -84,11 +90,17 @@ export function parseUpcProducts(raw: unknown): CatalogProduct[] {
   });
 }
 
-function httpsImage(value: string | null | undefined) {
-  if (!value) return undefined;
+/**
+ * A loadable https image URL, or undefined. `http://` is upgraded like
+ * `normalizeImageUrl` does for display (native loaders block cleartext);
+ * URLs carrying credentials are dropped.
+ */
+export function safeImageUrl(value: string | null | undefined): string | undefined {
+  const trimmed = value?.trim();
+  if (!trimmed) return undefined;
   try {
-    const url = new URL(value);
-    return url.protocol === "https:" && !url.username && !url.password ? [url.toString()] : undefined;
+    const url = new URL(/^http:\/\//i.test(trimmed) ? `https://${trimmed.slice(7)}` : trimmed);
+    return url.protocol === "https:" && !url.username && !url.password ? url.toString() : undefined;
   } catch {
     return undefined;
   }
@@ -101,13 +113,22 @@ export function parseBarcodeNestProducts(raw: unknown): CatalogProduct[] {
     if (z.object({ found: z.literal(false) }).safeParse(raw).success) return [];
     throw parsed.error;
   }
-  const { barcode, found, product } = parsed.data;
+  const { barcode, found, product, image_source, image_checked_at } = parsed.data;
   const title = product?.name?.trim();
   if (!found || !title) return [];
+  const image = safeImageUrl(product?.image_url);
   return [{
     title, ean: barcode, upc: barcode.length === 12 ? barcode : undefined,
-    brand: product?.brand?.trim() || undefined, images: httpsImage(product?.image_url),
+    brand: product?.brand?.trim() || undefined, images: image ? [image] : undefined,
+    imageSource: image ? image_source ?? "barcodenest" : undefined,
+    imageCheckedAt: image ? undefined : image_checked_at ?? undefined,
   }];
+}
+
+/** BarcodeNest answered with no usable (named) product for the code. */
+export function barcodeNestMissing(raw: unknown): boolean {
+  const parsed = barcodeNestResponseSchema.safeParse(raw);
+  return parsed.success && (!parsed.data.found || !parsed.data.product?.name?.trim());
 }
 
 /**
@@ -125,12 +146,38 @@ export function barcodeNestNeedsImage(raw: unknown): boolean {
   return !!product && !product.images?.length;
 }
 
+type BarcodeImageSource = NonNullable<CatalogProduct["imageSource"]>;
+
 /** Fills BarcodeNest's `product.image_url` so parsing and the client see the fallback. */
-export function withBarcodeNestImage(raw: unknown, imageUrl: string): unknown {
+export function withBarcodeNestImage(raw: unknown, imageUrl: string, source: BarcodeImageSource = "openlibrary"): unknown {
   const parsed = barcodeNestResponseSchema.safeParse(raw);
   if (!parsed.success || !parsed.data.product) return raw;
   const body = raw as { product: Record<string, unknown> };
-  return { ...body, product: { ...body.product, image_url: imageUrl } };
+  return { ...body, product: { ...body.product, image_url: imageUrl }, image_source: source };
+}
+
+/** Replaces a BarcodeNest miss with a backup provider's product for the same code. */
+export function withBarcodeNestProduct(code: string, product: CatalogProduct, source: BarcodeImageSource): unknown {
+  const image = product.images?.map(safeImageUrl).find(Boolean);
+  return {
+    barcode: code, found: true,
+    product: { name: product.title, brand: product.brand ?? null, image_url: image ?? null },
+    image_source: image ? source : null,
+  };
+}
+
+/** Marks a product whose image backups all came up empty. */
+export function withBarcodeNestImageChecked(raw: unknown, checkedAt: string): unknown {
+  const parsed = barcodeNestResponseSchema.safeParse(raw);
+  if (!parsed.success) return raw;
+  return { ...(raw as Record<string, unknown>), image_checked_at: checkedAt };
+}
+
+/** Whether a catalog product's code is `code`, ignoring leading zeroes. */
+export function productMatchesCode(product: CatalogProduct, code: string): boolean {
+  const target = code.replace(/^0+(?=\d)/, "");
+  return [product.ean, product.upc, product.isbn].some((value) =>
+    normalizeProductCode(value)?.replace(/^0+(?=\d)/, "") === target);
 }
 
 /** The existing database key is BIGINT; retain leading zeroes in product data. */
